@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from enum import Enum
+from dataclasses import dataclass
 from typing import Any, cast
 
 _SHOULD_LOG_SCOPE = False  # see '--scope' command line option
@@ -16,6 +17,7 @@ class ErrorCode(Enum):
     ID_NOT_FOUND = "Identifier not found"
     DUPLICATE_ID = "Duplicate id found"
     NULL_POINTER = "Null pointer exception"
+    CURRENT_SCOPE_NOT_FOUND = "Current scope not found"
     UNKNOWN_BIN_OP = "Unknown binary operator"
     UNKNOWN_UNARY_OP = "Unknown unary operator"
 
@@ -41,6 +43,10 @@ class SemanticError(Error):
 
 
 class NullPointerError(Error):
+    pass
+
+
+class CurrentScopeMissingError(Error):
     pass
 
 
@@ -78,6 +84,7 @@ class TokenType(Enum):
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
     INTEGER = "INTEGER"
+    FUNCTION = "FUNCTION"
     REAL = "REAL"
     INTEGER_DIV = "DIV"
     VAR = "VAR"
@@ -139,7 +146,8 @@ def _build_reserved_keywords():
          'VAR': <TokenType.VAR: 'VAR'>,
          'PROCEDURE': <TokenType.PROCEDURE: 'PROCEDURE'>,
          'BEGIN': <TokenType.BEGIN: 'BEGIN'>,
-         'END': <TokenType.END: 'END'>}
+         'END': <TokenType.END: 'END'>},
+         'FUNCTION':<TokenType.FUNCTION: 'FUNCTION'>,
     """
     # enumerations support iteration, in definition order
     tt_list = list(TokenType)
@@ -153,6 +161,14 @@ def _build_reserved_keywords():
 
 
 RESERVED_KEYWORDS = _build_reserved_keywords()
+
+
+@dataclass
+class LexerStatus:
+    pos: int
+    current_char: str | None
+    lineno: int
+    column: int
 
 
 class Lexer:
@@ -173,6 +189,10 @@ class Lexer:
             column=self.column,
         )
         raise LexerError(message=s)
+
+    def status(self) -> LexerStatus:
+        """return the `pos` pointer`"""
+        return LexerStatus(self.pos, self.current_char, self.lineno, self.column)
 
     def advance(self) -> None:
         """Advance the `pos` pointer and set the `current_char` variable."""
@@ -308,6 +328,19 @@ class Lexer:
         # input left for lexical analysis
         return Token(type=TokenType.EOF, value=None)
 
+    def peek_next_token(self) -> Token:
+        prev_status = self.status()
+        token = self.get_next_token()
+        self.revert(prev_status)
+        return token
+
+    def revert(self, status: LexerStatus) -> None:
+        """revert the current lexer status before call self.get_next_token()"""
+        self.pos = status.pos
+        self.current_char = status.current_char
+        self.lineno = status.lineno
+        self.column = status.column
+
 
 ###############################################################################
 #                                                                             #
@@ -315,8 +348,8 @@ class Lexer:
 #                                                                             #
 ###############################################################################
 class AST:
-    def __init__(self)->None:
-        self._num:int | None = None
+    def __init__(self) -> None:
+        self._num: int | None = None
 
 
 class BinOp(AST):
@@ -374,9 +407,7 @@ class Program(AST):
 
 
 class Block(AST):
-    def __init__(
-        self, declarations: list[VarDecl | ProcedureDecl], compound_statement: Compound
-    ) -> None:
+    def __init__(self, declarations: list[Decl], compound_statement: Compound) -> None:
         self.declarations = declarations
         self.compound_statement = compound_statement
 
@@ -408,10 +439,22 @@ class ProcedureDecl(AST):
         self.block_node = block_node
 
 
-class ProcedureCall(AST):
+class FunctionDecl(AST):
     def __init__(
-        self, proc_name: str, actual_params: list[Expr], token: Token
+        self,
+        func_name: str,
+        formal_params: list[Param],
+        return_type: Type,
+        block_node: Block,
     ) -> None:
+        self.func_name = func_name
+        self.formal_params = formal_params  # a list of Param nodes
+        self.return_type = return_type
+        self.block_node = block_node
+
+
+class ProcedureCall(AST):
+    def __init__(self, proc_name: str, actual_params: list[Expr], token: Token) -> None:
         self.proc_name = proc_name
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
@@ -419,11 +462,20 @@ class ProcedureCall(AST):
         self.proc_symbol: ProcedureSymbol | None = None
 
 
-type Decl = VarDecl | ProcedureDecl
+class FunctionCall(AST):
+    def __init__(self, func_name: str, actual_params: list[Expr], token: Token) -> None:
+        self.func_name = func_name
+        self.actual_params = actual_params  # a list of AST nodes
+        self.token = token
+        # a reference to procedure declaration symbol
+        self.func_symbol: FunctionSymbol | None = None
+
+
+type Decl = VarDecl | ProcedureDecl | FunctionDecl
 type Statement = Compound | ProcedureCall | Assign | NoOp
 type Expr = "Factor"
 type Term = "Factor"
-type Factor = UnaryOp | BinOp | Num | Var
+type Factor = UnaryOp | BinOp | Num | Var | FunctionCall
 
 
 class Parser:
@@ -434,6 +486,9 @@ class Parser:
 
     def get_next_token(self):
         return self.lexer.get_next_token()
+
+    def peek_next_token(self):
+        return self.lexer.peek_next_token()
 
     def error(self, error_code: ErrorCode, token: Token):
         raise ParserError(
@@ -475,7 +530,7 @@ class Parser:
 
     def declarations(self) -> list[Decl]:
         """
-        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration*
+        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
         """
         declarations: list[Decl] = []
 
@@ -489,6 +544,10 @@ class Parser:
         while self.current_token.type == TokenType.PROCEDURE:
             proc_decl = self.procedure_declaration()
             declarations.append(proc_decl)
+
+        while self.current_token.type == TokenType.FUNCTION:
+            func_decl = self.function_declaration()
+            declarations.append(func_decl)
 
         return declarations
 
@@ -563,6 +622,28 @@ class Parser:
         proc_decl = ProcedureDecl(proc_name, formal_params, block_node)
         self.eat(TokenType.SEMI)
         return proc_decl
+
+    def function_declaration(self) -> FunctionDecl:
+        """function_declaration :
+        FUNCTION ID LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI block SEMI
+        """
+        self.eat(TokenType.FUNCTION)
+        func_name = self.current_token.value
+        self.eat(TokenType.ID)
+
+        formal_params = []
+        self.eat(TokenType.LPAREN)
+        formal_params = self.formal_parameter_list()
+        self.eat(TokenType.RPAREN)
+        self.eat(TokenType.COLON)
+
+        return_type = self.type_spec()
+
+        self.eat(TokenType.SEMI)
+        block_node = self.block()
+        func_decl = FunctionDecl(func_name, formal_params, return_type, block_node)
+        self.eat(TokenType.SEMI)
+        return func_decl
 
     def type_spec(self) -> Type:
         """type_spec : INTEGER
@@ -649,14 +730,48 @@ class Parser:
         )
         return node
 
+    def func_call_expr(self) -> FunctionCall:
+        """func_call_expr : ID LPAREN (expr (COMMA expr)*)? RPAREN"""
+        token = self.current_token
+
+        fun_name = self.current_token.value
+        self.eat(TokenType.ID)
+        self.eat(TokenType.LPAREN)
+        actual_params: list[Expr] = []
+
+        actual_params.append(
+            Var(Token(TokenType.ID, fun_name, token.lineno, token.column))
+        )
+
+        if self.current_token.type != TokenType.RPAREN:
+            expr = self.expr()
+            actual_params.append(expr)
+
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            expr = self.expr()
+            actual_params.append(expr)
+
+        self.eat(TokenType.RPAREN)
+
+        node = FunctionCall(
+            func_name=fun_name,
+            actual_params=actual_params,
+            token=token,
+        )
+        return node
+
     def assignment_statement(self) -> Assign:
         """
         assignment_statement : variable ASSIGN expr
         """
         left = self.variable()
+        if not isinstance(left, Var):
+            self.error(ErrorCode.UNEXPECTED_TOKEN, left.token)
         token = self.current_token
         self.eat(TokenType.ASSIGN)
         right = self.expr()
+        assert isinstance(left, Var)
         node = Assign(left, token, right)
         return node
 
@@ -739,6 +854,12 @@ class Parser:
             node = self.expr()
             self.eat(TokenType.RPAREN)
             return node
+        elif (
+            token.type == TokenType.ID
+            and self.peek_next_token().type == TokenType.LPAREN
+        ):
+            node = self.func_call_expr()
+            return node
         else:
             node = self.variable()
             return node
@@ -749,12 +870,15 @@ class Parser:
 
         block : declarations compound_statement
 
-        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration*
+        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
 
         variable_declaration : ID (COMMA ID)* COLON type_spec
 
         procedure_declaration :
              PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? SEMI block SEMI
+
+        function_declaration :
+             FUNCTION ID LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI block SEMI
 
         formal_params_list : formal_parameters
                            | formal_parameters SEMI formal_parameter_list
@@ -770,10 +894,13 @@ class Parser:
 
         statement : compound_statement
                   | proccall_statement
+                  | func_call_expr
                   | assignment_statement
                   | empty
 
         proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN
+
+        func_call_expr : ID LPAREN (expr (COMMA expr)*)? RPAREN
 
         assignment_statement : variable ASSIGN expr
 
@@ -788,6 +915,7 @@ class Parser:
                | INTEGER_CONST
                | REAL_CONST
                | LPAREN expr RPAREN
+               | func_call_expr
                | variable
 
         variable: ID
@@ -875,6 +1003,48 @@ class ProcedureSymbol(Symbol):
         return "<{class_name}(name={name}, parameters={params})>".format(
             class_name=self.__class__.__name__,
             name=self.name,
+            params=self.formal_params,
+        )
+
+    __repr__ = __str__
+
+
+class BuiltinProcedureSymbol(Symbol):
+    def __init__(self, name: str, output_params: list[Symbol] | None = None) -> None:
+        super().__init__(name)
+        # a list of VarSymbol objects
+        self.output_params: list[Symbol] = (
+            [] if output_params is None else output_params
+        )
+
+    def __str__(self) -> str:
+        return "<{class_name}(name={name}, parameters={params})>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            params=self.output_params,
+        )
+
+    __repr__ = __str__
+
+
+class FunctionSymbol(Symbol):
+    def __init__(
+        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
+    ) -> None:
+        super().__init__(name)
+        # a list of VarSymbol objects
+        self.formal_params: list[Symbol] = (
+            [] if formal_params is None else formal_params
+        )
+        self.return_type = return_type
+        # a reference to procedure's body (AST sub-tree)
+        self.block_ast: Block | None = None
+
+    def __str__(self) -> str:
+        return "<{class_name}(name={name},return_type={return_type} parameters={params})>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            return_type=self.return_type,
             params=self.formal_params,
         )
 
@@ -993,40 +1163,6 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.left)
         self.visit(node.right)
 
-    def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
-        proc_name = node.proc_name
-        proc_symbol = ProcedureSymbol(proc_name)
-        if self.current_scope is None:
-            raise NullPointerError()
-        self.current_scope.insert(proc_symbol)
-
-        self.log(f"ENTER scope: {proc_name}")
-        # Scope for parameters and local variables
-        procedure_scope = ScopedSymbolTable(
-            scope_name=proc_name,
-            scope_level=self.current_scope.scope_level + 1,
-            enclosing_scope=self.current_scope,
-        )
-        self.current_scope = procedure_scope
-
-        # Insert parameters into the procedure scope
-        for param in node.formal_params:
-            param_type = self.current_scope.lookup(param.type_node.value)
-            param_name = param.var_node.value
-            var_symbol = VarSymbol(param_name, param_type)
-            self.current_scope.insert(var_symbol)
-            proc_symbol.formal_params.append(var_symbol)
-
-        self.visit(node.block_node)
-
-        self.log(procedure_scope)
-
-        self.current_scope = self.current_scope.enclosing_scope
-        self.log(f"LEAVE scope: {proc_name}")
-
-        # accessed by the interpreter when executing procedure call
-        proc_symbol.block_ast = node.block_node
-
     def visit_VarDecl(self, node: VarDecl) -> None:
         type_name = node.type_node.value
         if self.current_scope is None:
@@ -1069,16 +1205,104 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_UnaryOp(self, node: UnaryOp) -> None:
         pass
 
-    def visit_ProcedureCall(self, node) -> None:
+    def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
+        proc_name = node.proc_name
+        proc_symbol = ProcedureSymbol(proc_name)
+        if self.current_scope is None:
+            raise CurrentScopeMissingError()
+        self.current_scope.insert(proc_symbol)
+
+        self.log(f"ENTER scope: {proc_name}")
+        # Scope for parameters and local variables
+        procedure_scope = ScopedSymbolTable(
+            scope_name=proc_name,
+            scope_level=self.current_scope.scope_level + 1,
+            enclosing_scope=self.current_scope,
+        )
+        self.current_scope = procedure_scope
+
+        # Insert parameters into the procedure scope
+        for param in node.formal_params:
+            param_type = self.current_scope.lookup(param.type_node.value)
+            param_name = param.var_node.value
+            var_symbol = VarSymbol(param_name, param_type)
+            self.current_scope.insert(var_symbol)
+            proc_symbol.formal_params.append(var_symbol)
+
+        self.visit(node.block_node)
+
+        self.log(procedure_scope)
+
+        self.current_scope = self.current_scope.enclosing_scope
+        self.log(f"LEAVE scope: {proc_name}")
+
+        # accessed by the interpreter when executing procedure call
+        proc_symbol.block_ast = node.block_node
+
+    def visit_ProcedureCall(self, node: ProcedureCall) -> None:
         for param_node in node.actual_params:
             self.visit(param_node)
 
         if self.current_scope is None:
-            self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
+            self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return
         proc_symbol = self.current_scope.lookup(node.proc_name)
         # accessed by the interpreter when executing procedure call
-        node.proc_symbol = proc_symbol
+        node.proc_symbol = cast(ProcedureSymbol, proc_symbol)
+
+    def visit_FunctionDecl(self, node: FunctionDecl) -> None:
+        func_name = node.func_name
+        return_type = node.return_type
+        func_symbol = FunctionSymbol(func_name, return_type)
+        if self.current_scope is None:
+            raise CurrentScopeMissingError()
+        self.current_scope.insert(func_symbol)
+
+        self.log(f"ENTER scope: {func_name}")
+        # Scope for parameters and local variables
+        function_scope = ScopedSymbolTable(
+            scope_name=func_name,
+            scope_level=self.current_scope.scope_level + 1,
+            enclosing_scope=self.current_scope,
+        )
+        self.current_scope = function_scope
+
+        # insert return value into the function scope
+        # pascal support implicit return the value has the same name to the function name
+        return_var_symbol = VarSymbol(
+            func_name, self.current_scope.lookup(return_type.value)
+        )
+        self.current_scope.insert(return_var_symbol)
+        func_symbol.formal_params.append(return_var_symbol)
+
+        # Insert parameters into the function scope
+        for param in node.formal_params:
+            param_type = self.current_scope.lookup(param.type_node.value)
+            param_name = param.var_node.value
+            var_symbol = VarSymbol(param_name, param_type)
+            self.current_scope.insert(var_symbol)
+            func_symbol.formal_params.append(var_symbol)
+
+        self.visit(node.block_node)
+
+        self.log(function_scope)
+
+        self.current_scope = self.current_scope.enclosing_scope
+        self.log(f"LEAVE scope: {func_name}")
+
+        # accessed by the interpreter when executing procedure call
+        func_symbol.block_ast = node.block_node
+
+    def visit_FunctionCall(self, node: FunctionCall) -> None:
+        for param_node in node.actual_params:
+            self.visit(param_node)
+
+        if self.current_scope is None:
+            self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
+            return
+        func_symbol = self.current_scope.lookup(node.func_name)
+        # accessed by the interpreter when executing procedure call
+        node.func_symbol = cast(FunctionSymbol, func_symbol)
 
 
 ###############################################################################
@@ -1091,6 +1315,7 @@ class SemanticAnalyzer(NodeVisitor):
 class ARType(Enum):
     PROGRAM = "PROGRAM"
     PROCEDURE = "PROCEDURE"
+    FUNCTION = "FUNCTION"
 
 
 class CallStack:
@@ -1226,7 +1451,7 @@ class Interpreter(NodeVisitor):
         ar = self.call_stack.peek()
         ar[var_name] = var_value
 
-    def visit_Var(self, node: Var):
+    def visit_Var(self, node: Var) -> Any:
         var_name = node.value
 
         ar = self.call_stack.peek()
@@ -1273,6 +1498,45 @@ class Interpreter(NodeVisitor):
         self.log(str(self.call_stack))
 
         self.call_stack.pop()
+
+    def visit_FunctionDecl(self, node: FunctionDecl) -> None:
+        pass
+
+    def visit_FunctionCall(self, node: FunctionCall) -> Any:
+        func_name = node.func_name
+        func_symbol = node.func_symbol
+
+        if func_symbol is None:
+            raise NullPointerError
+
+        ar = ActivationRecord(
+            name=func_name,
+            type=ARType.FUNCTION,
+            nesting_level=func_symbol.scope_level + 1,
+        )
+
+        formal_params = func_symbol.formal_params
+        actual_params = node.actual_params
+
+        for param_symbol, argument_node in zip(formal_params, actual_params):
+            ar[param_symbol.name] = self.visit(argument_node)
+
+        self.call_stack.push(ar)
+
+        self.log(f"ENTER: FUNCTION {func_name}")
+        self.log(str(self.call_stack))
+
+        # evaluate procedure body
+        if func_symbol.block_ast is None:
+            raise NullPointerError
+        self.visit(func_symbol.block_ast)
+
+        self.log(f"LEAVE: FUNCTION {func_name}")
+        self.log(str(self.call_stack))
+
+        self.call_stack.pop()
+
+        return ar[func_name]
 
     def interpret(self):
         tree = self.tree
