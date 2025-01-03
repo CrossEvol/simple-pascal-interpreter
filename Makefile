@@ -1,6 +1,9 @@
 run:
 	python spi.py ${file} --stack --scope
 
+runs:
+	python spi.py ${file} 
+
 test:
 	python test_interpreter.py
 

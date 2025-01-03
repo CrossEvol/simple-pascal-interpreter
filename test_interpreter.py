@@ -313,6 +313,74 @@ end. {Main}
         self.assertEqual(ar["sum"], 8)
         self.assertEqual(ar.nesting_level, 2)
 
+    def test_inner_ref_outer_var(self):
+        text = """\
+program Main;
+var x : integer;
+procedure Alpha();
+   procedure Beta();
+   begin
+      x := x +  20;
+   end;
+begin
+   x := 10;
+   Beta();      { procedure call }
+end;
+begin { Main }
+   Alpha();  { procedure call }
+end.  { Main }
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["x"], 30)
+        self.assertEqual(ar.nesting_level, 3)
+
+    def test_write_and_writeln(self):
+        text = """\
+program SimpleFunction;
+var 
+  a : integer;
+begin {Main}
+  a := 6;
+  WRITELN(5);
+  Writeln(5);
+  writeln(5);
+  Writeln(a);
+  WRITE(5);
+end. {Main}
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar.nesting_level, 2)
+
+    def test_write_and_writeln_inside_function(self):
+        text = """\
+program SimpleFunction;
+var 
+  a : integer;
+
+function sayHello(b: integer):Integer;
+begin
+  sayHello := a+b;
+  Writeln(sayHello);
+end;
+
+begin {Main}
+  a := 1;          { Initialize the variable 'a' within the main block }
+  a := sayHello(2);     { Call the function 'sayHello' with argument 7 }
+end. {Main}
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["a"], 3)
+        self.assertEqual(ar.nesting_level, 2)
+
     def test_program(self):
         text = """\
 PROGRAM Part12;

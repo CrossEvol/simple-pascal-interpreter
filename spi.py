@@ -954,6 +954,11 @@ class NodeVisitor:
 ###############################################################################
 
 
+class NativeMethod(Enum):
+    WRITE = "WRITE"
+    WRITELN = "WRITELN"
+
+
 class Symbol:
     def __init__(self, name: str, type: Symbol | None = None) -> None:
         self.name = name
@@ -1066,6 +1071,8 @@ class ScopedSymbolTable:
     def _init_builtins(self) -> None:
         self.insert(BuiltinTypeSymbol("INTEGER"))
         self.insert(BuiltinTypeSymbol("REAL"))
+        self.insert(BuiltinProcedureSymbol(NativeMethod.WRITE.name, []))
+        self.insert(BuiltinProcedureSymbol(NativeMethod.WRITELN.name, []))
 
     def __str__(self) -> str:
         h1 = "SCOPE (SCOPED SYMBOL TABLE)"
@@ -1102,6 +1109,11 @@ class ScopedSymbolTable:
         # 'symbol' is either an instance of the Symbol class or None
         symbol = self._symbols.get(name)
 
+        if symbol is not None:
+            return symbol
+
+        #  variables , identifiers,  function and procedure names in Pascal are not case-sensitive
+        symbol = self._symbols.get(name.upper())
         if symbol is not None:
             return symbol
 
@@ -1326,6 +1338,8 @@ class CallStack:
         self._records.append(ar)
 
     def pop(self) -> ActivationRecord:
+        if len(self._records) >= 2:
+            self._records[-2].copy(self._records[-1], True)
         return self._records.pop()
 
     def peek(self) -> ActivationRecord:
@@ -1352,6 +1366,11 @@ class ActivationRecord:
 
     def __getitem__(self, key: str):
         return self.members[key]
+
+    def copy(self, other: "ActivationRecord", override: bool):
+        for name, val in other.members.items():
+            if override or name not in self.members:
+                self.members[name] = val
 
     def get(self, key):
         return self.members.get(key)
@@ -1478,6 +1497,52 @@ class Interpreter(NodeVisitor):
             nesting_level=proc_symbol.scope_level + 1,
         )
 
+        pre_ar = self.call_stack.peek()
+        if pre_ar is not None:
+            ar.copy(pre_ar, False)
+
+        if isinstance(proc_symbol, BuiltinProcedureSymbol):
+            if proc_symbol.name.upper() == NativeMethod.WRITE.name:
+                actual_params = node.actual_params
+
+                for i in range(0, len(actual_params)):
+                    ar[i] = self.visit(actual_params[i])
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                # output actual params
+                for argument_node in actual_params:
+                    print(self.visit(argument_node),end = " ")
+
+                self.log(f"LEAVE: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return
+            if proc_symbol.name.upper() == NativeMethod.WRITELN.name:
+                actual_params = node.actual_params
+
+                for i in range(0, len(actual_params)):
+                    ar[i] = self.visit(actual_params[i])
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                # output actual params
+                for argument_node in actual_params:
+                    print(self.visit(argument_node))
+
+                self.log(f"LEAVE: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return
+
         formal_params = proc_symbol.formal_params
         actual_params = node.actual_params
 
@@ -1514,6 +1579,10 @@ class Interpreter(NodeVisitor):
             type=ARType.FUNCTION,
             nesting_level=func_symbol.scope_level + 1,
         )
+
+        pre_ar = self.call_stack.peek()
+        if pre_ar is not None:
+            ar.copy(pre_ar, False)
 
         formal_params = func_symbol.formal_params
         actual_params = node.actual_params

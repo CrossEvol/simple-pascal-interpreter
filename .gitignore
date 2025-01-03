@@ -175,4 +175,7 @@ cython_debug/
 *.png
 
 #vscode
-.vscode
+.vscode/settings.json
+
+# IDE
+.idea
