@@ -288,6 +288,23 @@ class InterpreterTestCase(unittest.TestCase):
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar["flag"], result)
 
+    def test_default_value_for_type(self):
+        text = """\
+program DefaultValue;
+var
+  num: Integer;
+  bool: Boolean;
+begin {Main}
+end. {Main}
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["num"], 0)
+        self.assertEqual(ar["bool"], False)
+        self.assertEqual(ar.nesting_level, 1)
+
     def test_procedure_call(self):
         text = """\
 program Main;

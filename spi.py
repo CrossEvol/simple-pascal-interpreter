@@ -1456,7 +1456,13 @@ class Interpreter(NodeVisitor):
         self.visit(node.compound_statement)
 
     def visit_VarDecl(self, node: VarDecl) -> None:
-        # Do nothing
+        ar = self.call_stack.peek()
+        if node.type_node.token.type == TokenType.BOOLEAN:
+            ar[node.var_node.value] = False
+        elif node.type_node.token.type == TokenType.INTEGER:
+            ar[node.var_node.value] = 0
+        elif node.type_node.token.type == TokenType.REAL:
+            ar[node.var_node.value] = 0.0
         pass
 
     def visit_Type(self, node: Type) -> None:
