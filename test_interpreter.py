@@ -29,6 +29,8 @@ class LexerTestCase(unittest.TestCase):
             ("END", TokenType.END, "END"),
             ("PROCEDURE", TokenType.PROCEDURE, "PROCEDURE"),
             ("FUNCTION", TokenType.FUNCTION, "FUNCTION"),
+            ("true", TokenType.TRUE, "TRUE"),
+            ("false", TokenType.FALSE, "FALSE"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -267,6 +269,25 @@ class InterpreterTestCase(unittest.TestCase):
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar["a"], result)
 
+    def test_boolean_expressions(self):
+        for expr, result in (
+            ("true", True),
+            ("false", False),
+        ):
+            interpreter = self.makeInterpreter(
+                """PROGRAM Test;
+                   VAR
+                       flag : BOOLEAN;
+                   BEGIN
+                       flag := %s
+                   END.
+                """
+                % expr
+            )
+            interpreter.interpret()
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar["flag"], result)
+
     def test_procedure_call(self):
         text = """\
 program Main;
@@ -339,22 +360,32 @@ end.  { Main }
 
     def test_write_and_writeln(self):
         text = """\
-program SimpleFunction;
+program HackOutput;
 var 
   a : integer;
+  flag : Boolean;
 begin {Main}
+
+  flag := false;
+  writeln(flag);
+  flag := true;
+  writeln(flag);
+
   a := 6;
   WRITELN(5);
   Writeln(5);
   writeln(5);
   Writeln(a);
   WRITE(5);
+  
 end. {Main}
 """
         interpreter = self.makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
+        self.assertEqual(ar["a"], 6)
+        self.assertEqual(ar["flag"], True)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_write_and_writeln_inside_function(self):

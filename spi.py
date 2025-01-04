@@ -46,6 +46,10 @@ class NullPointerError(Error):
     pass
 
 
+class UnknownBooleanError(Error):
+    pass
+
+
 class CurrentScopeMissingError(Error):
     pass
 
@@ -87,6 +91,9 @@ class TokenType(Enum):
     FUNCTION = "FUNCTION"
     REAL = "REAL"
     INTEGER_DIV = "DIV"
+    BOOLEAN = "BOOLEAN"
+    TRUE = "TRUE"
+    FALSE = "FALSE"
     VAR = "VAR"
     PROCEDURE = "PROCEDURE"
     BEGIN = "BEGIN"
@@ -160,7 +167,7 @@ def _build_reserved_keywords():
     return reserved_keywords
 
 
-RESERVED_KEYWORDS = _build_reserved_keywords()
+RESERVED_KEYWORDS: dict[str, TokenType] = _build_reserved_keywords()
 
 
 @dataclass
@@ -368,6 +375,12 @@ class Num(AST):
         self.value: Number = token.value
 
 
+class Bool(AST):
+    def __init__(self, token: Token) -> None:
+        self.token = token
+        self.value: bool = token.value
+
+
 class UnaryOp(AST):
     def __init__(self, op: Token, expr: AST) -> None:
         self.token = self.op = op
@@ -475,7 +488,7 @@ type Decl = VarDecl | ProcedureDecl | FunctionDecl
 type Statement = Compound | ProcedureCall | Assign | NoOp
 type Expr = "Factor"
 type Term = "Factor"
-type Factor = UnaryOp | BinOp | Num | Var | FunctionCall
+type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall
 
 
 class Parser:
@@ -646,14 +659,14 @@ class Parser:
         return func_decl
 
     def type_spec(self) -> Type:
-        """type_spec : INTEGER
-        | REAL
-        """
+        """type_spec : INTEGER | REAL | BOOLEAN"""
         token = self.current_token
         if self.current_token.type == TokenType.INTEGER:
             self.eat(TokenType.INTEGER)
-        else:
+        elif self.current_token.type == TokenType.REAL:
             self.eat(TokenType.REAL)
+        elif self.current_token.type == TokenType.BOOLEAN:
+            self.eat(TokenType.BOOLEAN)
         node = Type(token)
         return node
 
@@ -826,12 +839,16 @@ class Parser:
         return node
 
     def factor(self) -> Factor:
-        """factor : PLUS factor
-        | MINUS factor
-        | INTEGER_CONST
-        | REAL_CONST
-        | LPAREN expr RPAREN
-        | variable
+        """
+        factor : PLUS factor
+               | MINUS factor
+               | INTEGER_CONST
+               | REAL_CONST
+               | TRUE_CONST
+               | FALSE_CONST
+               | LPAREN expr RPAREN
+               | func_call_expr
+               | variable
         """
         token = self.current_token
         node: Factor
@@ -849,6 +866,12 @@ class Parser:
         elif token.type == TokenType.REAL_CONST:
             self.eat(TokenType.REAL_CONST)
             return Num(token)
+        elif token.type == TokenType.TRUE:
+            self.eat(TokenType.TRUE)
+            return Bool(token)
+        elif token.type == TokenType.FALSE:
+            self.eat(TokenType.FALSE)
+            return Bool(token)
         elif token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
             node = self.expr()
@@ -885,7 +908,7 @@ class Parser:
 
         formal_parameters : ID (COMMA ID)* COLON type_spec
 
-        type_spec : INTEGER | REAL
+        type_spec : INTEGER | REAL | BOOLEAN
 
         compound_statement : BEGIN statement_list END
 
@@ -914,6 +937,8 @@ class Parser:
                | MINUS factor
                | INTEGER_CONST
                | REAL_CONST
+               | TRUE_CONST
+               | FALSE_CONST
                | LPAREN expr RPAREN
                | func_call_expr
                | variable
@@ -1214,6 +1239,9 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Num(self, node: Num) -> None:
         pass
 
+    def visit_Bool(self, node: Num) -> None:
+        pass
+
     def visit_UnaryOp(self, node: UnaryOp) -> None:
         pass
 
@@ -1451,6 +1479,13 @@ class Interpreter(NodeVisitor):
     def visit_Num(self, node: Num):
         return node.value
 
+    def visit_Bool(self, node: Bool):
+        if node.token.type == TokenType.TRUE:
+            return True
+        elif node.token.type == TokenType.FALSE:
+            return False
+        raise UnknownBooleanError()
+
     def visit_UnaryOp(self, node: UnaryOp) -> Number:
         op = node.op.type
         if op == TokenType.PLUS:
@@ -1515,7 +1550,7 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node),end = " ")
+                    print(self.visit(argument_node), end=" ")
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
