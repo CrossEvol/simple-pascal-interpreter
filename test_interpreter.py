@@ -31,6 +31,15 @@ class LexerTestCase(unittest.TestCase):
             ("FUNCTION", TokenType.FUNCTION, "FUNCTION"),
             ("true", TokenType.TRUE, "TRUE"),
             ("false", TokenType.FALSE, "FALSE"),
+            ("and", TokenType.AND, "AND"),
+            ("or", TokenType.OR, "OR"),
+            ("not", TokenType.NOT, "NOT"),
+            ("=", TokenType.EQ, "="),
+            ("<>", TokenType.NE, "<>"),
+            ("<", TokenType.LT, "<"),
+            (">", TokenType.GT, ">"),
+            ("<=", TokenType.LE, "<="),
+            (">=", TokenType.GE, ">="),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -41,7 +50,7 @@ class LexerTestCase(unittest.TestCase):
     def test_lexer_exception(self):
         from spi import LexerError
 
-        lexer = self.makeLexer("<")
+        lexer = self.makeLexer("!")
         with self.assertRaises(LexerError):
             lexer.get_next_token()
 
@@ -273,6 +282,21 @@ class InterpreterTestCase(unittest.TestCase):
         for expr, result in (
             ("true", True),
             ("false", False),
+            ("true and false", False),
+            ("true and true", True),
+            ("true or false", True),
+            ("not true", False),
+            ("not false", True),
+            ("not true and not true", False),
+            ("1 < 2", True),
+            ("1 > 2", False),
+            ("1 = 2", False),
+            ("1 <> 2", True),
+            ("1 <= 2", True),
+            ("1 >= 2", False),
+            ("1 < 2 and 2 < 3", True),
+            ("1 < 2 and 2 > 3", False),
+            ("1 < 2 or 2 > 3", True),
         ):
             interpreter = self.makeInterpreter(
                 """PROGRAM Test;
@@ -329,6 +353,63 @@ end.  { Main }
         self.assertEqual(ar["b"], 7)
         self.assertEqual(ar["x"], 30)
         self.assertEqual(ar.nesting_level, 2)
+
+    def test_comparison_calculus(self):
+        text = """\
+program ComparisonTest;
+var 
+  a , b : integer;
+  f1, f2, f3, f4, f5, f6 : Boolean;
+begin {Main}
+  a := 1;
+  b := 2;
+  f1:= a < b; {TRUE}
+  f2:= a > b; {FALSE}
+  f3:= a = b; {FALSE}
+  f4:= a <> b; {TRUE}
+  f5:= a <= b; {TRUE}
+  f6:= a >= b; {FALSE}
+end. {Main}
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["a"], 1)
+        self.assertEqual(ar["b"], 2)
+        self.assertEqual(ar["f1"], True)
+        self.assertEqual(ar["f2"], False)
+        self.assertEqual(ar["f3"], False)
+        self.assertEqual(ar["f4"], True)
+        self.assertEqual(ar["f5"], True)
+        self.assertEqual(ar["f6"], False)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_logic_calculus(self):
+        text = """\
+program LogicCalculus;
+var 
+  a , b, f1, f2, f3, f4: BOOLEAN;
+begin {Main}
+  a := TRUE;
+  b := FALSE;
+  f1 := a and b; {FALSE}
+  f2 := a or b; {TRUE}
+  f3 := not a; {FALSE}
+  f4 := not b; {TRUE}
+end. {Main}
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["a"], True)
+        self.assertEqual(ar["b"], False)
+        self.assertEqual(ar["f1"], False)
+        self.assertEqual(ar["f2"], True)
+        self.assertEqual(ar["f3"], False)
+        self.assertEqual(ar["f4"], True)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_function_call(self):
         text = """\

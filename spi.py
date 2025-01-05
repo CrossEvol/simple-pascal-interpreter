@@ -85,6 +85,12 @@ class TokenType(Enum):
     DOT = "."
     COLON = ":"
     COMMA = ","
+    EQ = "="
+    NE = "<>"
+    GT = ">"
+    LT = "<"
+    GE = ">="
+    LE = "<="
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
     INTEGER = "INTEGER"
@@ -94,6 +100,9 @@ class TokenType(Enum):
     BOOLEAN = "BOOLEAN"
     TRUE = "TRUE"
     FALSE = "FALSE"
+    AND = "AND"
+    OR = "OR"
+    NOT = "NOT"
     VAR = "VAR"
     PROCEDURE = "PROCEDURE"
     BEGIN = "BEGIN"
@@ -279,6 +288,71 @@ class Lexer:
 
         return token
 
+    def comparison(self) -> Token:
+        """handle six comparison operators, [ '<', '>', '<>', '=', '<=', '>=']"""
+        if self.current_char == "=":
+            token = Token(
+                type=TokenType.EQ,
+                value=TokenType.EQ.value,  # '='
+                lineno=self.lineno,
+                column=self.column,
+            )
+            self.advance()
+            return token
+
+        if self.current_char == ">":
+            if self.peek() == "=":
+                token = Token(
+                    type=TokenType.GE,
+                    value=TokenType.GE.value,  # '>='
+                    lineno=self.lineno,
+                    column=self.column,
+                )
+                self.advance()
+                self.advance()
+                return token
+            else:
+                token = Token(
+                    type=TokenType.GT,
+                    value=TokenType.GT.value,  # '>'
+                    lineno=self.lineno,
+                    column=self.column,
+                )
+                self.advance()
+                return token
+
+        if self.current_char == "<":
+            if self.peek() == "=":
+                token = Token(
+                    type=TokenType.LE,
+                    value=TokenType.LE.value,  # '<='
+                    lineno=self.lineno,
+                    column=self.column,
+                )
+                self.advance()
+                self.advance()
+                return token
+            elif self.peek() == ">":
+                token = Token(
+                    type=TokenType.NE,
+                    value=TokenType.NE.value,  # '<>'
+                    lineno=self.lineno,
+                    column=self.column,
+                )
+                self.advance()
+                self.advance()
+                return token
+            else:
+                token = Token(
+                    type=TokenType.LT,
+                    value=TokenType.LT.value,  # '<'
+                    lineno=self.lineno,
+                    column=self.column,
+                )
+                self.advance()
+                return token
+        raise LexerError
+
     def get_next_token(self) -> Token:
         """Lexical analyzer (also known as scanner or tokenizer)
 
@@ -289,6 +363,9 @@ class Lexer:
             if self.current_char.isspace():
                 self.skip_whitespace()
                 continue
+
+            if self.current_char in ["<", ">", "="]:
+                return self.comparison()
 
             if self.current_char == "{":
                 self.advance()
@@ -757,12 +834,12 @@ class Parser:
         )
 
         if self.current_token.type != TokenType.RPAREN:
-            expr = self.expr()
+            expr = self.summation_expr()
             actual_params.append(expr)
 
         while self.current_token.type == TokenType.COMMA:
             self.eat(TokenType.COMMA)
-            expr = self.expr()
+            expr = self.summation_expr()
             actual_params.append(expr)
 
         self.eat(TokenType.RPAREN)
@@ -801,10 +878,59 @@ class Parser:
         return NoOp()
 
     def expr(self) -> Expr:
+        """expr : logic_expr"""
+        node = self.logic_expr()
+        return node
+
+    def logic_expr(self) -> Expr:
+        """logic_expr : comparison_expr ((and | or ) comparison_expr)*"""
+        node = self.comparison_expr()
+
+        while self.current_token.type in (TokenType.AND, TokenType.OR):
+            token = self.current_token
+            if token.type == TokenType.AND:
+                self.eat(TokenType.AND)
+            elif token.type == TokenType.OR:
+                self.eat(TokenType.OR)
+
+            node = BinOp(left=node, op=token, right=self.comparison_expr())
+
+        return node
+
+    def comparison_expr(self) -> Expr:
+        """comparison_expr : summation_expr ( (EQ | NE | GT | GE | LT | LE) summation_expr )*"""
+        node = self.summation_expr()
+        while self.current_token.type in (
+            TokenType.EQ,
+            TokenType.NE,
+            TokenType.GT,
+            TokenType.GE,
+            TokenType.LT,
+            TokenType.LE,
+        ):
+            token = self.current_token
+            if token.type == TokenType.EQ:
+                self.eat(TokenType.EQ)
+            elif token.type == TokenType.NE:
+                self.eat(TokenType.NE)
+            elif token.type == TokenType.GT:
+                self.eat(TokenType.GT)
+            elif token.type == TokenType.GE:
+                self.eat(TokenType.GE)
+            elif token.type == TokenType.LT:
+                self.eat(TokenType.LT)
+            elif token.type == TokenType.LE:
+                self.eat(TokenType.LE)
+
+            node = BinOp(left=node, op=token, right=self.summation_expr())
+
+        return node
+
+    def summation_expr(self) -> Expr:
         """
-        expr : term ((PLUS | MINUS) term)*
+        summation_expr : multiplication_expr ((PLUS | MINUS) multiplication_expr)*
         """
-        node = self.term()
+        node = self.multiplication_expr()
 
         while self.current_token.type in (TokenType.PLUS, TokenType.MINUS):
             token = self.current_token
@@ -813,12 +939,12 @@ class Parser:
             elif token.type == TokenType.MINUS:
                 self.eat(TokenType.MINUS)
 
-            node = BinOp(left=node, op=token, right=self.term())
+            node = BinOp(left=node, op=token, right=self.multiplication_expr())
 
         return node
 
-    def term(self) -> Term:
-        """term : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*"""
+    def multiplication_expr(self) -> Term:
+        """multiplication_expr : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*"""
         node = self.factor()
 
         while self.current_token.type in (
@@ -840,7 +966,8 @@ class Parser:
 
     def factor(self) -> Factor:
         """
-        factor : PLUS factor
+        factor : not expr
+               | PLUS factor
                | MINUS factor
                | INTEGER_CONST
                | REAL_CONST
@@ -852,6 +979,13 @@ class Parser:
         """
         token = self.current_token
         node: Factor
+        # logic OP
+        if token.type == TokenType.NOT:
+            self.eat(TokenType.NOT)
+            node = UnaryOp(token, self.comparison_expr())
+            return node
+
+        # arithmetic OP
         if token.type == TokenType.PLUS:
             self.eat(TokenType.PLUS)
             node = UnaryOp(token, self.factor())
@@ -860,7 +994,9 @@ class Parser:
             self.eat(TokenType.MINUS)
             node = UnaryOp(token, self.factor())
             return node
-        elif token.type == TokenType.INTEGER_CONST:
+
+        # value
+        if token.type == TokenType.INTEGER_CONST:
             self.eat(TokenType.INTEGER_CONST)
             return Num(token)
         elif token.type == TokenType.REAL_CONST:
@@ -872,12 +1008,16 @@ class Parser:
         elif token.type == TokenType.FALSE:
             self.eat(TokenType.FALSE)
             return Bool(token)
-        elif token.type == TokenType.LPAREN:
+
+        # parent take precedence
+        if token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
-            node = self.expr()
+            node = self.summation_expr()
             self.eat(TokenType.RPAREN)
             return node
-        elif (
+
+        # call
+        if (
             token.type == TokenType.ID
             and self.peek_next_token().type == TokenType.LPAREN
         ):
@@ -929,11 +1069,18 @@ class Parser:
 
         empty :
 
-        expr : term ((PLUS | MINUS) term)*
+        expr : logic_expr
 
-        term : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*
+        logic_expr : comparison_expr ((and | or ) comparison_expr)*
 
-        factor : PLUS factor
+        comparison_expr : summation_expr ( (EQ | NE | GT | GE | LT | LE) summation_expr )*
+
+        summation_expr : multiplication_expr ((PLUS | MINUS) multiplication_expr)*
+
+        multiplication_expr : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*
+
+        factor : not expr
+               | PLUS factor
                | MINUS factor
                | INTEGER_CONST
                | REAL_CONST
@@ -1469,7 +1616,14 @@ class Interpreter(NodeVisitor):
         # Do nothing
         pass
 
-    def visit_BinOp(self, node: BinOp) -> Number:
+    def visit_BinOp(self, node: BinOp) -> Number | bool:
+        # logic operator
+        if node.op.type == TokenType.AND:
+            return bool(self.visit(node.left)) and bool(self.visit(node.right))
+        elif node.op.type == TokenType.OR:
+            return bool(self.visit(node.left)) or bool(self.visit(node.right))
+
+        # arithmetic operator
         if node.op.type == TokenType.PLUS:
             return cast(Number, self.visit(node.left) + self.visit(node.right))
         elif node.op.type == TokenType.MINUS:
@@ -1480,6 +1634,22 @@ class Interpreter(NodeVisitor):
             return cast(Number, self.visit(node.left) // self.visit(node.right))
         elif node.op.type == TokenType.FLOAT_DIV:
             return float(self.visit(node.left)) / float(self.visit(node.right))
+
+        # comparison operator
+        if node.op.type == TokenType.LT:
+            return float(self.visit(node.left)) < float(self.visit(node.right))
+        elif node.op.type == TokenType.GT:
+            return float(self.visit(node.left)) > float(self.visit(node.right))
+        elif node.op.type == TokenType.EQ:
+            return float(self.visit(node.left)) == float(self.visit(node.right))
+        elif node.op.type == TokenType.NE:
+            return float(self.visit(node.left)) != float(self.visit(node.right))
+        elif node.op.type == TokenType.LE:
+            return float(self.visit(node.left)) <= float(self.visit(node.right))
+        elif node.op.type == TokenType.GE:
+            return float(self.visit(node.left)) >= float(self.visit(node.right))
+
+        # !!
         raise UnknownOperatorError(ErrorCode.UNKNOWN_BIN_OP, node.token)
 
     def visit_Num(self, node: Num):
@@ -1492,8 +1662,13 @@ class Interpreter(NodeVisitor):
             return False
         raise UnknownBooleanError()
 
-    def visit_UnaryOp(self, node: UnaryOp) -> Number:
+    def visit_UnaryOp(self, node: UnaryOp) -> Number | bool:
         op = node.op.type
+        # negative bang
+        if op == TokenType.NOT:
+            return not self.visit(node.expr)
+
+        # signal bang
         if op == TokenType.PLUS:
             return cast(Number, +self.visit(node.expr))
         elif op == TokenType.MINUS:
