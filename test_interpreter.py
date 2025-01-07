@@ -34,12 +34,23 @@ class LexerTestCase(unittest.TestCase):
             ("and", TokenType.AND, "AND"),
             ("or", TokenType.OR, "OR"),
             ("not", TokenType.NOT, "NOT"),
+            ("TRUE", TokenType.TRUE, "TRUE"),
+            ("FALSE", TokenType.FALSE, "FALSE"),
+            ("AND", TokenType.AND, "AND"),
+            ("OR", TokenType.OR, "OR"),
+            ("NOT", TokenType.NOT, "NOT"),
             ("=", TokenType.EQ, "="),
             ("<>", TokenType.NE, "<>"),
             ("<", TokenType.LT, "<"),
             (">", TokenType.GT, ">"),
             ("<=", TokenType.LE, "<="),
             (">=", TokenType.GE, ">="),
+            ("if", TokenType.IF, "IF"),
+            ("then", TokenType.THEN, "THEN"),
+            ("else", TokenType.ELSE, "ELSE"),
+            ("IF", TokenType.IF, "IF"),
+            ("THEN", TokenType.THEN, "THEN"),
+            ("ELSE", TokenType.ELSE, "ELSE"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -509,6 +520,120 @@ end. {Main}
 
         self.assertEqual(ar["a"], 3)
         self.assertEqual(ar.nesting_level, 2)
+
+    def test_if_then(self):
+        for expr, result in ((10, -1), (21, 1)):
+            text = (
+                """\
+            program IfThen;
+            var
+            a,b:integer;
+            begin
+            a:= %d;
+            b:= 1;
+            if a < 20 then
+                b := -1;
+            end.
+        """
+                % expr
+            )
+            interpreter = self.makeInterpreter(text)
+            interpreter.interpret()
+            ar = interpreter.call_stack.peek()
+
+            self.assertEqual(ar["a"], expr)
+            self.assertEqual(ar["b"], result)
+            self.assertEqual(ar.nesting_level, 1)
+
+    def test_if_else(self):
+        for expr, result in ((10, -1), (21, 1)):
+            text = (
+                """\
+    program ifelseChecking;
+    var
+    a , b : integer;
+    begin
+    a := %d;
+    if a < 20  then
+        b:= -1
+    else
+        b:= 1;
+    end.
+    """
+                % expr
+            )
+            interpreter = self.makeInterpreter(text)
+            interpreter.interpret()
+            ar = interpreter.call_stack.peek()
+
+            self.assertEqual(ar["a"], expr)
+            self.assertEqual(ar["b"], result)
+            self.assertEqual(ar.nesting_level, 1)
+
+    def test_if_nest(self):
+        text = """\
+program NestedIfElseChecking;
+var
+   a, b, c : integer;
+   flag : boolean;
+begin
+   a := 100;
+   b := 200;
+   c := 300;
+   if a = 100 then
+      if b = 200 then
+        if c = 300 then
+            flag := true
+        else 
+            flag := false
+      else 
+        flag := false
+    else 
+    flag := false;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["a"], 100)
+        self.assertEqual(ar["b"], 200)
+        self.assertEqual(ar["c"], 300)
+        self.assertEqual(ar["flag"], True)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_if_block(self):
+        for flag, a, b in ((True, 2, -1), (False, 1, -2)):
+            text = (
+                """\
+    program IfBlockChecking;
+    var
+    a , b : integer;
+    flag : boolean;
+    begin
+    flag := %s;
+    a := 1;
+    b := -1;
+    if flag then
+        begin 
+            a := a+1
+        end
+    else
+        begin 
+            b := b-1;
+        end;
+    end.
+    """
+                % flag
+            )
+            interpreter = self.makeInterpreter(text)
+            interpreter.interpret()
+            ar = interpreter.call_stack.peek()
+
+            self.assertEqual(ar["flag"], flag)
+            self.assertEqual(ar["a"], a)
+            self.assertEqual(ar["b"], b)
+            self.assertEqual(ar.nesting_level, 1)
 
     def test_program(self):
         text = """\

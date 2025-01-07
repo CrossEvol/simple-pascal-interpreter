@@ -104,6 +104,9 @@ class TokenType(Enum):
     OR = "OR"
     NOT = "NOT"
     VAR = "VAR"
+    IF = "IF"
+    THEN = "THEN"
+    ELSE = "ELSE"
     PROCEDURE = "PROCEDURE"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
@@ -471,6 +474,22 @@ class Compound(AST):
         self.children: list[AST] = []
 
 
+class IfStatement(AST):
+    """Represents a 'if ... then... elseif ... then ... else' statement"""
+
+    def __init__(
+        self,
+        condition: AST,
+        then_branch: AST,
+        else_if_branches: list[IfStatement],
+        else_branch: AST | None,
+    ) -> None:
+        self.condition = condition
+        self.then_branch = then_branch
+        self.else_if_branches = else_if_branches
+        self.else_branch = else_branch
+
+
 class Assign(AST):
     def __init__(self, left: Var, op: Token, right) -> None:
         self.left = left
@@ -562,7 +581,7 @@ class FunctionCall(AST):
 
 
 type Decl = VarDecl | ProcedureDecl | FunctionDecl
-type Statement = Compound | ProcedureCall | Assign | NoOp
+type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement
 type Expr = "Factor"
 type Term = "Factor"
 type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall
@@ -776,22 +795,71 @@ class Parser:
 
         return results
 
+    # it should deal with func_call_expr
     def statement(self) -> Statement:
         """
         statement : compound_statement
                   | proccall_statement
                   | assignment_statement
+                  | if_statement
                   | empty
         """
         node: Statement
         if self.current_token.type == TokenType.BEGIN:
             node = self.compound_statement()
+        elif self.current_token.type == TokenType.IF:
+            node = self.if_statement()
         elif self.current_token.type == TokenType.ID and self.lexer.current_char == "(":
             node = self.proccall_statement()
         elif self.current_token.type == TokenType.ID:
             node = self.assignment_statement()
         else:
             node = self.empty()
+        return node
+
+    def if_statement(self) -> IfStatement:
+        """
+        if_statement: IF logic_expr THEN (statement | compound_statement)
+                    (ELSE IF logic_expr THEN (statement | compound_statement))*
+                    (ELSE (statement | compound_statement))? SEMI
+        """
+        self.eat(TokenType.IF)
+        condition = self.logic_expr()
+        self.eat(TokenType.THEN)
+        then_branch: AST
+        if self.current_token.type == TokenType.BEGIN:
+            then_branch = self.compound_statement()
+        else:
+            then_branch = self.statement()
+
+        else_if_branches: list[IfStatement] = []
+        else_branch: AST | None = None
+        while self.current_token.type == TokenType.ELSE:
+            self.eat(TokenType.ELSE)
+            sub_then_branch: AST
+            if self.current_token.type == TokenType.IF:
+                self.eat(TokenType.IF)
+                sub_condition = self.logic_expr()
+                self.eat(TokenType.THEN)
+                if self.current_token.type == TokenType.BEGIN:
+                    sub_then_branch = self.compound_statement()
+                else:
+                    sub_then_branch = self.statement()
+                sub_node = IfStatement(sub_condition, sub_then_branch, [], None)
+                else_if_branches.append(sub_node)
+            else:
+                if self.current_token.type == TokenType.BEGIN:
+                    else_branch = self.compound_statement()
+                else:
+                    else_branch = self.statement()
+                break
+
+        node = IfStatement(
+            condition,
+            then_branch,
+            else_if_branches,
+            else_branch,
+        )
         return node
 
     def proccall_statement(self) -> ProcedureCall:
@@ -966,7 +1034,7 @@ class Parser:
 
     def factor(self) -> Factor:
         """
-        factor : not expr
+        factor : not comparison_expr
                | PLUS factor
                | MINUS factor
                | INTEGER_CONST
@@ -1057,9 +1125,13 @@ class Parser:
 
         statement : compound_statement
                   | proccall_statement
-                  | func_call_expr
                   | assignment_statement
+                  | if_statement
                   | empty
+
+        if_statement: IF logic_expr THEN (statement | compound_statement)
+                    (ELSE IF logic_expr THEN (statement | compound_statement))*
+                    (ELSE (statement | compound_statement))? SEMI
 
         proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN
 
@@ -1079,7 +1151,7 @@ class Parser:
 
         multiplication_expr : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*
 
-        factor : not expr
+        factor : not comparison_expr
                | PLUS factor
                | MINUS factor
                | INTEGER_CONST
@@ -1342,6 +1414,14 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
+
+    def visit_IfStatement(self, node: IfStatement) -> None:
+        self.visit(node.condition)
+        self.visit(node.then_branch)
+        for branch in node.else_if_branches:
+            self.visit(branch)
+        if node.else_branch != None:
+            self.visit(node.else_branch)
 
     def visit_BinOp(self, node: BinOp) -> None:
         self.visit(node.left)
@@ -1782,6 +1862,22 @@ class Interpreter(NodeVisitor):
 
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
         pass
+
+    def visit_IfStatement(self, node: IfStatement) -> None:
+        flag: bool = self.visit(node.condition)
+
+        if flag == True:
+            self.visit(node.then_branch)
+            return
+        else:
+            for branch in node.else_if_branches:
+                sub_flag: bool = self.visit(branch)
+                if sub_flag == True:
+                    self.visit(branch.then_branch)
+                    return
+
+        if node.else_branch != None:
+            self.visit(node.else_branch)
 
     def visit_FunctionCall(self, node: FunctionCall) -> Any:
         func_name = node.func_name
