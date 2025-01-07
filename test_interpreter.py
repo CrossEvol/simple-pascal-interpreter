@@ -51,6 +51,10 @@ class LexerTestCase(unittest.TestCase):
             ("IF", TokenType.IF, "IF"),
             ("THEN", TokenType.THEN, "THEN"),
             ("ELSE", TokenType.ELSE, "ELSE"),
+            ("WHILE", TokenType.WHILE, "WHILE"),
+            ("DO", TokenType.DO, "DO"),
+            ("TO", TokenType.TO, "TO"),
+            ("FOR", TokenType.FOR, "FOR"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -191,6 +195,29 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.error_code, ErrorCode.DUPLICATE_ID)
         self.assertEqual(the_exception.token.value, "a")
         self.assertEqual(the_exception.token.lineno, 5)
+
+    def test_loop_control_variable_can_not_modified(self):
+        from spi import SemanticError, ErrorCode
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program forLoop;
+            var
+                a, sum: integer;
+            begin
+                for a := 1 to 10 do
+                begin
+                    a := a + 1; {can not modified loop_control_var}
+                    sum := sum + a;
+                end;
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW)
+        self.assertEqual(the_exception.token.value, "a")
+        self.assertEqual(the_exception.token.lineno, 8)
 
     def test_semantic_id_not_found_error(self):
         from spi import SemanticError, ErrorCode
@@ -634,6 +661,55 @@ end.
             self.assertEqual(ar["a"], a)
             self.assertEqual(ar["b"], b)
             self.assertEqual(ar.nesting_level, 1)
+
+    def test_while_loop(self):
+        text = """\
+program whileLoop;
+var
+   a: integer;
+
+begin
+   a := 10;
+   while  a < 20  do
+   begin
+      {writeln('value of a: ', a);}
+      a := a + 1;
+   end;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"], 20)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_for_loop(self):
+        text = """\
+program forLoop;
+var
+   a: integer;
+   b: integer;
+   sum : integer;
+
+begin
+   b := 10;
+   for a := 1 to b do
+   begin
+      sum := sum + a;
+   end;
+   {writeln(a);}
+   {writeln(b);}
+   {writeln(sum);}
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"], 10)
+        self.assertEqual(ar["sum"], 55)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_program(self):
         text = """\

@@ -20,6 +20,9 @@ class ErrorCode(Enum):
     CURRENT_SCOPE_NOT_FOUND = "Current scope not found"
     UNKNOWN_BIN_OP = "Unknown binary operator"
     UNKNOWN_UNARY_OP = "Unknown unary operator"
+    MODIFY_LOOP_VAR_NOT_ALLOW = (
+        "modify loop control variable is not allowed inside for-statement"
+    )
 
 
 class Error(Exception):
@@ -107,6 +110,10 @@ class TokenType(Enum):
     IF = "IF"
     THEN = "THEN"
     ELSE = "ELSE"
+    WHILE = "WHILE"
+    DO = "DO"
+    FOR = "FOR"
+    TO = "TO"
     PROCEDURE = "PROCEDURE"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
@@ -490,6 +497,23 @@ class IfStatement(AST):
         self.else_branch = else_branch
 
 
+class WhileStatement(AST):
+    """Represents a 'WHILE ... DO ... BEGIN ... END' block"""
+
+    def __init__(self, condition: AST, block: Compound) -> None:
+        self.condition = condition
+        self.block = block
+
+
+class ForStatement(AST):
+    """Represents a 'FOR left:= right TO ... DO (BEGIN ... END) or statement' block"""
+
+    def __init__(self, initialization: Assign, bound: AST, block: AST) -> None:
+        self.initialization = initialization
+        self.bound = bound
+        self.block = block
+
+
 class Assign(AST):
     def __init__(self, left: Var, op: Token, right) -> None:
         self.left = left
@@ -581,7 +605,7 @@ class FunctionCall(AST):
 
 
 type Decl = VarDecl | ProcedureDecl | FunctionDecl
-type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement
+type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
 type Expr = "Factor"
 type Term = "Factor"
 type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall
@@ -809,6 +833,10 @@ class Parser:
             node = self.compound_statement()
         elif self.current_token.type == TokenType.IF:
             node = self.if_statement()
+        elif self.current_token.type == TokenType.WHILE:
+            node = self.while_statement()
+        elif self.current_token.type == TokenType.FOR:
+            node = self.for_statement()
         elif self.current_token.type == TokenType.ID and self.lexer.current_char == "(":
             node = self.proccall_statement()
         elif self.current_token.type == TokenType.ID:
@@ -860,6 +888,31 @@ class Parser:
             else_if_branches,
             else_branch,
         )
+        return node
+
+    def while_statement(self) -> WhileStatement:
+        """while_statement:  WHILE logic_expr DO compound_statement SEMI"""
+        self.eat(TokenType.WHILE)
+        condition = self.logic_expr()
+        self.eat(TokenType.DO)
+        block = self.compound_statement()
+        self.eat(TokenType.SEMI)
+        node = WhileStatement(condition, block)
+        return node
+
+    def for_statement(self) -> ForStatement:
+        """for_statement:  FOR assignment_statement TO summation_expr DO (statement | compound_statement) SEMI"""
+        self.eat(TokenType.FOR)
+        initialization = self.assignment_statement()
+        self.eat(TokenType.TO)
+        bound = self.summation_expr()
+        self.eat(TokenType.DO)
+        block: AST
+        if self.current_token.type == TokenType.BEGIN:
+            block = self.compound_statement()
+        else:
+            block = self.statement()
+        node = ForStatement(initialization, bound, block)
         return node
 
     def proccall_statement(self) -> ProcedureCall:
@@ -1127,11 +1180,17 @@ class Parser:
                   | proccall_statement
                   | assignment_statement
                   | if_statement
+                  | for_statement
+                  | while_statement
                   | empty
 
         if_statement: IF logic_expr THEN (statement | compound_statement)
                     (ELSE IF logic_expr THEN (statement | compound_statement))*
                     (ELSE (statement | compound_statement))? SEMI
+
+        while_statement:  WHILE logic_expr DO compound_statement SEMI
+
+        for_statement:  FOR assignment_statement TO summation_expr DO (statement | compound_statement) SEMI
 
         proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN
 
@@ -1373,6 +1432,7 @@ class ScopedSymbolTable:
 class SemanticAnalyzer(NodeVisitor):
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
+        self.unmodified_vars: list[str] = []
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
@@ -1415,6 +1475,18 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_NoOp(self, node: NoOp) -> None:
         pass
 
+    def visit_WhileStatement(self, node: WhileStatement) -> None:
+        self.visit(node.condition)
+        self.visit(node.block)
+
+    def visit_ForStatement(self, node: ForStatement) -> None:
+        self.visit(node.initialization)
+        self.visit(node.bound)
+        var_name = node.initialization.left.value
+        self.unmodified_vars.append(var_name)
+        self.visit(node.block)
+        self.unmodified_vars.remove(var_name)
+
     def visit_IfStatement(self, node: IfStatement) -> None:
         self.visit(node.condition)
         self.visit(node.then_branch)
@@ -1452,6 +1524,8 @@ class SemanticAnalyzer(NodeVisitor):
         # right-hand side
         self.visit(node.right)
         # left-hand side
+        if node.left.value in self.unmodified_vars:
+            self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
         self.visit(node.left)
 
     def visit_Var(self, node: Var) -> None:
@@ -1776,6 +1850,22 @@ class Interpreter(NodeVisitor):
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
+
+    def visit_WhileStatement(self, node: WhileStatement) -> None:
+        while self.visit(node.condition) is True:
+            self.visit(node.block)
+
+    def visit_ForStatement(self, node: ForStatement) -> None:
+        ar = self.call_stack.peek()
+        var_name = node.initialization.left.value
+        self.visit(node.initialization)
+        bound_value = cast(Number, self.visit(node.bound))
+        var_value = ar[var_name]
+        while var_value <= bound_value:
+            self.visit(node.block)
+            var_value += 1
+            if var_value <= bound_value:
+                ar[var_name] = var_value
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         pass

@@ -1,7 +1,7 @@
-run:
+runs:
 	python spi.py ${file} --stack --scope
 
-runs:
+run:
 	python spi.py ${file} 
 
 test:
