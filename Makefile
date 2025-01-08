@@ -1,15 +1,18 @@
 runs:
-	python spi.py ${file} --stack --scope
+	@python spi.py ${file} --stack --scope
 
 run:
-	python spi.py ${file} 
+	@python spi.py ${file} 
+
+main:
+	@python main.py
 
 test:
 	python test_interpreter.py
 
 dot:
-	python gen_ast_dot.py ${file} >> ast.dot
-	dot -Tpng -o ast.png ast.dot
+	@python gen_ast_dot.py ${file} >> ast.dot
+	@dot -Tpng -o ast.png ast.dot
 
 type:
-	python auto_type.py ${file}
+	@python auto_type.py ${file}

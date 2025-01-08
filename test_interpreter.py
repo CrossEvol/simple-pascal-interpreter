@@ -21,6 +21,8 @@ class LexerTestCase(unittest.TestCase):
             ("-", TokenType.MINUS, "-"),
             ("(", TokenType.LPAREN, "("),
             (")", TokenType.RPAREN, ")"),
+            ("[", TokenType.LBRACKET, "["),
+            ("]", TokenType.RBRACKET, "]"),
             (":=", TokenType.ASSIGN, ":="),
             (".", TokenType.DOT, "."),
             ("number", TokenType.ID, "number"),
@@ -55,6 +57,9 @@ class LexerTestCase(unittest.TestCase):
             ("DO", TokenType.DO, "DO"),
             ("TO", TokenType.TO, "TO"),
             ("FOR", TokenType.FOR, "FOR"),
+            ("ARRAY", TokenType.ARRAY, "ARRAY"),
+            ("OF", TokenType.OF, "OF"),
+            ("..", TokenType.RANGE, ".."),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -548,6 +553,49 @@ end. {Main}
         self.assertEqual(ar["a"], 3)
         self.assertEqual(ar.nesting_level, 2)
 
+    def test_set_length_builtin_procedure(self):
+        text = """\
+program ArraySetLength;
+var
+    arr: array of Integer;
+    i, j, k: Integer;
+begin
+    i := Length(arr);
+    setLength(arr,10);
+    j := Length(arr);
+    for k := 1 to 10 do
+        arr[k-1] := k;
+    setLength(arr,5);
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"], 0)
+        self.assertEqual(ar["j"], 10)
+        self.assertEqual(ar["k"], 10)
+        for i in range(0, 5):
+            self.assertEqual(ar["arr"][i], i + 1)
+        self.assertEqual(ar.nesting_level, 2)
+
+    def test_length_builtin_function(self):
+        text = """\
+program ArrayLength;
+var
+  arr: array[1..5] of Integer; 
+  i: Integer;
+begin
+  i := Length(arr);
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"], 5)
+        self.assertEqual(ar.nesting_level, 2)
+
     def test_if_then(self):
         for expr, result in ((10, -1), (21, 1)):
             text = (
@@ -709,6 +757,118 @@ end.
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["a"], 10)
         self.assertEqual(ar["sum"], 55)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_array(self):
+        text = """\
+    program exArrays;
+    var
+       n: array [1..10] of integer;
+       i, j, sum: integer;
+
+    begin
+       for i := 1 to 10 do
+           n[ i ] := i + 100;
+       for j := 1 to 10 do
+           sum := sum + n[j];
+    end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"], 10)
+        self.assertEqual(ar["j"], 10)
+        self.assertEqual(ar["sum"], 1055)
+        for i in range(1, 10):
+            self.assertEqual(ar["n"][i], 100 + i)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_array_initialized(self):
+        text = """\
+program exArrays;
+var
+    intArr: array [1..2] of integer;
+    boolArr: array [1..2] of boolean;
+    realArr: array [1..2] of real;
+    negativeArr: array [-1..1] of integer;
+    zeroArr : array of integer;
+    nestArr : array [1..2] of array of integer;
+begin
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        for i in range(1, 2):
+            self.assertEqual(ar["intArr"][i], 0)
+            self.assertEqual(ar["boolArr"][i], False)
+            self.assertEqual(ar["realArr"][i], 0.0)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_array_range_invalid(self):
+        from spi import InterpreterError, ArrayRangeInvalidError
+
+        text = """\
+program ArranRange;
+var
+    validArr: array [1..2] of integer;
+    invalidArr : array [2 .. -2] of integer;
+begin
+end.
+    """
+        with self.assertRaises(InterpreterError) as cm:
+            interpreter = self.makeInterpreter(text)
+            interpreter.interpret()
+
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar.nesting_level, 1)
+        self.assertIsInstance(cm.exception, ArrayRangeInvalidError)
+
+    def test_static_array_modify_length(self):
+        from spi import InterpreterError, StaticArrayModifyLengthError
+
+        text = """\
+program ArranRange;
+var
+    arr: array [1..2] of integer;
+begin
+    setLength(arr,5);
+end.
+    """
+        with self.assertRaises(InterpreterError) as cm:
+            interpreter = self.makeInterpreter(text)
+            interpreter.interpret()
+
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar.nesting_level, 1)
+        self.assertIsInstance(cm.exception, StaticArrayModifyLengthError)
+
+    def test_array_out_of_range(self):
+        text = """\
+program ArranRange;
+var
+    intArr: array [1..2] of integer;
+    boolArr: array [1..2] of boolean;
+    realArr: array [1..2] of real;
+    nestArr : array [1..2] of array of integer;
+    a , b , c, d : integer;
+begin
+    a := intArr[100];
+    b := boolArr[100];
+    c := realArr[100];
+    d := nestArr[100];
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"], 0)
+        self.assertEqual(ar["b"], False)
+        self.assertEqual(ar["c"], 0.0)
+        self.assertEqual(ar["d"], {})
         self.assertEqual(ar.nesting_level, 1)
 
     def test_program(self):

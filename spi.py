@@ -11,6 +11,15 @@ from typing import Any, cast
 _SHOULD_LOG_SCOPE = False  # see '--scope' command line option
 _SHOULD_LOG_STACK = False  # see '--stack' command line option
 
+RETURN_NUM_FOR_LENGTH = "RETURN_NUM_FOR_LENGTH"
+
+
+class ElementType(Enum):
+    INTEGER = "INTEGER"
+    REAL = "REAL"
+    BOOL = "BOOL"
+    ARRAY = "ARRAY"
+
 
 class ErrorCode(Enum):
     UNEXPECTED_TOKEN = "Unexpected token"
@@ -41,23 +50,64 @@ class ParserError(Error):
     pass
 
 
+###############################################################################
+#                                                                             #
+#  SemanticError                                                                      #
+#                                                                             #
+###############################################################################
+
+
 class SemanticError(Error):
     pass
 
 
-class NullPointerError(Error):
+class UnknownTypeError(SemanticError):
     pass
 
 
-class UnknownBooleanError(Error):
+class UnknownArrayElementTypeError(UnknownTypeError):
     pass
 
 
-class CurrentScopeMissingError(Error):
+class UnknownBooleanError(UnknownTypeError):
     pass
 
 
-class UnknownOperatorError(Error):
+class MissingCurrentScopeError(SemanticError):
+    pass
+
+
+###############################################################################
+#                                                                             #
+#  InterpreterError                                                                      #
+#                                                                             #
+###############################################################################
+
+
+class InterpreterError(Error):
+    pass
+
+class StaticArrayModifyLengthError(InterpreterError):
+    pass
+
+
+class UnknownBuiltinFunctionError(InterpreterError):
+    pass
+
+
+class UnknownBuiltinProcedureError(InterpreterError):
+    pass
+
+
+class NullPointerError(InterpreterError):
+    pass
+
+
+class ArrayRangeInvalidError(InterpreterError):
+    pass
+
+
+class UnknownOperatorError(InterpreterError):
     def __init__(
         self,
         error_code: ErrorCode,
@@ -84,8 +134,11 @@ class TokenType(Enum):
     FLOAT_DIV = "/"
     LPAREN = "("
     RPAREN = ")"
+    LBRACKET = "["
+    RBRACKET = "]"
     SEMI = ";"
     DOT = "."
+    RANGE = ".."
     COLON = ":"
     COMMA = ","
     EQ = "="
@@ -114,6 +167,8 @@ class TokenType(Enum):
     DO = "DO"
     FOR = "FOR"
     TO = "TO"
+    ARRAY = "ARRAY"
+    OF = "OF"
     PROCEDURE = "PROCEDURE"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
@@ -260,7 +315,10 @@ class Lexer:
             result += self.current_char
             self.advance()
 
-        if self.current_char == ".":
+        if self.current_char == "." and self.peek() == ".":
+            token.type = TokenType.INTEGER_CONST
+            token.value = int(result)
+        elif self.current_char == ".":
             result += self.current_char
             self.advance()
 
@@ -384,6 +442,17 @@ class Lexer:
 
             if self.current_char.isalpha():
                 return self._id()
+
+            if self.current_char == "." and self.peek() == ".":
+                token = Token(
+                    type=TokenType.RANGE,
+                    value=TokenType.RANGE.value,  # ':='
+                    lineno=self.lineno,
+                    column=self.column,
+                )
+                self.advance()
+                self.advance()
+                return token
 
             if self.current_char.isdigit():
                 return self.number()
@@ -529,6 +598,14 @@ class Var(AST):
         self.value = token.value
 
 
+class IndexVar(Var):
+    """The IndexVar is for ID[index]"""
+
+    def __init__(self, token, index: AST):
+        super().__init__(token)
+        self.index = index
+
+
 class NoOp(AST):
     pass
 
@@ -555,6 +632,35 @@ class Type(AST):
     def __init__(self, token: Token) -> None:
         self.token = token
         self.value = token.value
+
+
+class PrimitiveType(Type):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def __str__(self):
+        return self.value
+
+
+class ArrayType(Type):
+    def __init__(
+        self,
+        token,
+        element_type: Type,
+        lower: Factor,
+        upper: Factor,
+        dynamic: bool = False,
+    ):
+        super().__init__(token)
+        self.element_type = element_type
+        self.lower = lower
+        self.upper = upper
+        self.dynamic = dynamic
+
+    def __str__(self):
+        return "Array[{element_type_name}]".format(
+            element_type_name=str(self.element_type)
+        )
 
 
 class Param(AST):
@@ -612,10 +718,16 @@ type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall
 
 
 class Parser:
+
     def __init__(self, lexer: Lexer) -> None:
         self.lexer = lexer
         # set current token to the first token taken from the input
         self.current_token = self.get_next_token()
+
+    def newZeroNum(self, lineno: int = -1, column: int = -1) -> Num:
+        return Num(
+            token=Token(TokenType.INTEGER_CONST, value=0, lineno=lineno, column=column)
+        )
 
     def get_next_token(self):
         return self.lexer.get_next_token()
@@ -779,7 +891,24 @@ class Parser:
         return func_decl
 
     def type_spec(self) -> Type:
-        """type_spec : INTEGER | REAL | BOOLEAN"""
+        """
+        type_spec : primitive_type_spec | array_type_spec
+        """
+        if self.current_token.type in (
+            TokenType.INTEGER,
+            TokenType.REAL,
+            TokenType.BOOLEAN,
+        ):
+            return self.primitive_type_spec()
+        elif self.current_token.type == TokenType.ARRAY:
+            return self.array_type_spec()
+        else:
+            raise UnknownTypeError()
+
+    def primitive_type_spec(self) -> Type:
+        """
+        primitive_type_spec : INTEGER | REAL | BOOLEAN
+        """
         token = self.current_token
         if self.current_token.type == TokenType.INTEGER:
             self.eat(TokenType.INTEGER)
@@ -787,7 +916,36 @@ class Parser:
             self.eat(TokenType.REAL)
         elif self.current_token.type == TokenType.BOOLEAN:
             self.eat(TokenType.BOOLEAN)
-        node = Type(token)
+        node = PrimitiveType(token)
+        return node
+
+    def array_type_spec(self) -> Type:
+        """array_type_spec : ARRAY (LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET)? of type_spec"""
+        token = self.current_token
+        self.eat(TokenType.ARRAY)
+        lower: Factor = self.newZeroNum(
+            lineno=self.current_token.lineno, column=self.current_token.column
+        )
+        upper: Factor = self.newZeroNum(
+            lineno=self.current_token.lineno, column=self.current_token.column
+        )
+        dynamic: bool = True
+        if self.current_token.type == TokenType.LBRACKET:
+            self.eat(TokenType.LBRACKET)
+            lower = self.factor()
+            self.eat(TokenType.RANGE)
+            upper = self.factor()
+            self.eat(TokenType.RBRACKET)
+            dynamic = False
+        self.eat(TokenType.OF)
+        element_type = self.type_spec()
+        node = ArrayType(
+            token=token,
+            element_type=element_type,
+            lower=lower,
+            upper=upper,
+            dynamic=dynamic,
+        )
         return node
 
     def compound_statement(self) -> Compound:
@@ -988,10 +1146,15 @@ class Parser:
 
     def variable(self) -> Var:
         """
-        variable : ID
+        variable: ID (LBRACKET summation_expr RBRACKET)?
         """
         node = Var(self.current_token)
         self.eat(TokenType.ID)
+        if self.current_token.type == TokenType.LBRACKET:
+            self.eat(TokenType.LBRACKET)
+            index = self.summation_expr()
+            self.eat(TokenType.RBRACKET)
+            return IndexVar(token=node.token, index=index)
         return node
 
     def empty(self) -> NoOp:
@@ -1169,7 +1332,11 @@ class Parser:
 
         formal_parameters : ID (COMMA ID)* COLON type_spec
 
-        type_spec : INTEGER | REAL | BOOLEAN
+        type_spec : primitive_type_spec | array_type_spec
+
+        primitive_type_spec : INTEGER | REAL | BOOLEAN
+
+        array_type_spec : ARRAY ( LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET )? of type_spec
 
         compound_statement : BEGIN statement_list END
 
@@ -1221,7 +1388,7 @@ class Parser:
                | func_call_expr
                | variable
 
-        variable: ID
+        variable: ID (LBRACKET summation_expr RBRACKET)?
         """
         node = self.program()
         if self.current_token.type != TokenType.EOF:
@@ -1260,6 +1427,8 @@ class NodeVisitor:
 class NativeMethod(Enum):
     WRITE = "WRITE"
     WRITELN = "WRITELN"
+    LENGTH = "LENGTH"
+    SETLENGTH = "SETLENGTH"
 
 
 class Symbol:
@@ -1294,6 +1463,22 @@ class BuiltinTypeSymbol(Symbol):
         return "<{class_name}(name='{name}')>".format(
             class_name=self.__class__.__name__,
             name=self.name,
+        )
+
+
+class ArrayTypeSymbol(Symbol):
+    def __init__(self, name: str, element_type: Symbol) -> None:
+        super().__init__(name)
+        self.element_type = element_type
+
+    def __str__(self) -> str:
+        return "{name}[]".format(name=self.name)
+
+    def __repr__(self) -> str:
+        return "<{class_name}[{element_type_name}](name='{name}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            element_type_name=self.element_type.name,
         )
 
 
@@ -1359,6 +1544,30 @@ class FunctionSymbol(Symbol):
     __repr__ = __str__
 
 
+class BuiltinFunctionSymbol(Symbol):
+    def __init__(
+        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
+    ) -> None:
+        super().__init__(name)
+        # a list of VarSymbol objects
+        self.formal_params: list[Symbol] = (
+            [] if formal_params is None else formal_params
+        )
+        self.return_type = return_type
+        # a reference to procedure's body (AST sub-tree)
+        self.block_ast: Block | None = None
+
+    def __str__(self) -> str:
+        return "<{class_name}(name={name},return_type={return_type} parameters={params})>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            return_type=self.return_type,
+            params=self.formal_params,
+        )
+
+    __repr__ = __str__
+
+
 class ScopedSymbolTable:
     def __init__(
         self,
@@ -1374,8 +1583,25 @@ class ScopedSymbolTable:
     def _init_builtins(self) -> None:
         self.insert(BuiltinTypeSymbol("INTEGER"))
         self.insert(BuiltinTypeSymbol("REAL"))
-        self.insert(BuiltinProcedureSymbol(NativeMethod.WRITE.name, []))
-        self.insert(BuiltinProcedureSymbol(NativeMethod.WRITELN.name, []))
+        self.insert(BuiltinTypeSymbol("BOOLEAN"))
+        self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.WRITE.name, output_params=[])
+        )
+        self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.WRITELN.name, output_params=[])
+        )
+        self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.SETLENGTH.name, output_params=[])
+        )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.LENGTH.name,
+                return_type=Type(
+                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
+                ),
+                formal_params=[],
+            )
+        )
 
     def __str__(self) -> str:
         h1 = "SCOPE (SCOPED SYMBOL TABLE)"
@@ -1499,10 +1725,31 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.left)
         self.visit(node.right)
 
+    def visit_PrimitiveType(self, node: PrimitiveType):
+        pass
+
+    def visit_ArrayType(self, node: ArrayType) -> None:
+        if isinstance(node.element_type, ArrayType):
+            self.visit_ArrayType(node.element_type)
+        if self.current_scope is None:
+            raise MissingCurrentScopeError
+        element_type_symbol = self.current_scope.lookup(str(node.element_type))
+        if element_type_symbol is None:
+            raise UnknownArrayElementTypeError()
+        type_name = str(node)
+        type_symbol = self.current_scope.lookup(type_name)
+        if type_symbol is None:
+            self.current_scope.insert(
+                ArrayTypeSymbol(name=type_name, element_type=element_type_symbol)
+            )
+
     def visit_VarDecl(self, node: VarDecl) -> None:
         type_name = node.type_node.value
+        if isinstance(node.type_node, ArrayType):
+            self.visit_ArrayType(node.type_node)
+            type_name = str(node.type_node)
         if self.current_scope is None:
-            raise NullPointerError
+            raise MissingCurrentScopeError
         type_symbol = self.current_scope.lookup(type_name)
 
         # We have all the information we need to create a variable symbol.
@@ -1533,9 +1780,23 @@ class SemanticAnalyzer(NodeVisitor):
         if self.current_scope is None:
             self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
             return
+
         var_symbol = self.current_scope.lookup(var_name)
         if var_symbol is None:
             self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
+            return
+
+    def visit_IndexVar(self, node: IndexVar) -> None:
+        var_name = node.value
+        if self.current_scope is None:
+            self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
+            return
+
+        var_symbol = self.current_scope.lookup(var_name)
+        if var_symbol is None:
+            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
+            return
+        self.visit(node.index)
 
     def visit_Num(self, node: Num) -> None:
         pass
@@ -1550,7 +1811,7 @@ class SemanticAnalyzer(NodeVisitor):
         proc_name = node.proc_name
         proc_symbol = ProcedureSymbol(proc_name)
         if self.current_scope is None:
-            raise CurrentScopeMissingError()
+            raise MissingCurrentScopeError()
         self.current_scope.insert(proc_symbol)
 
         self.log(f"ENTER scope: {proc_name}")
@@ -1596,7 +1857,7 @@ class SemanticAnalyzer(NodeVisitor):
         return_type = node.return_type
         func_symbol = FunctionSymbol(func_name, return_type)
         if self.current_scope is None:
-            raise CurrentScopeMissingError()
+            raise MissingCurrentScopeError()
         self.current_scope.insert(func_symbol)
 
         self.log(f"ENTER scope: {func_name}")
@@ -1668,7 +1929,7 @@ class CallStack:
 
     def pop(self) -> ActivationRecord:
         if len(self._records) >= 2:
-            self._records[-2].copy(self._records[-1], True)
+            self._records[-2].copy_from(self._records[-1], True)
         return self._records.pop()
 
     def peek(self) -> ActivationRecord:
@@ -1683,12 +1944,19 @@ class CallStack:
         return self.__str__()
 
 
+class MemberMeta:
+    def __init__(self, type: ElementType, dynamic: bool = False):
+        self.type = type
+        self.dynamic = dynamic
+
+
 class ActivationRecord:
     def __init__(self, name: str, type: ARType, nesting_level: int) -> None:
         self.name = name
         self.type = type
         self.nesting_level = nesting_level
         self.members: dict[str, Any] = {}
+        self.members_meta: dict[str, MemberMeta] = {}
 
     def __setitem__(self, key: str, value) -> None:
         self.members[key] = value
@@ -1696,13 +1964,29 @@ class ActivationRecord:
     def __getitem__(self, key: str):
         return self.members[key]
 
-    def copy(self, other: "ActivationRecord", override: bool):
+    def copy_from(self, other: "ActivationRecord", override: bool):
         for name, val in other.members.items():
             if override or name not in self.members:
                 self.members[name] = val
+        for name, val in other.members_meta.items():
+            if override or name not in self.members_meta:
+                self.members_meta[name] = val
 
-    def get(self, key):
+    def get(self, key: str):
         return self.members.get(key)
+
+    def set_meta(self, key: str, type: ElementType):
+        self.members_meta[key] = MemberMeta(type=type)
+
+    def set_dynamic(self, key: str, dynamic: bool):
+        self.members_meta[key].dynamic = dynamic
+
+    def get_meta(self, key: str):
+        meta = self.members_meta.get(key)
+        if meta is None:
+            raise InterpreterError()
+        else:
+            return meta
 
     def __str__(self) -> str:
         lines = [
@@ -1764,9 +2048,67 @@ class Interpreter(NodeVisitor):
             ar[node.var_node.value] = 0
         elif node.type_node.token.type == TokenType.REAL:
             ar[node.var_node.value] = 0.0
+        elif node.type_node.token.type == TokenType.ARRAY:
+            ar[node.var_node.value] = self.__initArray(node.type_node, ar)
+            self.__set_member_type(node, ar)
+            if (cast(ArrayType,node.type_node)).dynamic is True:
+                ar.set_dynamic(node.var_node.value, True)
         pass
 
+    def __set_member_type(self, node: VarDecl, ar: ActivationRecord):
+        if isinstance(node.type_node, ArrayType):
+            if node.type_node.element_type.token.type == TokenType.BOOLEAN:
+                ar.set_meta(node.var_node.value, ElementType.BOOL)
+            elif node.type_node.element_type.token.type == TokenType.INTEGER:
+                ar.set_meta(node.var_node.value, ElementType.INTEGER)
+            elif node.type_node.element_type.token.type == TokenType.REAL:
+                ar.set_meta(node.var_node.value, ElementType.REAL)
+            elif node.type_node.element_type.token.type == TokenType.ARRAY:
+                ar.set_meta(node.var_node.value, ElementType.ARRAY)
+        else:
+            pass
+
+    def __initArray(self, node: Type, ar: ActivationRecord) -> dict[Any, Any]:
+        if isinstance(node, ArrayType):
+            lower_bound: int = self.visit(node.lower)
+            upper_bound: int = self.visit(node.upper)
+            if lower_bound > upper_bound:
+                raise ArrayRangeInvalidError()
+            if node.element_type.token.type == TokenType.BOOLEAN:
+                bool_arr: dict[int, bool] = {}
+                if node.dynamic is False:
+                    for i in range(lower_bound, upper_bound + 1):
+                        bool_arr[i] = False
+                return bool_arr
+            elif node.element_type.token.type == TokenType.INTEGER:
+                int_arr: dict[int, int] = {}
+                if node.dynamic is False:
+                    for i in range(lower_bound, upper_bound + 1):
+                        int_arr[i] = 0
+                return int_arr
+            elif node.element_type.token.type == TokenType.REAL:
+                real_arr: dict[int, float] = {}
+                if node.dynamic is False:
+                    for i in range(lower_bound, upper_bound + 1):
+                        real_arr[i] = 0.0
+                return real_arr
+            elif node.element_type.token.type == TokenType.ARRAY:
+                arr_arr: dict[int, dict] = {}
+                if node.dynamic is False:
+                    for i in range(lower_bound, upper_bound + 1):
+                        arr_arr[i] = self.__initArray(node.element_type, ar)
+                return arr_arr
+        raise UnknownTypeError()
+
     def visit_Type(self, node: Type) -> None:
+        # Do nothing
+        pass
+
+    def visit_PrimitiveType(self, node: Type) -> None:
+        # Do nothing
+        pass
+
+    def visit_ArrayType(self, node: Type) -> None:
         # Do nothing
         pass
 
@@ -1836,9 +2178,15 @@ class Interpreter(NodeVisitor):
     def visit_Assign(self, node: Assign) -> None:
         var_name = node.left.value
         var_value = self.visit(node.right)
-
         ar = self.call_stack.peek()
-        ar[var_name] = var_value
+
+        if isinstance(node.left, IndexVar):
+            # array [index] = value
+            index: int = self.visit(node.left.index)
+            ar[var_name][index] = var_value
+        else:
+            # identifier = value
+            ar[var_name] = var_value
 
     def visit_Var(self, node: Var) -> Any:
         var_name = node.value
@@ -1847,6 +2195,28 @@ class Interpreter(NodeVisitor):
         var_value = ar.get(var_name)
 
         return var_value
+
+    def visit_IndexVar(self, node: IndexVar) -> Any:
+        var_name = node.value
+
+        ar = self.call_stack.peek()
+        array = ar.get(var_name)
+        index: int = self.visit(node.index)
+
+        if index in array:
+            return array[index]
+        else:
+            message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
+            print(f"\033[91m{message}\033[0m", file=sys.stderr)
+            element_type = ar.get_meta(var_name).type
+            if element_type == ElementType.BOOL:
+                return False
+            if element_type == ElementType.INTEGER:
+                return 0
+            if element_type == ElementType.REAL:
+                return 0.0
+            if element_type == ElementType.ARRAY:
+                return {}
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
@@ -1885,8 +2255,9 @@ class Interpreter(NodeVisitor):
 
         pre_ar = self.call_stack.peek()
         if pre_ar is not None:
-            ar.copy(pre_ar, False)
+            ar.copy_from(pre_ar, False)
 
+        # deal with built-in procedure first
         if isinstance(proc_symbol, BuiltinProcedureSymbol):
             if proc_symbol.name.upper() == NativeMethod.WRITE.name:
                 actual_params = node.actual_params
@@ -1908,7 +2279,7 @@ class Interpreter(NodeVisitor):
 
                 self.call_stack.pop()
                 return
-            if proc_symbol.name.upper() == NativeMethod.WRITELN.name:
+            elif proc_symbol.name.upper() == NativeMethod.WRITELN.name:
                 actual_params = node.actual_params
 
                 for i in range(0, len(actual_params)):
@@ -1928,27 +2299,65 @@ class Interpreter(NodeVisitor):
 
                 self.call_stack.pop()
                 return
+            elif proc_symbol.name.upper() == NativeMethod.SETLENGTH.name:
+                actual_params = node.actual_params
 
-        formal_params = proc_symbol.formal_params
-        actual_params = node.actual_params
+                for i in range(0, len(actual_params)):
+                    ar[i] = self.visit(actual_params[i])
 
-        for param_symbol, argument_node in zip(formal_params, actual_params):
-            ar[param_symbol.name] = self.visit(argument_node)
+                self.call_stack.push(ar)
 
-        self.call_stack.push(ar)
+                self.log(f"ENTER: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
 
-        self.log(f"ENTER: PROCEDURE {proc_name}")
-        self.log(str(self.call_stack))
+                # core
+                arr_name = actual_params[0].value
+                new_length = actual_params[1].value
+                element_type = ar.get_meta(arr_name).type
+                if ar.get_meta(arr_name).dynamic is False:
+                    raise StaticArrayModifyLengthError()
 
-        # evaluate procedure body
-        if proc_symbol.block_ast is None:
-            raise NullPointerError
-        self.visit(proc_symbol.block_ast)
+                for i in range(0, new_length):
+                    if i in ar[arr_name]:
+                        continue
+                    if element_type == ElementType.BOOL:
+                        ar[arr_name][i] = False
+                    if element_type == ElementType.INTEGER:
+                        ar[arr_name][i] = 0
+                    if element_type == ElementType.REAL:
+                        ar[arr_name][i] = 0.0
+                    if element_type == ElementType.ARRAY:
+                        ar[arr_name][i] = {}
 
-        self.log(f"LEAVE: PROCEDURE {proc_name}")
-        self.log(str(self.call_stack))
+                self.log(f"LEAVE: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
 
-        self.call_stack.pop()
+                self.call_stack.pop()
+                return
+            else:
+                raise UnknownBuiltinProcedureError()
+        else:
+            formal_params = proc_symbol.formal_params
+            actual_params = node.actual_params
+
+            for param_symbol, argument_node in zip(formal_params, actual_params):
+                ar[param_symbol.name] = self.visit(argument_node)
+
+            self.call_stack.push(ar)
+
+            self.log(f"ENTER: PROCEDURE {proc_name}")
+            self.log(str(self.call_stack))
+
+            # evaluate procedure body
+            if proc_symbol.block_ast is None:
+                raise NullPointerError
+            self.visit(proc_symbol.block_ast)
+
+            self.log(f"LEAVE: PROCEDURE {proc_name}")
+            self.log(str(self.call_stack))
+
+            self.call_stack.pop()
+            pass
 
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
         pass
@@ -1984,30 +2393,54 @@ class Interpreter(NodeVisitor):
 
         pre_ar = self.call_stack.peek()
         if pre_ar is not None:
-            ar.copy(pre_ar, False)
+            ar.copy_from(pre_ar, False)
 
-        formal_params = func_symbol.formal_params
-        actual_params = node.actual_params
+        # deal with built-in function first
+        if isinstance(func_symbol, BuiltinFunctionSymbol):
+            if func_symbol.name.upper() == NativeMethod.LENGTH.name:
+                actual_params = node.actual_params
 
-        for param_symbol, argument_node in zip(formal_params, actual_params):
-            ar[param_symbol.name] = self.visit(argument_node)
+                # [0] = LENGTH, [1] = ARRAY_NAME
+                for i in range(0, len(actual_params)):
+                    ar[i] = self.visit(actual_params[i])
 
-        self.call_stack.push(ar)
+                self.call_stack.push(ar)
 
-        self.log(f"ENTER: FUNCTION {func_name}")
-        self.log(str(self.call_stack))
+                self.log(f"ENTER: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
 
-        # evaluate procedure body
-        if func_symbol.block_ast is None:
-            raise NullPointerError
-        self.visit(func_symbol.block_ast)
+                ar[RETURN_NUM_FOR_LENGTH] = len(self.visit(actual_params[i]))
 
-        self.log(f"LEAVE: FUNCTION {func_name}")
-        self.log(str(self.call_stack))
+                self.log(f"LEAVE: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
 
-        self.call_stack.pop()
+                self.call_stack.pop()
+                return ar[RETURN_NUM_FOR_LENGTH]
+            else:
+                raise UnknownBuiltinFunctionError()
+        else:
+            formal_params = func_symbol.formal_params
+            actual_params = node.actual_params
 
-        return ar[func_name]
+            for param_symbol, argument_node in zip(formal_params, actual_params):
+                ar[param_symbol.name] = self.visit(argument_node)
+
+            self.call_stack.push(ar)
+
+            self.log(f"ENTER: FUNCTION {func_name}")
+            self.log(str(self.call_stack))
+
+            # evaluate procedure body
+            if func_symbol.block_ast is None:
+                raise NullPointerError
+            self.visit(func_symbol.block_ast)
+
+            self.log(f"LEAVE: FUNCTION {func_name}")
+            self.log(str(self.call_stack))
+
+            self.call_stack.pop()
+
+            return ar[func_name]
 
     def interpret(self):
         tree = self.tree
