@@ -880,12 +880,13 @@ var
   str1: string[7]; {Declare a string wth a maximum size}
   str2 : string; {Declare a string without a maximum size}
   str3 : string; {will be used for setLength()}
-  concat : string; {will be used for s1 + s2}
+  concat1 : string; {will be used for s1 + s2}
+  concat2 : string[7]; {will be used for s1 + s2}
   a, b : string; {will use subscript to extra char from string}
   l1 , l2 , l3: integer;
 
 begin
-  str1 := 'abcdefghijklmnopqrstuvwxyz';
+  str1 := 'abcdefghijklmnopqrstuvwxyz'; { will warn in sematic analyzer }
   str2 := 'abcdefghijklmnopqrstuvwxyz';
   str3 := str2;
 
@@ -896,7 +897,8 @@ begin
   l3 := length(str3);
   a := str3[1];
   b := str3[36];
-  { concat := str1 + '123' + 456; }
+  concat1 := str1 + '123' + '456' + str2[1];
+  concat2 := str1 + '123' + '456' + str2[1]; { will warn in interpreter }
 end.
     """
         interpreter = self.makeInterpreter(text)
@@ -911,7 +913,8 @@ end.
         self.assertEqual(ar["l3"], 14)
         self.assertEqual(ar["a"], "a")
         self.assertEqual(ar["b"], "")
-        # self.assertEqual(ar["concat"], "abcdefg123456")
+        self.assertEqual(ar["concat1"], "abcdefg123456a")
+        self.assertEqual(ar["concat2"], "abcdefg")
         self.assertEqual(ar.nesting_level, 2)
 
     def test_program(self):

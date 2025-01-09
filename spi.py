@@ -1256,45 +1256,9 @@ class Parser:
 
     def expr(self) -> Expr:
         """
-        expr : string_expr | logic_expr
+        expr : logic_expr
         """
-        if self.current_token.type == TokenType.STRING_CONST:
-            return self.string_expr()
-        else:
-            return self.logic_expr()
-
-    def string_expr(self) -> Expr:
-        """
-        string_expr : string_const (PLUS string_expr | LPAREN string_expr RPAREN | func_call_expr | variable)*
-        """
-        node = self.string_const()
-        while self.current_token.type is TokenType.PLUS:
-            token = self.current_token
-            self.eat(TokenType.PLUS)
-            right: AST
-            if self.current_token.type == TokenType.STRING_CONST:
-                right = self.string_expr()
-            elif self.current_token.type == TokenType.LPAREN:
-                self.eat(TokenType.LPAREN)
-                right = self.string_expr()
-                self.eat(TokenType.RPAREN)
-            elif (
-                self.current_token.type == TokenType.ID
-                and self.peek_next_token().type == TokenType.LPAREN
-            ):
-                right = self.func_call_expr()
-            else:
-                right = self.variable()
-            node = BinOp(left=node, op=token, right=right)
-        return node
-
-    def string_const(self) -> Expr:
-        if self.current_token.type == TokenType.STRING_CONST:
-            token = self.current_token
-            self.eat(TokenType.STRING_CONST)
-            return String(token=token)
-        else:
-            raise ParserError()
+        return self.logic_expr()
 
     def logic_expr(self) -> Expr:
         """logic_expr : comparison_expr ((and | or ) comparison_expr)*"""
@@ -1384,6 +1348,7 @@ class Parser:
                | PLUS factor
                | MINUS factor
                | INTEGER_CONST
+               | STRING_CONST
                | REAL_CONST
                | TRUE_CONST
                | FALSE_CONST
@@ -1429,6 +1394,12 @@ class Parser:
             node = self.summation_expr()
             self.eat(TokenType.RPAREN)
             return node
+
+        # parse string expr
+        if self.current_token.type == TokenType.STRING_CONST:
+            token = self.current_token
+            self.eat(TokenType.STRING_CONST)
+            return String(token=token)
 
         # call
         if (
@@ -1501,10 +1472,6 @@ class Parser:
 
         expr : string_expr | logic_expr
 
-        string_expr : string_const (PLUS string_const | LPAREN string_expr RPAREN | func_call_expr | variable)*
-
-        string_const : SINGLE_QUOTE (char)* SINGLE_QUOTE
-
         logic_expr : comparison_expr ((and | or ) comparison_expr)*
 
         comparison_expr : summation_expr ( (EQ | NE | GT | GE | LT | LE) summation_expr )*
@@ -1517,6 +1484,7 @@ class Parser:
                | PLUS factor
                | MINUS factor
                | INTEGER_CONST
+               | STRING_CONST
                | REAL_CONST
                | TRUE_CONST
                | FALSE_CONST
@@ -1957,11 +1925,13 @@ class SemanticAnalyzer(NodeVisitor):
         if var_symbol.type is None:
             raise UnknownSymbolError()
         if isinstance(var_symbol.type, StringTypeSymbol):
-            string_size = var_symbol.type.limit
-            string_value = cast(String, node.right).value
-            if len(string_value) > string_size:
-                message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
-                SpiUtil.print_w(message=message)
+            # string_size = var_symbol.type.limit
+            # if isinstance(node.right, String):
+            #     string_value = node.right.value
+            #     if len(string_value) > string_size:
+            #         message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
+            #         SpiUtil.print_w(message=message)
+            pass
 
     def visit_Var(self, node: Var) -> None:
         var_name = node.value
@@ -2319,7 +2289,7 @@ class Interpreter(NodeVisitor):
         # Do nothing
         pass
 
-    def visit_BinOp(self, node: BinOp) -> Number | bool:
+    def visit_BinOp(self, node: BinOp) -> Number | bool | str:
         # logic operator
         if node.op.type == TokenType.AND:
             return bool(self.visit(node.left)) and bool(self.visit(node.right))
@@ -2328,7 +2298,7 @@ class Interpreter(NodeVisitor):
 
         # arithmetic operator
         if node.op.type == TokenType.PLUS:
-            return cast(Number, self.visit(node.left) + self.visit(node.right))
+            return cast(Number | str, self.visit(node.left) + self.visit(node.right))
         elif node.op.type == TokenType.MINUS:
             return cast(Number, self.visit(node.left) - self.visit(node.right))
         elif node.op.type == TokenType.MUL:
@@ -2399,6 +2369,9 @@ class Interpreter(NodeVisitor):
             if var_name in ar.members_meta:
                 limit = ar.get_meta(var_name).limit
                 if limit > 0:
+                    if len(var_value) > limit:
+                        message = f"Warning: String literal has more characters[{len(var_value)}] than short string length[{limit}]"
+                        SpiUtil.print_w(message=message)
                     ar[var_name] = cast(str, var_value)[0:limit]
                 else:
                     ar[var_name] = var_value
