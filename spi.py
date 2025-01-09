@@ -14,10 +14,17 @@ _SHOULD_LOG_STACK = False  # see '--stack' command line option
 RETURN_NUM_FOR_LENGTH = "RETURN_NUM_FOR_LENGTH"
 
 
+class SpiUtil:
+    @staticmethod
+    def print_w(message: Any):
+        print(f"\033[91m{message}\033[0m", file=sys.stderr)
+
+
 class ElementType(Enum):
     INTEGER = "INTEGER"
     REAL = "REAL"
     BOOL = "BOOL"
+    STRING = "STRING"
     ARRAY = "ARRAY"
 
 
@@ -42,8 +49,26 @@ class Error(Exception):
         self.message = f"{self.__class__.__name__}: {message}"
 
 
+###############################################################################
+#                                                                             #
+#  LexerError                                                                      #
+#                                                                             #
+###############################################################################
+
+
 class LexerError(Error):
     pass
+
+
+class LexerStringError(LexerError):
+    pass
+
+
+###############################################################################
+#                                                                             #
+#  ParserError                                                                      #
+#                                                                             #
+###############################################################################
 
 
 class ParserError(Error):
@@ -73,6 +98,10 @@ class UnknownBooleanError(UnknownTypeError):
     pass
 
 
+class UnknownSymbolError(Error):
+    pass
+
+
 class MissingCurrentScopeError(SemanticError):
     pass
 
@@ -86,6 +115,7 @@ class MissingCurrentScopeError(SemanticError):
 
 class InterpreterError(Error):
     pass
+
 
 class StaticArrayModifyLengthError(InterpreterError):
     pass
@@ -149,11 +179,12 @@ class TokenType(Enum):
     LE = "<="
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
-    INTEGER = "INTEGER"
     FUNCTION = "FUNCTION"
+    INTEGER = "INTEGER"
     REAL = "REAL"
-    INTEGER_DIV = "DIV"
     BOOLEAN = "BOOLEAN"
+    STRING = "STRING"
+    INTEGER_DIV = "DIV"
     TRUE = "TRUE"
     FALSE = "FALSE"
     AND = "AND"
@@ -176,6 +207,7 @@ class TokenType(Enum):
     ID = "ID"
     INTEGER_CONST = "INTEGER_CONST"
     REAL_CONST = "REAL_CONST"
+    STRING_CONST = "STRING_CONST"
     ASSIGN = ":="
     EOF = "EOF"
 
@@ -334,7 +366,31 @@ class Lexer:
 
         return token
 
-    def _id(self) -> Token:
+    def __string(self) -> Token:
+        """Handle string const"""
+
+        # Create a new token with current line and column number
+        token = Token(type=None, value=None, lineno=self.lineno, column=self.column)
+
+        if self.current_char == "'":
+            self.advance()
+        else:
+            raise LexerStringError()
+        value = ""
+        while self.current_char is not None and self.current_char != "'":
+            value += self.current_char
+            self.advance()
+
+        if self.current_char == "'":
+            self.advance()
+        else:
+            raise LexerStringError()
+
+        token.type = TokenType.STRING_CONST
+        token.value = value
+        return token
+
+    def __id(self) -> Token:
         """Handle identifiers and reserved keywords"""
 
         # Create a new token with current line and column number
@@ -440,8 +496,11 @@ class Lexer:
                 self.skip_comment()
                 continue
 
+            if self.current_char == "'":
+                return self.__string()
+
             if self.current_char.isalpha():
-                return self._id()
+                return self.__id()
 
             if self.current_char == "." and self.peek() == ".":
                 token = Token(
@@ -535,6 +594,12 @@ class Bool(AST):
     def __init__(self, token: Token) -> None:
         self.token = token
         self.value: bool = token.value
+
+
+class String(AST):
+    def __init__(self, token: Token):
+        self.token = token
+        self.value: str = token.value
 
 
 class UnaryOp(AST):
@@ -642,6 +707,15 @@ class PrimitiveType(Type):
         return self.value
 
 
+class StringType(Type):
+    def __init__(self, token, limit: Factor | None = None):
+        super().__init__(token)
+        self.limit = limit
+
+    def __str__(self):
+        return super().__str__()
+
+
 class ArrayType(Type):
     def __init__(
         self,
@@ -714,7 +788,7 @@ type Decl = VarDecl | ProcedureDecl | FunctionDecl
 type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
 type Expr = "Factor"
 type Term = "Factor"
-type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall
+type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | String
 
 
 class Parser:
@@ -892,7 +966,7 @@ class Parser:
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | array_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec
         """
         if self.current_token.type in (
             TokenType.INTEGER,
@@ -900,6 +974,8 @@ class Parser:
             TokenType.BOOLEAN,
         ):
             return self.primitive_type_spec()
+        elif self.current_token.type == TokenType.STRING:
+            return self.string_type_spec()
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
         else:
@@ -919,7 +995,24 @@ class Parser:
         node = PrimitiveType(token)
         return node
 
-    def array_type_spec(self) -> Type:
+    def string_type_spec(self) -> StringType:
+        """
+        string_type_spec: STRING ( LBRACKET INTEGER_CONST RBRACKET )?
+        """
+        token = self.current_token
+        if self.current_token.type == TokenType.STRING:
+            self.eat(TokenType.STRING)
+            if self.current_token.type == TokenType.LBRACKET:
+                self.eat(TokenType.LBRACKET)
+                limit = self.factor()
+                self.eat(TokenType.RBRACKET)
+                return StringType(token=token, limit=limit)
+            else:
+                return StringType(token=token)
+        else:
+            raise ParserError()
+
+    def array_type_spec(self) -> ArrayType:
         """array_type_spec : ARRAY (LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET)? of type_spec"""
         token = self.current_token
         self.eat(TokenType.ARRAY)
@@ -1162,9 +1255,46 @@ class Parser:
         return NoOp()
 
     def expr(self) -> Expr:
-        """expr : logic_expr"""
-        node = self.logic_expr()
+        """
+        expr : string_expr | logic_expr
+        """
+        if self.current_token.type == TokenType.STRING_CONST:
+            return self.string_expr()
+        else:
+            return self.logic_expr()
+
+    def string_expr(self) -> Expr:
+        """
+        string_expr : string_const (PLUS string_expr | LPAREN string_expr RPAREN | func_call_expr | variable)*
+        """
+        node = self.string_const()
+        while self.current_token.type is TokenType.PLUS:
+            token = self.current_token
+            self.eat(TokenType.PLUS)
+            right: AST
+            if self.current_token.type == TokenType.STRING_CONST:
+                right = self.string_expr()
+            elif self.current_token.type == TokenType.LPAREN:
+                self.eat(TokenType.LPAREN)
+                right = self.string_expr()
+                self.eat(TokenType.RPAREN)
+            elif (
+                self.current_token.type == TokenType.ID
+                and self.peek_next_token().type == TokenType.LPAREN
+            ):
+                right = self.func_call_expr()
+            else:
+                right = self.variable()
+            node = BinOp(left=node, op=token, right=right)
         return node
+
+    def string_const(self) -> Expr:
+        if self.current_token.type == TokenType.STRING_CONST:
+            token = self.current_token
+            self.eat(TokenType.STRING_CONST)
+            return String(token=token)
+        else:
+            raise ParserError()
 
     def logic_expr(self) -> Expr:
         """logic_expr : comparison_expr ((and | or ) comparison_expr)*"""
@@ -1332,9 +1462,11 @@ class Parser:
 
         formal_parameters : ID (COMMA ID)* COLON type_spec
 
-        type_spec : primitive_type_spec | array_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec
 
         primitive_type_spec : INTEGER | REAL | BOOLEAN
+
+        string_type_spec: STRING ( LBRACKET INTEGER_CONST RBRACKET )?
 
         array_type_spec : ARRAY ( LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET )? of type_spec
 
@@ -1367,7 +1499,11 @@ class Parser:
 
         empty :
 
-        expr : logic_expr
+        expr : string_expr | logic_expr
+
+        string_expr : string_const (PLUS string_const | LPAREN string_expr RPAREN | func_call_expr | variable)*
+
+        string_const : SINGLE_QUOTE (char)* SINGLE_QUOTE
 
         logic_expr : comparison_expr ((and | or ) comparison_expr)*
 
@@ -1463,6 +1599,20 @@ class BuiltinTypeSymbol(Symbol):
         return "<{class_name}(name='{name}')>".format(
             class_name=self.__class__.__name__,
             name=self.name,
+        )
+
+
+class StringTypeSymbol(Symbol):
+    def __init__(self, name: str, limit: int = 255) -> None:
+        super().__init__(name)
+        self.limit = limit
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        return "<{class_name}(name='{name}', limit='{limit}')>".format(
+            class_name=self.__class__.__name__, name=self.name, limit=self.limit
         )
 
 
@@ -1656,6 +1806,8 @@ class ScopedSymbolTable:
 
 
 class SemanticAnalyzer(NodeVisitor):
+    __string_type_limit: int = 255
+
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
         self.unmodified_vars: list[str] = []
@@ -1663,6 +1815,10 @@ class SemanticAnalyzer(NodeVisitor):
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
             print(msg)
+
+    @staticmethod
+    def string_type_name(size: int):
+        return "STRING[{size}]".format(size=size)
 
     def error(self, error_code: ErrorCode, token: Token):
         raise SemanticError(
@@ -1725,7 +1881,23 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.left)
         self.visit(node.right)
 
+    def visit_Type(self, node: Type):
+        pass
+
     def visit_PrimitiveType(self, node: PrimitiveType):
+        pass
+
+    def visit_StringType(self, node: StringType):
+        if isinstance(node.limit, Num):
+            limit = int(node.limit.value)
+            self.__string_type_limit = limit
+            if self.current_scope is None:
+                raise MissingCurrentScopeError()
+            self.current_scope.insert(
+                StringTypeSymbol(
+                    name=SemanticAnalyzer.string_type_name(limit), limit=int(limit)
+                )
+            )
         pass
 
     def visit_ArrayType(self, node: ArrayType) -> None:
@@ -1746,10 +1918,13 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_VarDecl(self, node: VarDecl) -> None:
         type_name = node.type_node.value
         if isinstance(node.type_node, ArrayType):
-            self.visit_ArrayType(node.type_node)
+            self.visit(node.type_node)
             type_name = str(node.type_node)
+        elif isinstance(node.type_node, StringType):
+            self.visit(node.type_node)
+            type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
         if self.current_scope is None:
-            raise MissingCurrentScopeError
+            raise MissingCurrentScopeError()
         type_symbol = self.current_scope.lookup(type_name)
 
         # We have all the information we need to create a variable symbol.
@@ -1774,6 +1949,19 @@ class SemanticAnalyzer(NodeVisitor):
         if node.left.value in self.unmodified_vars:
             self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
         self.visit(node.left)
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        var_symbol = self.current_scope.lookup(node.left.value)
+        if var_symbol is None:
+            raise UnknownSymbolError()
+        if var_symbol.type is None:
+            raise UnknownSymbolError()
+        if isinstance(var_symbol.type, StringTypeSymbol):
+            string_size = var_symbol.type.limit
+            string_value = cast(String, node.right).value
+            if len(string_value) > string_size:
+                message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
+                SpiUtil.print_w(message=message)
 
     def visit_Var(self, node: Var) -> None:
         var_name = node.value
@@ -1801,7 +1989,10 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Num(self, node: Num) -> None:
         pass
 
-    def visit_Bool(self, node: Num) -> None:
+    def visit_Bool(self, node: Bool) -> None:
+        pass
+
+    def visit_String(self, node: String) -> None:
         pass
 
     def visit_UnaryOp(self, node: UnaryOp) -> None:
@@ -1945,9 +2136,10 @@ class CallStack:
 
 
 class MemberMeta:
-    def __init__(self, type: ElementType, dynamic: bool = False):
+    def __init__(self, type: ElementType, dynamic: bool = False, limit: int = -1):
         self.type = type
         self.dynamic = dynamic
+        self.limit = limit
 
 
 class ActivationRecord:
@@ -1980,6 +2172,9 @@ class ActivationRecord:
 
     def set_dynamic(self, key: str, dynamic: bool):
         self.members_meta[key].dynamic = dynamic
+
+    def set_limit(self, key: str, limit: int):
+        self.members_meta[key].limit = limit
 
     def get_meta(self, key: str):
         meta = self.members_meta.get(key)
@@ -2048,10 +2243,18 @@ class Interpreter(NodeVisitor):
             ar[node.var_node.value] = 0
         elif node.type_node.token.type == TokenType.REAL:
             ar[node.var_node.value] = 0.0
+        elif node.type_node.token.type == TokenType.STRING:
+            ar[node.var_node.value] = ""
+            string_node = cast(StringType, node.type_node)
+            limit: int = 255
+            if string_node.limit is not None:
+                limit = self.visit(string_node.limit)
+            ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
+            ar.set_limit(key=node.var_node.value, limit=limit)
         elif node.type_node.token.type == TokenType.ARRAY:
             ar[node.var_node.value] = self.__initArray(node.type_node, ar)
             self.__set_member_type(node, ar)
-            if (cast(ArrayType,node.type_node)).dynamic is True:
+            if (cast(ArrayType, node.type_node)).dynamic is True:
                 ar.set_dynamic(node.var_node.value, True)
         pass
 
@@ -2104,11 +2307,15 @@ class Interpreter(NodeVisitor):
         # Do nothing
         pass
 
-    def visit_PrimitiveType(self, node: Type) -> None:
+    def visit_StringType(self, node: StringType) -> None:
         # Do nothing
         pass
 
-    def visit_ArrayType(self, node: Type) -> None:
+    def visit_PrimitiveType(self, node: PrimitiveType) -> None:
+        # Do nothing
+        pass
+
+    def visit_ArrayType(self, node: ArrayType) -> None:
         # Do nothing
         pass
 
@@ -2151,6 +2358,9 @@ class Interpreter(NodeVisitor):
     def visit_Num(self, node: Num):
         return node.value
 
+    def visit_String(self, node: String):
+        return node.value
+
     def visit_Bool(self, node: Bool):
         if node.token.type == TokenType.TRUE:
             return True
@@ -2186,7 +2396,14 @@ class Interpreter(NodeVisitor):
             ar[var_name][index] = var_value
         else:
             # identifier = value
-            ar[var_name] = var_value
+            if var_name in ar.members_meta:
+                limit = ar.get_meta(var_name).limit
+                if limit > 0:
+                    ar[var_name] = cast(str, var_value)[0:limit]
+                else:
+                    ar[var_name] = var_value
+            else:
+                ar[var_name] = var_value
 
     def visit_Var(self, node: Var) -> Any:
         var_name = node.value
@@ -2198,25 +2415,32 @@ class Interpreter(NodeVisitor):
 
     def visit_IndexVar(self, node: IndexVar) -> Any:
         var_name = node.value
-
-        ar = self.call_stack.peek()
-        array = ar.get(var_name)
         index: int = self.visit(node.index)
 
-        if index in array:
-            return array[index]
+        ar = self.call_stack.peek()
+        if ar.get_meta(var_name).type == ElementType.STRING:
+            string_const = ar.get(var_name)
+            if len(string_const) >= index:
+                return string_const[index - 1]
+            else:
+                return ""
         else:
-            message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
-            print(f"\033[91m{message}\033[0m", file=sys.stderr)
-            element_type = ar.get_meta(var_name).type
-            if element_type == ElementType.BOOL:
-                return False
-            if element_type == ElementType.INTEGER:
-                return 0
-            if element_type == ElementType.REAL:
-                return 0.0
-            if element_type == ElementType.ARRAY:
-                return {}
+            array = ar.get(var_name)
+
+            if index in array:
+                return array[index]
+            else:
+                message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
+                SpiUtil.print_w(message=message)
+                element_type = ar.get_meta(var_name).type
+                if element_type == ElementType.BOOL:
+                    return False
+                if element_type == ElementType.INTEGER:
+                    return 0
+                if element_type == ElementType.REAL:
+                    return 0.0
+                if element_type == ElementType.ARRAY:
+                    return {}
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
@@ -2314,20 +2538,24 @@ class Interpreter(NodeVisitor):
                 arr_name = actual_params[0].value
                 new_length = actual_params[1].value
                 element_type = ar.get_meta(arr_name).type
-                if ar.get_meta(arr_name).dynamic is False:
-                    raise StaticArrayModifyLengthError()
+                if element_type == ElementType.STRING:
+                    if len(ar[arr_name]) > new_length:
+                        ar[arr_name] = ar[arr_name][0:new_length]
+                else:
+                    if ar.get_meta(arr_name).dynamic is False:
+                        raise StaticArrayModifyLengthError()
 
-                for i in range(0, new_length):
-                    if i in ar[arr_name]:
-                        continue
-                    if element_type == ElementType.BOOL:
-                        ar[arr_name][i] = False
-                    if element_type == ElementType.INTEGER:
-                        ar[arr_name][i] = 0
-                    if element_type == ElementType.REAL:
-                        ar[arr_name][i] = 0.0
-                    if element_type == ElementType.ARRAY:
-                        ar[arr_name][i] = {}
+                    for i in range(0, new_length):
+                        if i in ar[arr_name]:
+                            continue
+                        if element_type == ElementType.BOOL:
+                            ar[arr_name][i] = False
+                        if element_type == ElementType.INTEGER:
+                            ar[arr_name][i] = 0
+                        if element_type == ElementType.REAL:
+                            ar[arr_name][i] = 0.0
+                        if element_type == ElementType.ARRAY:
+                            ar[arr_name][i] = {}
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))

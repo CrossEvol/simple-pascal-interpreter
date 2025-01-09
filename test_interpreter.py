@@ -60,6 +60,8 @@ class LexerTestCase(unittest.TestCase):
             ("ARRAY", TokenType.ARRAY, "ARRAY"),
             ("OF", TokenType.OF, "OF"),
             ("..", TokenType.RANGE, ".."),
+            ("STRING", TokenType.STRING, "STRING"),
+            ("'abc'", TokenType.STRING_CONST, "abc"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -870,6 +872,47 @@ end.
         self.assertEqual(ar["c"], 0.0)
         self.assertEqual(ar["d"], {})
         self.assertEqual(ar.nesting_level, 1)
+
+    def test_string(self):
+        text = """\
+program StringExample;
+var
+  str1: string[7]; {Declare a string wth a maximum size}
+  str2 : string; {Declare a string without a maximum size}
+  str3 : string; {will be used for setLength()}
+  concat : string; {will be used for s1 + s2}
+  a, b : string; {will use subscript to extra char from string}
+  l1 , l2 , l3: integer;
+
+begin
+  str1 := 'abcdefghijklmnopqrstuvwxyz';
+  str2 := 'abcdefghijklmnopqrstuvwxyz';
+  str3 := str2;
+
+  l1 := length(str1);
+  l2 := length(str2);
+
+  setLength(str3,14);
+  l3 := length(str3);
+  a := str3[1];
+  b := str3[36];
+  { concat := str1 + '123' + 456; }
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["str1"], "abcdefg")
+        self.assertEqual(ar["str2"], "abcdefghijklmnopqrstuvwxyz")
+        self.assertEqual(ar["str3"], "abcdefghijklmn")
+        self.assertEqual(ar["l1"], 7)
+        self.assertEqual(ar["l2"], 26)
+        self.assertEqual(ar["l3"], 14)
+        self.assertEqual(ar["a"], "a")
+        self.assertEqual(ar["b"], "")
+        # self.assertEqual(ar["concat"], "abcdefg123456")
+        self.assertEqual(ar.nesting_level, 2)
 
     def test_program(self):
         text = """\
