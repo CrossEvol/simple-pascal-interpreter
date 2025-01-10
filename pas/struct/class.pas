@@ -1,4 +1,8 @@
 program SimpleClass;
+
+{$mode objfpc} // directive to be used for defining classes
+{$m+}		   // directive to be used for using constructor
+
 type
   TPerson = class
     private

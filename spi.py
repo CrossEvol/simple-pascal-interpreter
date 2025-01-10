@@ -19,6 +19,14 @@ class SpiUtil:
     def print_w(message: Any):
         print(f"\033[91m{message}\033[0m", file=sys.stderr)
 
+    @staticmethod
+    def getField(s: str, n):
+        list = s.split(".")
+        v: Any = n[list[0]]
+        for item in list[1:]:
+            v = v[item]
+        return v
+
 
 class ElementType(Enum):
     INTEGER = "INTEGER"
@@ -72,6 +80,10 @@ class LexerStringError(LexerError):
 
 
 class ParserError(Error):
+    pass
+
+
+class VarDuplicateInScopeError(ParserError):
     pass
 
 
@@ -180,6 +192,11 @@ class TokenType(Enum):
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
     FUNCTION = "FUNCTION"
+    TYPE = "TYPE"
+    CLASS = "CLASS"
+    PRIVATE = "PRIVATE"
+    PUBLIC = "PUBLIC"
+    CONSTRUCTOR = "CONSTRUCTOR"
     INTEGER = "INTEGER"
     REAL = "REAL"
     BOOLEAN = "BOOLEAN"
@@ -335,6 +352,11 @@ class Lexer:
         while self.current_char != "}":
             self.advance()
         self.advance()  # the closing curly brace
+
+    def skip_backslash_comment(self) -> None:
+        while self.current_char != "\n":
+            self.advance()
+        self.advance()
 
     def number(self) -> Token:
         """Return a (multidigit) integer or float consumed from the input."""
@@ -496,6 +518,12 @@ class Lexer:
                 self.skip_comment()
                 continue
 
+            if self.current_char == "/" and self.peek() == "/":
+                self.advance()
+                self.advance()
+                self.skip_backslash_comment()
+                continue
+
             if self.current_char == "'":
                 return self.__string()
 
@@ -572,6 +600,16 @@ class Lexer:
 class AST:
     def __init__(self) -> None:
         self._num: int | None = None
+
+
+class Decl(AST):
+    def __init__(self):
+        super().__init__()
+
+
+class Def(AST):
+    def __init__(self):
+        super().__init__()
 
 
 class BinOp(AST):
@@ -687,10 +725,15 @@ class Block(AST):
         self.compound_statement = compound_statement
 
 
-class VarDecl(AST):
+class VarDecl(Decl):
     def __init__(self, var_node: Var, type_node: Type) -> None:
         self.var_node = var_node
         self.type_node = type_node
+
+
+class ClassDef(Def):
+    def __init__(self):
+        super().__init__()
 
 
 class Type(AST):
@@ -743,7 +786,7 @@ class Param(AST):
         self.type_node = type_node
 
 
-class ProcedureDecl(AST):
+class ProcedureDecl(Decl):
     def __init__(
         self, proc_name: str, formal_params: list[Param], block_node: Block
     ) -> None:
@@ -752,7 +795,28 @@ class ProcedureDecl(AST):
         self.block_node = block_node
 
 
-class FunctionDecl(AST):
+class ProcedureDef(Def):
+    def __init__(self, proc_name: str, formal_params: list[Param]) -> None:
+        self.proc_name = proc_name
+        self.formal_params = formal_params
+
+
+class ConstructorDecl(AST):
+    def __init__(
+        self, proc_name: str, formal_params: list[Param], block_node: Block
+    ) -> None:
+        self.proc_name = proc_name
+        self.formal_params = formal_params  # a list of Param nodes
+        self.block_node = block_node
+
+
+class ConstructorDef(Def):
+    def __init__(self, proc_name: str, formal_params: list[Param]) -> None:
+        self.proc_name = proc_name
+        self.formal_params = formal_params
+
+
+class FunctionDecl(Decl):
     def __init__(
         self,
         func_name: str,
@@ -764,6 +828,18 @@ class FunctionDecl(AST):
         self.formal_params = formal_params  # a list of Param nodes
         self.return_type = return_type
         self.block_node = block_node
+
+
+class FunctionDef(Def):
+    def __init__(
+        self,
+        func_name: str,
+        formal_params: list[Param],
+        return_type: Type,
+    ) -> None:
+        self.func_name = func_name
+        self.formal_params = formal_params
+        self.return_type = return_type
 
 
 class ProcedureCall(AST):
@@ -784,7 +860,6 @@ class FunctionCall(AST):
         self.func_symbol: FunctionSymbol | None = None
 
 
-type Decl = VarDecl | ProcedureDecl | FunctionDecl
 type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
 type Expr = "Factor"
 type Term = "Factor"
@@ -849,11 +924,21 @@ class Parser:
 
     def declarations(self) -> list[Decl]:
         """
-        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        declarations :
+            type_declaration
+            (VAR (variable_declaration SEMI)+)?
+            procedure_declaration*
+            function_declaration*
+            (VAR (variable_declaration SEMI)+)?
         """
+        """
+        pascal does not emphasize the order of var/proc/func , the var before or after proc/func just for simplicity
+        """
+        hasVar: bool = False
         declarations: list[Decl] = []
 
         if self.current_token.type == TokenType.VAR:
+            hasVar = True
             self.eat(TokenType.VAR)
             while self.current_token.type == TokenType.ID:
                 var_decl = self.variable_declaration()
@@ -868,7 +953,31 @@ class Parser:
             func_decl = self.function_declaration()
             declarations.append(func_decl)
 
+        if hasVar and self.current_token.type == TokenType.VAR:
+            raise VarDuplicateInScopeError()
+        if self.current_token.type == TokenType.VAR:
+            hasVar = True
+            self.eat(TokenType.VAR)
+            while self.current_token.type == TokenType.ID:
+                var_decl = self.variable_declaration()
+                declarations.extend(var_decl)
+                self.eat(TokenType.SEMI)
+
         return declarations
+
+    def type_declaration(self) -> list[ClassDef]:
+        """
+        type_declaration:
+            TYPE class_definition
+        """
+        raise ParserError()
+
+    def class_definition(self) -> ClassDef:
+        """
+        class_definition:
+            ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)?
+        """
+        raise ParserError()
 
     def formal_parameters(self) -> list[Param]:
         """formal_parameters : ID (COMMA ID)* COLON type_spec"""
@@ -906,6 +1015,18 @@ class Parser:
 
         return param_nodes
 
+    def field_definition(self) -> list[VarDecl]:
+        """
+        field_definition: variable_declaration
+        """
+        raise ParserError()
+
+    def method_definition(self) -> list[VarDecl]:
+        """
+        method_definition: constructor_definition | procedure_definition | function_definition
+        """
+        raise ParserError()
+
     def variable_declaration(self) -> list[VarDecl]:
         """variable_declaration : ID (COMMA ID)* COLON type_spec"""
         var_nodes = [Var(self.current_token)]  # first ID
@@ -922,33 +1043,78 @@ class Parser:
         var_declarations = [VarDecl(var_node, type_node) for var_node in var_nodes]
         return var_declarations
 
+    def constructor_declaration(self) -> ConstructorDecl:
+        """
+        constructor_declaration :
+            constructor_definition SEMI block SEMI
+        """
+        raise ParserError()
+
+    def constructor_definition(self) -> ConstructorDef:
+        """
+        constructor_definition:
+            CONSTRUCTOR id_expr (LPAREN formal_parameter_list RPAREN)? SEMI
+        """
+        raise ParserError()
+
     def procedure_declaration(self) -> ProcedureDecl:
-        """procedure_declaration :
-        PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? SEMI block SEMI
+        """
+        procedure_declaration :
+            procedure_definition SEMI block SEMI
+        """
+        proc_def = self.procedure_definition()
+        block_node = self.block()
+
+        proc_decl = ProcedureDecl(
+            proc_name=proc_def.proc_name,
+            formal_params=proc_def.formal_params,
+            block_node=block_node,
+        )
+        self.eat(TokenType.SEMI)
+        return proc_decl
+
+    def procedure_definition(self) -> ProcedureDef:
+        """
+        procedure_definition:
+            PROCEDURE id_expr (LPAREN formal_parameter_list RPAREN)? SEMI
         """
         self.eat(TokenType.PROCEDURE)
-        proc_name = self.current_token.value
-        self.eat(TokenType.ID)
-        formal_params = []
+        proc_name = self.id_expr()
 
+        formal_params = []
         if self.current_token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
             formal_params = self.formal_parameter_list()
             self.eat(TokenType.RPAREN)
+        self.eat(TokenType.SEMI)
 
-        self.eat(TokenType.SEMI)
-        block_node = self.block()
-        proc_decl = ProcedureDecl(proc_name, formal_params, block_node)
-        self.eat(TokenType.SEMI)
-        return proc_decl
+        node = ProcedureDef(proc_name=proc_name, formal_params=formal_params)
+        return node
 
     def function_declaration(self) -> FunctionDecl:
-        """function_declaration :
-        FUNCTION ID LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI block SEMI
+        """
+        function_declaration :
+            function_definition block SEMI
+        """
+        function_def = self.function_definition()
+
+        block_node = self.block()
+        func_decl = FunctionDecl(
+            func_name=function_def.func_name,
+            formal_params=function_def.formal_params,
+            return_type=function_def.return_type,
+            block_node=block_node,
+        )
+        self.eat(TokenType.SEMI)
+        return func_decl
+
+    def function_definition(self) -> FunctionDef:
+        """
+        function_definition:
+            FUNCTION id_expr LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI
         """
         self.eat(TokenType.FUNCTION)
-        func_name = self.current_token.value
-        self.eat(TokenType.ID)
+        func_name = self.id_expr()
 
         formal_params = []
         self.eat(TokenType.LPAREN)
@@ -959,10 +1125,19 @@ class Parser:
         return_type = self.type_spec()
 
         self.eat(TokenType.SEMI)
-        block_node = self.block()
-        func_decl = FunctionDecl(func_name, formal_params, return_type, block_node)
-        self.eat(TokenType.SEMI)
-        return func_decl
+
+        node = FunctionDef(
+            func_name=func_name, formal_params=formal_params, return_type=return_type
+        )
+        return node
+
+    def id_expr(self) -> str:
+        name: str = self.current_token.value
+        self.eat(TokenType.ID)
+        while self.current_token.type == TokenType.DOT:
+            self.eat(TokenType.DOT)
+            name += self.current_token.value
+        return name
 
     def type_spec(self) -> Type:
         """
@@ -1239,10 +1414,18 @@ class Parser:
 
     def variable(self) -> Var:
         """
-        variable: ID (LBRACKET summation_expr RBRACKET)?
+        variable: id_expr (LBRACKET summation_expr RBRACKET)?
         """
-        node = Var(self.current_token)
-        self.eat(TokenType.ID)
+        token = self.current_token
+        var_name = self.id_expr()
+        node = Var(
+            Token(
+                type=token.type,
+                value=var_name,
+                lineno=token.lineno,
+                column=token.column,
+            )
+        )
         if self.current_token.type == TokenType.LBRACKET:
             self.eat(TokenType.LBRACKET)
             index = self.summation_expr()
@@ -1418,15 +1601,42 @@ class Parser:
 
         block : declarations compound_statement
 
-        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        type_declaration:
+            TYPE class_definition
+
+        class_definition:
+            ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)?
+
+        field_definition: variable_declaration
+
+        method_definition: constructor_definition | procedure_definition | function_definition
+
+        declarations :
+            type_declaration
+            (VAR (variable_declaration SEMI)+)?
+            procedure_declaration*
+            function_declaration*
+            (VAR (variable_declaration SEMI)+)?
 
         variable_declaration : ID (COMMA ID)* COLON type_spec
 
+        constructor_declaration :
+            constructor_definition SEMI block SEMI
+
+        constructor_definition:
+            CONSTRUCTOR id_expr (LPAREN formal_parameter_list RPAREN)? SEMI
+
         procedure_declaration :
-             PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? SEMI block SEMI
+            procedure_definition SEMI block SEMI
+
+        procedure_definition:
+            PROCEDURE id_expr (LPAREN formal_parameter_list RPAREN)? SEMI
 
         function_declaration :
-             FUNCTION ID LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI block SEMI
+            function_definition block SEMI
+
+        function_definition:
+            FUNCTION id_expr LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI
 
         formal_params_list : formal_parameters
                            | formal_parameters SEMI formal_parameter_list
@@ -1492,7 +1702,9 @@ class Parser:
                | func_call_expr
                | variable
 
-        variable: ID (LBRACKET summation_expr RBRACKET)?
+        variable: id_expr (LBRACKET summation_expr RBRACKET)?
+
+        id_expr : ID ( DOT  ID )*
         """
         node = self.program()
         if self.current_token.type != TokenType.EOF:

@@ -62,6 +62,11 @@ class LexerTestCase(unittest.TestCase):
             ("..", TokenType.RANGE, ".."),
             ("STRING", TokenType.STRING, "STRING"),
             ("'abc'", TokenType.STRING_CONST, "abc"),
+            ("TYPE", TokenType.TYPE, "TYPE"),
+            ("CLASS", TokenType.CLASS, "CLASS"),
+            ("PRIVATE", TokenType.PRIVATE, "PRIVATE"),
+            ("PUBLIC", TokenType.PUBLIC, "PUBLIC"),
+            ("CONSTRUCTOR", TokenType.CONSTRUCTOR, "CONSTRUCTOR"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -126,7 +131,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 6)
 
     def test_maximum_one_VAR_block_is_allowed(self):
-        from spi import ParserError, ErrorCode
+        from spi import ParserError, VarDuplicateInScopeError
 
         # zero VARs
         parser = self.makeParser(
@@ -166,9 +171,7 @@ class ParserTestCase(unittest.TestCase):
         with self.assertRaises(ParserError) as cm:
             parser.parse()
         the_exception = cm.exception
-        self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
-        self.assertEqual(the_exception.token.value, "VAR")
-        self.assertEqual(the_exception.token.lineno, 5)  # second VAR
+        self.assertIsInstance(the_exception, VarDuplicateInScopeError)
 
 
 class SemanticAnalyzerTestCase(unittest.TestCase):
