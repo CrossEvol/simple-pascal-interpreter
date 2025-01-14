@@ -67,6 +67,7 @@ class LexerTestCase(unittest.TestCase):
             ("PRIVATE", TokenType.PRIVATE, "PRIVATE"),
             ("PUBLIC", TokenType.PUBLIC, "PUBLIC"),
             ("CONSTRUCTOR", TokenType.CONSTRUCTOR, "CONSTRUCTOR"),
+            ("_this_self", TokenType.ID, "_this_self"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
