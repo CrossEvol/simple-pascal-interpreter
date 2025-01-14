@@ -1,4 +1,4 @@
-program SimpleClass;
+program ClassConstructorAndDestructor;
 
 {$mode objfpc} // directive to be used for defining classes
 {$m+}		   // directive to be used for using constructor
@@ -9,18 +9,9 @@ type
       name: String;
       age: Integer;
     public
-      constructor Create(aName: String; aAge: Integer);
       procedure SetData(aName: String; aAge: Integer);
       procedure PrintData;
-      function getName():String;
-      function getAge():Integer;
   end;
-
-constructor TPerson.Create(aName: String; aAge: Integer);
-begin
-  name := aName;
-  age := aAge;
-end;
 
 procedure TPerson.SetData(aName: String; aAge: Integer);
 begin
@@ -34,25 +25,12 @@ begin
   WriteLn('Age: ', age);
 end;
 
-
-function TPerson.getName:String;
-begin
-    getName := name;
-end;
-
-function TPerson.getAge:Integer;
-begin
-    getAge := age;
-end;
-
 var
   person: TPerson;
 begin
-  person := TPerson.Create('Alice', 30);
+  person := TPerson.Create;
   person.PrintData;
   person.SetData('Tom', 18);
   person.PrintData;
-  WriteLn(person.getName);
-  WriteLn(person.getAge);
-  {person.Free;}
+  person.Free;
 end.

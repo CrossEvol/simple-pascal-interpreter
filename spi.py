@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from enum import Enum
 from dataclasses import dataclass
@@ -27,13 +28,34 @@ class SpiUtil:
             v = v[item]
         return v
 
+    @staticmethod
+    def toClassName(class_name: str):
+        return "Class[{class_name}]".format(class_name=class_name)
+
+    @staticmethod
+    def extraClassName(class_name: str):
+        pattern = r"Class\[(\w+)\]"
+        match = re.search(pattern, class_name)
+        if match:
+            raw_class_name = match.group(1)
+            return raw_class_name
+        else:
+            SpiUtil.print_w(
+                "Could not find pattern {pattern} in {str}".format(
+                    pattern=pattern, str=class_name
+                )
+            )
+            return class_name
+
 
 class ElementType(Enum):
-    INTEGER = "INTEGER"
+    INTEGER = "INTEGER"  # may be should prefix with ARRAY
     REAL = "REAL"
     BOOL = "BOOL"
     STRING = "STRING"
     ARRAY = "ARRAY"
+    CLASS = "CLASS"
+    INSTANCE = "INSTANCE"
 
 
 class ErrorCode(Enum):
@@ -72,6 +94,10 @@ class LexerStringError(LexerError):
     pass
 
 
+class FindNextTokenError(LexerError):
+    pass
+
+
 ###############################################################################
 #                                                                             #
 #  ParserError                                                                      #
@@ -98,11 +124,19 @@ class SemanticError(Error):
     pass
 
 
+class DuplicateClassError(Error):
+    pass
+
+
 class UnknownTypeError(SemanticError):
     pass
 
 
 class UnknownArrayElementTypeError(UnknownTypeError):
+    pass
+
+
+class UnknownClassTypeError(UnknownTypeError):
     pass
 
 
@@ -115,6 +149,18 @@ class UnknownSymbolError(Error):
 
 
 class MissingCurrentScopeError(SemanticError):
+    pass
+
+
+class ParameterCountError(SemanticError):
+    pass
+
+
+class LackOfParametersError(ParameterCountError):
+    pass
+
+
+class TooManyParametersError(ParameterCountError):
     pass
 
 
@@ -138,6 +184,10 @@ class UnknownBuiltinFunctionError(InterpreterError):
 
 
 class UnknownBuiltinProcedureError(InterpreterError):
+    pass
+
+
+class UnknownMethodSymbolError(InterpreterError):
     pass
 
 
@@ -227,6 +277,7 @@ class TokenType(Enum):
     STRING_CONST = "STRING_CONST"
     ASSIGN = ":="
     EOF = "EOF"
+    VOID = "VOID"
 
 
 class Token:
@@ -234,8 +285,8 @@ class Token:
         self,
         type: TokenType | None,
         value,
-        lineno: int | None = None,
-        column: int | None = None,
+        lineno: int = -1,
+        column: int = -1,
     ) -> None:
         self.type = type
         self.value = value
@@ -584,6 +635,18 @@ class Lexer:
         self.revert(prev_status)
         return token
 
+    def peek_next_token_list(self, step: int) -> list[Token]:
+        """step should greater or equal to 1. If step is equal to 1, it has the same effect as peek_next_token"""
+        if step < 1:
+            raise FindNextTokenError()
+        tokens: list[Token] = []
+        prev_status = self.status()
+        for _ in range(0, step):
+            token = self.get_next_token()
+            tokens.append(token)
+        self.revert(prev_status)
+        return tokens
+
     def revert(self, status: LexerStatus) -> None:
         """revert the current lexer status before call self.get_next_token()"""
         self.pos = status.pos
@@ -720,9 +783,15 @@ class Program(AST):
 
 
 class Block(AST):
-    def __init__(self, declarations: list[Decl], compound_statement: Compound) -> None:
+    def __init__(
+        self,
+        declarations: list[Decl],
+        compound_statement: Compound,
+        meta_classes: dict[int, list[str]] = {},
+    ) -> None:
         self.declarations = declarations
         self.compound_statement = compound_statement
+        self.meta_classes = meta_classes
 
 
 class VarDecl(Decl):
@@ -730,16 +799,99 @@ class VarDecl(Decl):
         self.var_node = var_node
         self.type_node = type_node
 
+    def to_FieldDecl(self) -> FieldDecl:
+        return FieldDecl(var_node=self.var_node, type_node=self.type_node)
 
-class ClassDef(Def):
+
+class Member(Decl):
     def __init__(self):
         super().__init__()
+
+
+class FieldDecl(Member):
+    def __init__(self, var_node: Var, type_node: Type) -> None:
+        self.var_node = var_node
+        self.type_node = type_node
+
+    def to_VarDecl(self) -> VarDecl:
+        return VarDecl(var_node=self.var_node, type_node=self.type_node)
+
+
+class MethodType(Enum):
+    CONSTRUCTOR = "CONSTRUCTOR"
+    DESTRUCTOR = "DESTRUCTOR"
+    PROCEDURE = "PROCEDURE"
+    FUNCTION = "FUNCTION"
+    UNDEFINED = "UNDEFINED"
+
+
+class MethodDef(Member):
+    def __init__(
+        self,
+        method_name: str,
+        params: list[Param],
+        return_type: Type,
+        method_type: MethodType,
+    ) -> None:
+        self.method_name = method_name
+        self.params = params
+        self.return_type = return_type
+        self.method_type = method_type
+
+
+class MethodDecl(Member):
+    def __init__(
+        self,
+        method_full_name: str,
+        params: list[Param],
+        return_type: Type,
+        method_type: MethodType,
+        block: Block,
+    ) -> None:
+        self.method_full_name = method_full_name
+        self.params = params
+        self.return_type = return_type
+        self.method_type = method_type
+        self.block = block
+
+    def to_def(self) -> MethodDef:
+        return MethodDef(
+            method_name=self.method_full_name.split(".")[1],
+            params=self.params,
+            return_type=self.return_type,
+            method_type=self.method_type,
+        )
+
+
+class ClassDecl(Decl):
+    def __init__(
+        self,
+        class_name: str,
+        fields: list[FieldDecl],
+        methods: list[MethodDef],
+        constructor: MethodDecl | None = None,
+        destructor: MethodDecl | None = None,
+    ):
+        super().__init__()
+        self.class_name = class_name
+        self.fields = fields
+        self.methods = methods
+        self.constructor = constructor
+        self.destructor = destructor
 
 
 class Type(AST):
     def __init__(self, token: Token) -> None:
         self.token = token
         self.value = token.value
+
+
+class VoidType(Type):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def __str__(self):
+        return "VOID"
 
 
 class PrimitiveType(Type):
@@ -780,6 +932,14 @@ class ArrayType(Type):
         )
 
 
+class ClassType(Type):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def __str__(self):
+        return "Class[{class_name}]".format(class_name=self.value)
+
+
 class Param(AST):
     def __init__(self, var_node: Var, type_node: Type) -> None:
         self.var_node = var_node
@@ -801,18 +961,18 @@ class ProcedureDef(Def):
         self.formal_params = formal_params
 
 
-class ConstructorDecl(AST):
+class ConstructorDecl(Decl):
     def __init__(
-        self, proc_name: str, formal_params: list[Param], block_node: Block
+        self, constructor_name: str, formal_params: list[Param], block_node: Block
     ) -> None:
-        self.proc_name = proc_name
+        self.constructor_name = constructor_name
         self.formal_params = formal_params  # a list of Param nodes
         self.block_node = block_node
 
 
 class ConstructorDef(Def):
-    def __init__(self, proc_name: str, formal_params: list[Param]) -> None:
-        self.proc_name = proc_name
+    def __init__(self, constructor_name: str, formal_params: list[Param]) -> None:
+        self.constructor_name = constructor_name
         self.formal_params = formal_params
 
 
@@ -842,7 +1002,12 @@ class FunctionDef(Def):
         self.return_type = return_type
 
 
-class ProcedureCall(AST):
+class AbstractCall(AST):
+    def __init__(self):
+        super().__init__()
+
+
+class ProcedureCall(AbstractCall):
     def __init__(self, proc_name: str, actual_params: list[Expr], token: Token) -> None:
         self.proc_name = proc_name
         self.actual_params = actual_params  # a list of AST nodes
@@ -851,7 +1016,7 @@ class ProcedureCall(AST):
         self.proc_symbol: ProcedureSymbol | None = None
 
 
-class FunctionCall(AST):
+class FunctionCall(AbstractCall):
     def __init__(self, func_name: str, actual_params: list[Expr], token: Token) -> None:
         self.func_name = func_name
         self.actual_params = actual_params  # a list of AST nodes
@@ -860,10 +1025,25 @@ class FunctionCall(AST):
         self.func_symbol: FunctionSymbol | None = None
 
 
-type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
+class MethodCall(AbstractCall):
+    def __init__(
+        self,
+        method_full_name: str,
+        actual_params: list[Expr],
+        token: Token,
+    ) -> None:
+        self.method_full_name = method_full_name
+        self.actual_params = actual_params  # a list of AST nodes
+        self.token = token
+        # a reference to procedure declaration symbol
+        self.method_symbol: MethodSymbol | None = None
+        self.method_type: MethodType = MethodType.UNDEFINED
+
+
+type Statement = Compound | ProcedureCall | MethodCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
 type Expr = "Factor"
 type Term = "Factor"
-type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | String
+type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | MethodCall | String
 
 
 class Parser:
@@ -872,10 +1052,21 @@ class Parser:
         self.lexer = lexer
         # set current token to the first token taken from the input
         self.current_token = self.get_next_token()
+        self.current_class_id = ""
 
     def newZeroNum(self, lineno: int = -1, column: int = -1) -> Num:
         return Num(
             token=Token(TokenType.INTEGER_CONST, value=0, lineno=lineno, column=column)
+        )
+
+    def newVoidType(self, lineno: int = -1, column: int = -1) -> VoidType:
+        return VoidType(
+            token=Token(
+                type=TokenType.VOID,
+                value=TokenType.VOID.value,
+                lineno=lineno,
+                column=column,
+            )
         )
 
     def get_next_token(self):
@@ -883,6 +1074,10 @@ class Parser:
 
     def peek_next_token(self):
         return self.lexer.peek_next_token()
+
+    def peek_next_two_token(self) -> tuple[Token, Token]:
+        tokens = self.lexer.peek_next_token_list(2)
+        return (tokens[0], tokens[1])
 
     def error(self, error_code: ErrorCode, token: Token):
         raise ParserError(
@@ -925,7 +1120,7 @@ class Parser:
     def declarations(self) -> list[Decl]:
         """
         declarations :
-            type_declaration
+            (type_declaration)?
             (VAR (variable_declaration SEMI)+)?
             procedure_declaration*
             function_declaration*
@@ -937,6 +1132,10 @@ class Parser:
         hasVar: bool = False
         declarations: list[Decl] = []
 
+        if self.current_token.type == TokenType.TYPE:
+            type_decl_list = self.type_declaration()
+            declarations.extend(type_decl_list)
+
         if self.current_token.type == TokenType.VAR:
             hasVar = True
             self.eat(TokenType.VAR)
@@ -944,14 +1143,24 @@ class Parser:
                 var_decl = self.variable_declaration()
                 declarations.extend(var_decl)
                 self.eat(TokenType.SEMI)
-
-        while self.current_token.type == TokenType.PROCEDURE:
-            proc_decl = self.procedure_declaration()
-            declarations.append(proc_decl)
-
-        while self.current_token.type == TokenType.FUNCTION:
-            func_decl = self.function_declaration()
-            declarations.append(func_decl)
+        while self.current_token.type in [
+            TokenType.CONSTRUCTOR,
+            TokenType.PROCEDURE,
+            TokenType.FUNCTION,
+        ]:
+            first, second = self.peek_next_two_token()
+            if first.type == TokenType.ID and second.type == TokenType.DOT:
+                method_decl = self.method_declaration()
+                declarations.append(method_decl)
+            elif self.current_token.type == TokenType.CONSTRUCTOR:
+                constructor_decl = self.constructor_declaration()
+                declarations.append(constructor_decl)
+            elif self.current_token.type == TokenType.PROCEDURE:
+                proc_decl = self.procedure_declaration()
+                declarations.append(proc_decl)
+            elif self.current_token.type == TokenType.FUNCTION:
+                func_decl = self.function_declaration()
+                declarations.append(func_decl)
 
         if hasVar and self.current_token.type == TokenType.VAR:
             raise VarDuplicateInScopeError()
@@ -965,19 +1174,141 @@ class Parser:
 
         return declarations
 
-    def type_declaration(self) -> list[ClassDef]:
+    def type_declaration(self) -> list[Decl]:
         """
         type_declaration:
-            TYPE class_definition
+            TYPE (class_definition)*
         """
-        raise ParserError()
+        decl_list: list[Decl] = []
+        self.eat(TokenType.TYPE)
+        while self.current_token.type == TokenType.ID:
+            # will be used in class_definition()
+            self.current_class_id = SpiUtil.toClassName(
+                cast(str, self.current_token.value)
+            )
+            self.eat(TokenType.ID)
+            self.eat(TokenType.EQ)
+            if self.current_token.type == TokenType.CLASS:
+                self.eat(TokenType.CLASS)
+                class_def = self.class_definition()
+                decl_list.append(class_def)
+        return decl_list
 
-    def class_definition(self) -> ClassDef:
+    def class_definition(self) -> ClassDecl:
         """
         class_definition:
             ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)?
         """
-        raise ParserError()
+        self.eat(TokenType.PRIVATE)
+        fields: list[FieldDecl] = []
+        while self.current_token.type == TokenType.ID:
+            var_decl = self.variable_declaration()[0]
+            self.eat(token_type=TokenType.SEMI)
+            fields.append(
+                FieldDecl(var_node=var_decl.var_node, type_node=var_decl.type_node)
+            )
+
+        methods: list[MethodDef] = []
+        self.eat(TokenType.PUBLIC)
+        while self.current_token.type in [
+            TokenType.CONSTRUCTOR,
+            TokenType.FUNCTION,
+            TokenType.PROCEDURE,
+        ]:
+            method_def = self.method_definition()
+            methods.append(method_def)
+        self.eat(token_type=TokenType.END)
+        self.eat(token_type=TokenType.SEMI)
+
+        # create the default constructor and destructor
+        constructor: MethodDecl | None = None
+        destructor: MethodDecl | None = None
+        has_constructor = False
+        has_destructor = False
+        for m in methods:
+            if m.method_name.upper() == "CREATE":
+                has_constructor = True
+                continue
+            if m.method_name.upper() == "FREE":
+                has_destructor = True
+                continue
+        if not has_constructor:
+            compound = Compound()
+            for f in fields:
+                var_name = f.var_node.value
+                left = Var(token=Token(type=TokenType.ID, value=var_name))
+                right: AST = NoOp()
+                # TODO: only consider the primitive type and string type
+                match f.type_node.token.type:
+                    case TokenType.BOOLEAN:
+                        right = Bool(token=Token(type=TokenType.FALSE, value=False))
+                    case TokenType.INTEGER:
+                        right = Num(token=Token(type=TokenType.INTEGER_CONST, value=0))
+                    case TokenType.REAL:
+                        right = Num(token=Token(type=TokenType.REAL_CONST, value=0.0))
+                    case TokenType.STRING:
+                        right = String(
+                            token=Token(type=TokenType.STRING_CONST, value="")
+                        )
+                compound.children.append(
+                    Assign(
+                        left=left,
+                        op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN.value),
+                        right=right,
+                    )
+                )
+
+            constructor = MethodDecl(
+                method_full_name=SpiUtil.extraClassName(self.current_class_id)
+                + "."
+                + "Create",
+                params=[],
+                return_type=self.newVoidType(),
+                method_type=MethodType.CONSTRUCTOR,
+                block=Block(declarations=[], compound_statement=compound),
+            )
+        if not has_destructor:
+            compound = Compound()
+            for f in fields:
+                var_name = f.var_node.value
+                left = Var(token=Token(type=TokenType.ID, value=var_name))
+                right = NoOp()
+                match f.type_node.token.type:
+                    case TokenType.BOOLEAN:
+                        right = Bool(token=Token(type=TokenType.FALSE, value=False))
+                    case TokenType.INTEGER:
+                        right = Num(token=Token(type=TokenType.INTEGER_CONST, value=0))
+                    case TokenType.REAL:
+                        right = Num(token=Token(type=TokenType.REAL_CONST, value=0.0))
+                    case TokenType.STRING:
+                        right = String(
+                            token=Token(type=TokenType.STRING_CONST, value="")
+                        )
+                compound.children.append(
+                    Assign(
+                        left=left,
+                        op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN.value),
+                        right=right,
+                    )
+                )
+            destructor = MethodDecl(
+                method_full_name=SpiUtil.extraClassName(self.current_class_id)
+                + "."
+                + "Free",
+                params=[],
+                return_type=self.newVoidType(),
+                method_type=MethodType.DESTRUCTOR,
+                block=Block(declarations=[], compound_statement=compound),
+            )
+        class_decl = ClassDecl(
+            class_name=self.current_class_id,
+            fields=fields,
+            methods=methods,
+            constructor=constructor,
+            destructor=destructor,
+        )
+        self.current_class_id = ""  # reset here
+        return class_decl
 
     def formal_parameters(self) -> list[Param]:
         """formal_parameters : ID (COMMA ID)* COLON type_spec"""
@@ -1021,11 +1352,67 @@ class Parser:
         """
         raise ParserError()
 
-    def method_definition(self) -> list[VarDecl]:
+    def method_definition(self) -> MethodDef:
         """
-        method_definition: constructor_definition | procedure_definition | function_definition
+        method_definition:
+            ( CONSTRUCTOR | PROCEDURE | FUNCTION ) ID DOT ID (LPAREN (formal_parameter_list)? RPAREN)? ( COLON type_spec )? SEMI
         """
-        raise ParserError()
+        while self.current_token.type in [
+            TokenType.CONSTRUCTOR,
+            TokenType.PROCEDURE,
+            TokenType.FUNCTION,
+        ]:
+            if self.current_token.type == TokenType.CONSTRUCTOR:
+                self.eat(TokenType.CONSTRUCTOR)
+                method_type = MethodType.CONSTRUCTOR
+            elif self.current_token.type == TokenType.PROCEDURE:
+                self.eat(TokenType.PROCEDURE)
+                method_type = MethodType.PROCEDURE
+            elif self.current_token.type == TokenType.FUNCTION:
+                self.eat(TokenType.FUNCTION)
+                method_type = MethodType.FUNCTION
+
+        method_name = self.id_expr()
+
+        params = []
+        if self.current_token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
+            params = self.formal_parameter_list()
+            self.eat(TokenType.RPAREN)
+
+        return_type: Type = self.newVoidType(
+            lineno=self.current_token.lineno, column=self.current_token.column
+        )
+        if self.current_token.type == TokenType.COLON:
+            self.eat(TokenType.COLON)
+            return_type = self.type_spec()
+
+        self.eat(TokenType.SEMI)
+
+        node = MethodDef(
+            method_name=method_name,
+            params=params,
+            return_type=return_type,
+            method_type=method_type,
+        )
+        return node
+
+    def method_declaration(self) -> MethodDecl:
+        """
+        method_declaration :
+            method_definition block SEMI
+        """
+        method_def = self.method_definition()
+        block_node = self.block()
+        method_decl = MethodDecl(
+            method_full_name=method_def.method_name,
+            params=method_def.params,
+            return_type=method_def.return_type,
+            method_type=method_def.method_type,
+            block=block_node,
+        )
+        self.eat(TokenType.SEMI)
+        return method_decl
 
     def variable_declaration(self) -> list[VarDecl]:
         """variable_declaration : ID (COMMA ID)* COLON type_spec"""
@@ -1046,21 +1433,43 @@ class Parser:
     def constructor_declaration(self) -> ConstructorDecl:
         """
         constructor_declaration :
-            constructor_definition SEMI block SEMI
+            constructor_definition block SEMI
         """
-        raise ParserError()
+        constructor_def = self.constructor_definition()
+        block_node = self.block()
+
+        proc_decl = ConstructorDecl(
+            constructor_name=constructor_def.constructor_name,
+            formal_params=constructor_def.formal_params,
+            block_node=block_node,
+        )
+        self.eat(TokenType.SEMI)
+        return proc_decl
 
     def constructor_definition(self) -> ConstructorDef:
         """
         constructor_definition:
             CONSTRUCTOR id_expr (LPAREN formal_parameter_list RPAREN)? SEMI
         """
-        raise ParserError()
+        self.eat(TokenType.CONSTRUCTOR)
+        constructor_name = self.id_expr()
+
+        formal_params = []
+        if self.current_token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
+            formal_params = self.formal_parameter_list()
+            self.eat(TokenType.RPAREN)
+        self.eat(TokenType.SEMI)
+
+        node = ConstructorDef(
+            constructor_name=constructor_name, formal_params=formal_params
+        )
+        return node
 
     def procedure_declaration(self) -> ProcedureDecl:
         """
         procedure_declaration :
-            procedure_definition SEMI block SEMI
+            procedure_definition block SEMI
         """
         proc_def = self.procedure_definition()
         block_node = self.block()
@@ -1135,13 +1544,15 @@ class Parser:
         name: str = self.current_token.value
         self.eat(TokenType.ID)
         while self.current_token.type == TokenType.DOT:
+            name += self.current_token.value
             self.eat(TokenType.DOT)
             name += self.current_token.value
+            self.eat(TokenType.ID)
         return name
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec
         """
         if self.current_token.type in (
             TokenType.INTEGER,
@@ -1153,6 +1564,8 @@ class Parser:
             return self.string_type_spec()
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
+        elif self.current_token.type == TokenType.ID:
+            return self.class_type_spec()
         else:
             raise UnknownTypeError()
 
@@ -1216,6 +1629,19 @@ class Parser:
         )
         return node
 
+    def class_type_spec(self) -> ClassType:
+        token = self.current_token
+        node = ClassType(
+            token=Token(
+                type=TokenType.CLASS,
+                value=token.value,
+                lineno=token.lineno,
+                column=token.column,
+            )
+        )
+        self.eat(TokenType.ID)
+        return node
+
     def compound_statement(self) -> Compound:
         """
         compound_statement: BEGIN statement_list END
@@ -1250,8 +1676,11 @@ class Parser:
         """
         statement : compound_statement
                   | proccall_statement
+                  | method_call_statement
                   | assignment_statement
                   | if_statement
+                  | for_statement
+                  | while_statement
                   | empty
         """
         node: Statement
@@ -1263,12 +1692,48 @@ class Parser:
             node = self.while_statement()
         elif self.current_token.type == TokenType.FOR:
             node = self.for_statement()
-        elif self.current_token.type == TokenType.ID and self.lexer.current_char == "(":
-            node = self.proccall_statement()
         elif self.current_token.type == TokenType.ID:
-            node = self.assignment_statement()
+            next_token_type = self.peek_next_token().type
+            if next_token_type == TokenType.LPAREN:
+                node = self.proccall_statement()
+            elif next_token_type == TokenType.DOT:
+                node = self.method_call_statement()
+            else:
+                node = self.assignment_statement()
         else:
             node = self.empty()
+        return node
+
+    def method_call_statement(self) -> MethodCall:
+        """
+        method_call_statement : ID DOT ID (LPAREN (expr (COMMA expr)*)? RPAREN)?
+        """
+        token = self.current_token
+
+        inst_name = self.current_token.value
+        self.eat(TokenType.ID)
+        self.eat(TokenType.DOT)
+        method_name = self.current_token.value
+        self.eat(TokenType.ID)
+        actual_params: list[Expr] = []
+        if self.current_token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
+            if self.current_token.type != TokenType.RPAREN:
+                expr = self.expr()
+                actual_params.append(expr)
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                expr = self.expr()
+                actual_params.append(expr)
+            self.eat(TokenType.RPAREN)
+
+        node = MethodCall(
+            method_full_name="{inst_name}.{method_name}".format(
+                inst_name=inst_name, method_name=method_name
+            ),
+            actual_params=actual_params,
+            token=token,
+        )
         return node
 
     def if_statement(self) -> IfStatement:
@@ -1362,6 +1827,35 @@ class Parser:
 
         node = ProcedureCall(
             proc_name=proc_name,
+            actual_params=actual_params,
+            token=token,
+        )
+        return node
+
+    def method_call_expr(self) -> MethodCall:
+        """
+        method_call_expr : id_expr (LPAREN (expr (COMMA expr)*)? RPAREN)?
+        """
+        token = self.current_token
+        method_name = self.id_expr()
+
+        actual_params: list[Expr] = []
+        actual_params.append(
+            Var(Token(TokenType.ID, method_name, token.lineno, token.column))
+        )
+        if self.current_token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
+            if self.current_token.type != TokenType.RPAREN:
+                expr = self.summation_expr()
+                actual_params.append(expr)
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                expr = self.summation_expr()
+                actual_params.append(expr)
+            self.eat(TokenType.RPAREN)
+
+        node = MethodCall(
+            method_full_name=method_name,
             actual_params=actual_params,
             token=token,
         )
@@ -1537,6 +2031,7 @@ class Parser:
                | FALSE_CONST
                | LPAREN expr RPAREN
                | func_call_expr
+               | method_call_expr
                | variable
         """
         token = self.current_token
@@ -1584,7 +2079,12 @@ class Parser:
             self.eat(TokenType.STRING_CONST)
             return String(token=token)
 
-        # call
+        # call method
+        if token.type == TokenType.ID and self.peek_next_token().type == TokenType.DOT:
+            node = self.method_call_expr()
+            return node
+
+        # call procedure
         if (
             token.type == TokenType.ID
             and self.peek_next_token().type == TokenType.LPAREN
@@ -1609,10 +2109,14 @@ class Parser:
 
         field_definition: variable_declaration
 
-        method_definition: constructor_definition | procedure_definition | function_definition
+        method_definition:
+            ( CONSTRUCTOR | PROCEDURE | FUNCTION ) ID DOT ID (LPAREN (formal_parameter_list)? RPAREN)? ( COLON type_spec )? SEMI
+
+        method_declaration :
+            method_definition block SEMI
 
         declarations :
-            type_declaration
+            (type_declaration)?
             (VAR (variable_declaration SEMI)+)?
             procedure_declaration*
             function_declaration*
@@ -1643,13 +2147,15 @@ class Parser:
 
         formal_parameters : ID (COMMA ID)* COLON type_spec
 
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec
 
         primitive_type_spec : INTEGER | REAL | BOOLEAN
 
         string_type_spec: STRING ( LBRACKET INTEGER_CONST RBRACKET )?
 
         array_type_spec : ARRAY ( LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET )? of type_spec
+
+        class_type_spec : ID
 
         compound_statement : BEGIN statement_list END
 
@@ -1658,6 +2164,7 @@ class Parser:
 
         statement : compound_statement
                   | proccall_statement
+                  | method_call_statement
                   | assignment_statement
                   | if_statement
                   | for_statement
@@ -1674,7 +2181,11 @@ class Parser:
 
         proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN
 
+        method_call_statement : ID DOT ID (LPAREN (expr (COMMA expr)*)? RPAREN)?
+
         func_call_expr : ID LPAREN (expr (COMMA expr)*)? RPAREN
+
+        method_call_expr : id_expr (LPAREN (expr (COMMA expr)*)? RPAREN)?
 
         assignment_statement : variable ASSIGN expr
 
@@ -1700,6 +2211,7 @@ class Parser:
                | FALSE_CONST
                | LPAREN expr RPAREN
                | func_call_expr
+               | method_call_expr
                | variable
 
         variable: id_expr (LBRACKET summation_expr RBRACKET)?
@@ -1764,6 +2276,10 @@ class VarSymbol(Symbol):
             name=self.name,
             type=self.type,
         )
+
+    def to_FieldSymbol(self) -> FieldSymbol:
+        field_symbol = FieldSymbol(name=self.name, type=self.type)
+        return field_symbol
 
     __repr__ = __str__
 
@@ -1874,6 +2390,73 @@ class FunctionSymbol(Symbol):
     __repr__ = __str__
 
 
+class ClassSymbol(Symbol):
+    def __init__(
+        self,
+        name: str,
+        fields: dict[str, FieldSymbol] = {},
+        methods: dict[str, MethodSymbol] = {},
+    ) -> None:
+        super().__init__(name, None)
+        self.fields = fields
+        self.methods = methods
+
+    def __str__(self) -> str:
+        return "<{class_name}(name='{name}', fields='{fields}',  methods='{methods}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            fields=self.fields,
+            methods=self.methods,
+        )
+
+    __repr__ = __str__
+
+
+class FieldSymbol(Symbol):
+    def __init__(self, name: str, type: Symbol | None) -> None:
+        super().__init__(name, type)
+
+    def __str__(self) -> str:
+        return "<{class_name}(name='{name}', type='{type}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            type=self.type,
+        )
+
+    def to_VarSymbol(self) -> VarSymbol:
+        var_symbol = VarSymbol(name=self.name, type=self.type)
+        return var_symbol
+
+    __repr__ = __str__
+
+
+class MethodSymbol(Symbol):
+    def __init__(
+        self,
+        name: str,
+        return_type: Type | None,
+        formal_params: list[Symbol],
+        method_type: MethodType,
+    ) -> None:
+        super().__init__(name)
+        # a list of VarSymbol objects
+        self.formal_params: list[Symbol] = formal_params
+        self.return_type = return_type
+        self.method_type = method_type
+        # a reference to method's body (AST sub-tree)
+        self.block_ast: Block | None = None
+
+    def __str__(self) -> str:
+        return "<{class_name}(name={name},return_type={return_type} parameters={params})>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            return_type=self.return_type,
+            params=self.formal_params,
+        )
+
+    __repr__ = __str__
+
+
 class BuiltinFunctionSymbol(Symbol):
     def __init__(
         self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
@@ -1911,9 +2494,10 @@ class ScopedSymbolTable:
         self.enclosing_scope = enclosing_scope
 
     def _init_builtins(self) -> None:
-        self.insert(BuiltinTypeSymbol("INTEGER"))
-        self.insert(BuiltinTypeSymbol("REAL"))
-        self.insert(BuiltinTypeSymbol("BOOLEAN"))
+        self.insert(BuiltinTypeSymbol(name="INTEGER"))
+        self.insert(BuiltinTypeSymbol(name="REAL"))
+        self.insert(BuiltinTypeSymbol(name="BOOLEAN"))
+        self.insert(StringTypeSymbol(name="STRING", limit=255))
         self.insert(
             BuiltinProcedureSymbol(name=NativeMethod.WRITE.name, output_params=[])
         )
@@ -1963,6 +2547,11 @@ class ScopedSymbolTable:
         symbol.scope_level = self.scope_level
         self._symbols[symbol.name] = symbol
 
+    def insert_pair(self, name: str, symbol: Symbol) -> None:
+        self.log(f"Insert: {name}")
+        symbol.scope_level = self.scope_level
+        self._symbols[name] = symbol
+
     def lookup(self, name: str, current_scope_only: bool = False) -> Symbol | None:
         self.log(f"Lookup: {name}. (Scope name: {self.scope_name})")
         # 'symbol' is either an instance of the Symbol class or None
@@ -1990,6 +2579,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
+        # used for for-loop
         self.unmodified_vars: list[str] = []
 
     def log(self, msg) -> None:
@@ -2037,6 +2627,180 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_NoOp(self, node: NoOp) -> None:
         pass
 
+    def visit_Decl(self, node: Decl) -> None:
+        pass
+
+    def visit_Member(self, node: Member) -> None:
+        pass
+
+    def visit_ClassDecl(self, node: ClassDecl) -> None:
+        fields: dict[str, FieldSymbol] = {}
+        for f in node.fields:
+            field_symbol = self.visit_FieldDecl(f)
+            fields[field_symbol.name] = field_symbol
+        methods: dict[str, MethodSymbol] = {}
+        for m in node.methods:
+            method_symbol = self.visit_MethodDef(m)
+            methods[method_symbol.name] = method_symbol
+        class_symbol = ClassSymbol(name=node.class_name, fields=fields, methods=methods)
+
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        if self.current_scope.lookup(node.class_name, current_scope_only=True):
+            raise DuplicateClassError()
+        self.current_scope.insert_pair(node.class_name, class_symbol)
+
+        # bind constructor
+        if node.constructor is not None:
+            method_symbol = self.visit_MethodDef(node.constructor.to_def())
+            methods[method_symbol.name] = method_symbol
+            self.visit_MethodDecl(node.constructor)
+        # bind destructor
+        if node.destructor is not None:
+            method_symbol = self.visit_MethodDef(node.destructor.to_def())
+            methods[method_symbol.name] = method_symbol
+            self.visit_MethodDecl(node.destructor)
+        pass
+
+    def visit_ConstructorDecl(self, node: ConstructorDecl) -> None:
+        pass
+
+    def visit_Def(self, node: Def) -> None:
+        pass
+
+    def visit_MethodDef(self, node: MethodDef) -> MethodSymbol:
+        method_name = node.method_name
+        return_type = node.return_type
+        method_symbol = MethodSymbol(
+            name=method_name,
+            return_type=return_type,
+            formal_params=[],
+            method_type=node.method_type,
+        )
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        # Insert parameters into the function scope
+        for param in node.params:
+            param_type = self.current_scope.lookup(param.type_node.value)
+            param_name = param.var_node.value
+            var_symbol = VarSymbol(param_name, param_type)
+            method_symbol.formal_params.append(var_symbol)
+        return method_symbol
+
+    def visit_MethodDecl(self, node: MethodDecl) -> MethodSymbol:
+        method_full_name = node.method_full_name
+        class_name, method_name = method_full_name.split(".")
+        return_type = node.return_type
+        method_symbol = MethodSymbol(
+            name=method_full_name,
+            return_type=return_type,
+            formal_params=[],
+            method_type=node.method_type,
+        )
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        self.current_scope.insert(method_symbol)
+
+        class_name = SpiUtil.toClassName(class_name=class_name)
+        symbol = self.current_scope.lookup(class_name)
+        if symbol is None:
+            raise UnknownSymbolError()
+        class_symbol = cast(ClassSymbol, symbol)
+        # bind method
+        class_symbol.methods[method_name].block_ast = node.block
+
+        self.log(f"ENTER method scope: {method_full_name}")
+        # Scope for parameters and local variables
+        function_scope = ScopedSymbolTable(
+            scope_name=method_name,
+            scope_level=self.current_scope.scope_level + 1,
+            enclosing_scope=self.current_scope,
+        )
+        self.current_scope = function_scope
+        for _, fs in class_symbol.fields.items():
+            self.current_scope.insert_pair(fs.name, fs)
+        for _, ms in class_symbol.methods.items():
+            self.current_scope.insert_pair(ms.name, ms)
+
+        # insert return value into the function scope
+        # pascal support implicit return the value has the same name to the function name
+        return_var_name = method_name
+        return_var_symbol = VarSymbol(
+            return_var_name, self.current_scope.lookup(return_type.value)
+        )
+        self.current_scope.insert(return_var_symbol)
+        method_symbol.formal_params.append(return_var_symbol)
+
+        # Insert parameters into the function scope
+        for param in node.params:
+            param_type = self.current_scope.lookup(param.type_node.value)
+            param_name = param.var_node.value
+            var_symbol = VarSymbol(param_name, param_type)
+            self.current_scope.insert(var_symbol)
+            method_symbol.formal_params.append(var_symbol)
+
+        self.visit(node.block)
+
+        self.log(function_scope)
+
+        self.current_scope = self.current_scope.enclosing_scope
+        self.log(f"LEAVE method scope: {method_name}")
+
+        # accessed by the interpreter when executing procedure call
+        method_symbol.block_ast = node.block
+        return method_symbol
+
+    def visit_MethodCall(self, node: MethodCall):
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+
+        class_or_instance_name, method_name = node.method_full_name.split(".")
+        symbol = self.current_scope.lookup(SpiUtil.toClassName(class_or_instance_name))
+        if symbol is None:
+            # use instance.method() to call
+            symbol = self.current_scope.lookup(class_or_instance_name)
+            if symbol is None:
+                raise UnknownSymbolError()
+            else:
+                instance_symbol = cast(VarSymbol, symbol)
+                class_symbol = cast(ClassSymbol, instance_symbol.type)
+                if method_name in class_symbol.methods:
+                    method_symbol = class_symbol.methods[method_name]
+                    method_type = method_symbol.method_type
+                    node.method_symbol = cast(MethodSymbol, method_symbol)
+        else:
+            # use class.method() to call
+            class_symbol = cast(ClassSymbol, symbol)
+            if method_name in class_symbol.methods:
+                method_symbol = class_symbol.methods[method_name]
+                method_type = method_symbol.method_type
+                node.method_symbol = cast(MethodSymbol, method_symbol)
+
+        node.method_type = method_type
+
+        actual_params_len = 0
+        if method_type == MethodType.PROCEDURE:
+            actual_params_len = len(node.actual_params)
+        elif method_type == MethodType.FUNCTION:
+            actual_params_len = len(node.actual_params) - 1
+        elif method_type == MethodType.CONSTRUCTOR:
+            actual_params_len = len(node.actual_params) - 1
+        if len(method_symbol.formal_params) < actual_params_len:
+            raise TooManyParametersError()
+        elif len(method_symbol.formal_params) > actual_params_len:
+            raise LackOfParametersError()
+        for param_node in node.actual_params[1:]:
+            self.visit(param_node)
+
+    def visit_ProcedureDef(self, node: ProcedureDef) -> None:
+        pass
+
+    def visit_ConstructorDef(self, node: ConstructorDef) -> None:
+        pass
+
+    def visit_FunctionDef(self, node: FunctionDef) -> None:
+        pass
+
     def visit_WhileStatement(self, node: WhileStatement) -> None:
         self.visit(node.condition)
         self.visit(node.block)
@@ -2068,15 +2832,19 @@ class SemanticAnalyzer(NodeVisitor):
         pass
 
     def visit_StringType(self, node: StringType):
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
         if isinstance(node.limit, Num):
             limit = int(node.limit.value)
             self.__string_type_limit = limit
-            if self.current_scope is None:
-                raise MissingCurrentScopeError()
             self.current_scope.insert(
                 StringTypeSymbol(
                     name=SemanticAnalyzer.string_type_name(limit), limit=int(limit)
                 )
+            )
+        elif node.limit is None:
+            self.current_scope.insert(
+                StringTypeSymbol(name=SemanticAnalyzer.string_type_name(255), limit=255)
             )
         pass
 
@@ -2095,7 +2863,21 @@ class SemanticAnalyzer(NodeVisitor):
                 ArrayTypeSymbol(name=type_name, element_type=element_type_symbol)
             )
 
-    def visit_VarDecl(self, node: VarDecl) -> None:
+    def visit_ClassType(self, node: ClassType):
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        symbol = self.current_scope.lookup(str(node))
+        if symbol is None:
+            raise UnknownClassTypeError()
+
+    def visit_FieldDecl(self, node: FieldDecl) -> FieldSymbol:
+        var_symbol = self.visit_VarDecl(node.to_VarDecl())
+        return var_symbol.to_FieldSymbol()
+
+    def visit_VarDecl(self, node: VarDecl) -> VarSymbol:
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+
         type_name = node.type_node.value
         if isinstance(node.type_node, ArrayType):
             self.visit(node.type_node)
@@ -2103,8 +2885,9 @@ class SemanticAnalyzer(NodeVisitor):
         elif isinstance(node.type_node, StringType):
             self.visit(node.type_node)
             type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
-        if self.current_scope is None:
-            raise MissingCurrentScopeError()
+        elif isinstance(node.type_node, ClassType):
+            self.visit(node.type_node)
+            type_name = SpiUtil.toClassName(type_name)
         type_symbol = self.current_scope.lookup(type_name)
 
         # We have all the information we need to create a variable symbol.
@@ -2121,6 +2904,7 @@ class SemanticAnalyzer(NodeVisitor):
             )
 
         self.current_scope.insert(var_symbol)
+        return var_symbol
 
     def visit_Assign(self, node: Assign) -> None:
         # right-hand side
@@ -2291,6 +3075,7 @@ class ARType(Enum):
     PROGRAM = "PROGRAM"
     PROCEDURE = "PROCEDURE"
     FUNCTION = "FUNCTION"
+    METHOD = "METHOD"
 
 
 class CallStack:
@@ -2322,6 +3107,9 @@ class MemberMeta:
         self.type = type
         self.dynamic = dynamic
         self.limit = limit
+        self.is_class = False
+        self.is_instance = False
+        self.ref_class_name = ""
 
 
 class ActivationRecord:
@@ -2364,6 +3152,15 @@ class ActivationRecord:
             raise InterpreterError()
         else:
             return meta
+
+    def set_is_class(self, key: str, is_class: bool):
+        self.members_meta[key].is_class = is_class
+
+    def set_is_instance(self, key: str, is_instance: bool):
+        self.members_meta[key].is_instance = is_instance
+
+    def set_ref_class_name(self, key: str, ref_class_name: str):
+        self.members_meta[key].ref_class_name = ref_class_name
 
     def __str__(self) -> str:
         lines = [
@@ -2438,6 +3235,29 @@ class Interpreter(NodeVisitor):
             self.__set_member_type(node, ar)
             if (cast(ArrayType, node.type_node)).dynamic is True:
                 ar.set_dynamic(node.var_node.value, True)
+        elif node.type_node.token.type == TokenType.CLASS:
+            # TODO: should write this in recursion
+            class_decl: ClassDecl = ar.get(
+                SpiUtil.toClassName(node.type_node.token.value)
+            )
+            instance: dict[str, Any] = {}
+            for field in class_decl.fields:
+                if field.type_node.token.type == TokenType.BOOLEAN:
+                    instance[field.var_node.value] = False
+                elif field.type_node.token.type == TokenType.INTEGER:
+                    instance[field.var_node.value] = 0
+                elif field.type_node.token.type == TokenType.REAL:
+                    instance[field.var_node.value] = 0.0
+                elif field.type_node.token.type == TokenType.STRING:
+                    instance[field.var_node.value] = ""
+                elif field.type_node.token.type == TokenType.ARRAY:
+                    instance[field.var_node.value] = []
+                elif field.type_node.token.type == TokenType.CLASS:
+                    instance[field.var_node.value] = {}
+            ar[node.var_node.value] = instance
+            ar.set_meta(node.var_node.value, ElementType.INSTANCE)
+            ar.set_is_instance(node.var_node.value, True)
+            ar.set_ref_class_name(node.var_node.value, class_decl.class_name)
         pass
 
     def __set_member_type(self, node: VarDecl, ar: ActivationRecord):
@@ -2499,6 +3319,48 @@ class Interpreter(NodeVisitor):
 
     def visit_ArrayType(self, node: ArrayType) -> None:
         # Do nothing
+        pass
+
+    def visit_Decl(self, node: Decl) -> None:
+        pass
+
+    def visit_Member(self, node: Member) -> None:
+        pass
+
+    def visit_ClassDecl(self, node: ClassDecl) -> None:
+        ar = self.call_stack.peek()
+        for field in node.fields:
+            self.visit(field)
+        for method in node.methods:
+            self.visit(method)
+        ar[node.class_name] = node
+        raw_class_name = SpiUtil.extraClassName(node.class_name)
+        ar.set_meta(raw_class_name, ElementType.CLASS)
+        ar.set_is_class(raw_class_name, True)
+        pass
+
+    def visit_ConstructorDecl(self, node: ConstructorDecl) -> None:
+        pass
+
+    def visit_Def(self, node: Def) -> None:
+        pass
+
+    def visit_MethodDef(self, node: MethodDef):
+        pass
+
+    def visit_FieldDecl(self, node: FieldDecl):
+        pass
+
+    def visit_MethodDecl(self, node: MethodDecl):
+        pass
+
+    def visit_ProcedureDef(self, node: ProcedureDef) -> None:
+        pass
+
+    def visit_ConstructorDef(self, node: ConstructorDef) -> None:
+        pass
+
+    def visit_FunctionDef(self, node: FunctionDef) -> None:
         pass
 
     def visit_BinOp(self, node: BinOp) -> Number | bool | str:
@@ -2681,7 +3543,7 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node), end=" ")
+                    print(self.visit(argument_node), end="")
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -2701,7 +3563,8 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node))
+                    print(self.visit(argument_node), end="")
+                print()
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -2854,6 +3717,90 @@ class Interpreter(NodeVisitor):
             self.call_stack.pop()
 
             return ar[func_name]
+
+    def visit_MethodCall(self, node: MethodCall) -> Any:
+        method_full_name = node.method_full_name
+        class_or_inst_name, method_name = method_full_name.split(".")
+        method_symbol = node.method_symbol
+
+        if method_symbol is None:
+            raise UnknownMethodSymbolError
+
+        ar = ActivationRecord(
+            name=method_full_name,
+            type=ARType.METHOD,
+            nesting_level=method_symbol.scope_level + 1,
+        )
+        instance: dict[str, Any] = {}
+        pre_ar = self.call_stack.peek()
+        if pre_ar is not None:
+            ar.copy_from(pre_ar, False)
+            meta = pre_ar.get_meta(class_or_inst_name)
+            if meta.is_instance:
+                inst_name = class_or_inst_name
+                instance = pre_ar.get(inst_name)
+                for k, v in instance.items():
+                    ar[k] = v
+            elif meta.is_class:
+                class_name = class_or_inst_name
+                class_decl = pre_ar.get(SpiUtil.toClassName(class_name))
+                for field in class_decl.fields:
+                    if field.type_node.token.type == TokenType.BOOLEAN:
+                        instance[field.var_node.value] = False
+                    elif field.type_node.token.type == TokenType.INTEGER:
+                        instance[field.var_node.value] = 0
+                    elif field.type_node.token.type == TokenType.REAL:
+                        instance[field.var_node.value] = 0.0
+                    elif field.type_node.token.type == TokenType.STRING:
+                        instance[field.var_node.value] = ""
+                    elif field.type_node.token.type == TokenType.ARRAY:
+                        instance[field.var_node.value] = []
+                    elif field.type_node.token.type == TokenType.CLASS:
+                        instance[field.var_node.value] = {}
+            else:
+                raise UnknownMethodSymbolError()
+
+            pass
+
+        formal_params = method_symbol.formal_params
+        actual_params = node.actual_params
+
+        method_type = method_symbol.method_type
+        if method_type == MethodType.PROCEDURE:
+            for param_symbol, argument_node in zip(formal_params, actual_params):
+                ar[param_symbol.name] = self.visit(argument_node)
+        else:
+            for param_symbol, argument_node in zip(formal_params, actual_params[1:]):
+                ar[param_symbol.name] = self.visit(argument_node)
+
+        self.call_stack.push(ar)
+
+        self.log(f"ENTER: METHOD {method_full_name}")
+        self.log(str(self.call_stack))
+
+        # evaluate procedure body
+        if method_symbol.block_ast is None:
+            raise NullPointerError
+        self.visit(method_symbol.block_ast)
+
+        self.log(f"LEAVE: METHOD {method_full_name}")
+        self.log(str(self.call_stack))
+
+        # before leave method scope, should assign the modified field value outside
+        for k, v in instance.items():
+            instance[k] = ar[k]
+
+        self.call_stack.pop()
+
+        method_type = method_symbol.method_type
+        if method_type == MethodType.CONSTRUCTOR:
+            # T.Create; BEGIN a:=?;b:=?; END; will not return any explicit value, but should generate an instance value for assignment
+            return instance
+        elif method_type == MethodType.FUNCTION:
+            # T.m; BEGIN m := ? END; should assign to m as return value
+            return ar[method_name]
+        else:
+            return None
 
     def interpret(self):
         tree = self.tree

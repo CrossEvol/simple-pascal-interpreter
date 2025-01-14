@@ -920,6 +920,126 @@ end.
         self.assertEqual(ar["concat2"], "abcdefg")
         self.assertEqual(ar.nesting_level, 2)
 
+    def test_class(self):
+        text = """\
+program SimpleClass;
+
+{$mode objfpc} // directive to be used for defining classes
+{$m+}		   // directive to be used for using constructor
+
+type
+  TPerson = class
+    private
+      name: String;
+      age: Integer;
+    public
+      constructor Create(aName: String; aAge: Integer);
+      procedure SetData(aName: String; aAge: Integer);
+      procedure PrintData;
+      function getName:String;
+      function getAge:Integer;
+  end;
+
+constructor TPerson.Create(aName: String; aAge: Integer);
+begin
+  name := aName;
+  age := aAge;
+end;
+
+procedure TPerson.SetData(aName: String; aAge: Integer);
+begin
+  name := aName;
+  age := aAge;
+end;
+
+procedure TPerson.PrintData;
+begin
+  WriteLn('Name: ', name);
+  WriteLn('Age: ', age);
+end;
+
+
+function TPerson.getName:String;
+begin
+    getName := name;
+end;
+
+function TPerson.getAge:Integer;
+begin
+    getAge := age;
+end;
+
+var
+  person : TPerson;
+  person2 : TPerson;
+  bName : String;
+  bAge : INTEGER;
+begin
+  person := TPerson.Create('Alice', 30);
+  bName := person.getName;
+  bAge := person.getAge;
+  person.PrintData;
+  person2 := TPerson.Create('Alice', 30);
+  person2.SetData('Tom',18);
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["person"]["name"], "Alice")
+        self.assertEqual(ar["person"]["age"], 30)
+        self.assertEqual(ar["bName"], "Alice")
+        self.assertEqual(ar["bAge"], 30)
+        self.assertEqual(ar["person2"]["name"], "Tom")
+        self.assertEqual(ar["person2"]["age"], 18)
+        self.assertEqual(ar.nesting_level, 3)
+
+    def test_class_default_methods(self):
+        text = """\
+program ClassConstructorAndDestructor;
+
+{$mode objfpc} // directive to be used for defining classes
+{$m+}		   // directive to be used for using constructor
+
+type
+  TPerson = class
+    private
+      name: String;
+      age: Integer;
+    public
+      procedure SetData(aName: String; aAge: Integer);
+  end;
+
+procedure TPerson.SetData(aName: String; aAge: Integer);
+begin
+  name := aName;
+  age := aAge;
+end;
+
+var
+  person: TPerson;
+  person2: TPerson;
+begin
+  person := TPerson.Create;
+  person.SetData('Tom', 18);
+
+  person2 := TPerson.Create;
+  person2.SetData('Tom', 18);
+
+  person.Free;
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["person"]["name"], "")
+        self.assertEqual(ar["person"]["age"], 0)
+        self.assertEqual(ar["person2"]["name"], "Tom")
+        self.assertEqual(ar["person2"]["age"], 18)
+        self.assertEqual(ar.nesting_level, 3)
+
     def test_program(self):
         text = """\
 PROGRAM Part12;
