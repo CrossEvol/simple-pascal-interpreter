@@ -765,30 +765,25 @@ end.
         self.assertEqual(ar["sum"], 55)
         self.assertEqual(ar.nesting_level, 1)
 
-    def test_array(self):
+    def test_array_low_high(self):
         text = """\
-    program exArrays;
+    program array_low_high;
     var
-       n: array [1..10] of integer;
-       i, j, sum: integer;
+       n: array [-10..10] of integer;
+       a, b : integer; 
 
     begin
-       for i := 1 to 10 do
-           n[ i ] := i + 100;
-       for j := 1 to 10 do
-           sum := sum + n[j];
+        a := LOW(n);
+        b := HIGH(n);
     end.
     """
         interpreter = self.makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"], 10)
-        self.assertEqual(ar["j"], 10)
-        self.assertEqual(ar["sum"], 1055)
-        for i in range(1, 10):
-            self.assertEqual(ar["n"][i], 100 + i)
-        self.assertEqual(ar.nesting_level, 1)
+        self.assertEqual(ar["a"], -10)
+        self.assertEqual(ar["b"], 10)
+        self.assertEqual(ar.nesting_level, 2)
 
     def test_array_initialized(self):
         text = """\

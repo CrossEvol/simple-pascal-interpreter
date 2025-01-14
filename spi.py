@@ -12,7 +12,7 @@ from typing import Any, cast
 _SHOULD_LOG_SCOPE = False  # see '--scope' command line option
 _SHOULD_LOG_STACK = False  # see '--stack' command line option
 
-RETURN_NUM_FOR_LENGTH = "RETURN_NUM_FOR_LENGTH"
+RETURN_NUM = "RETURN_NUM"
 
 
 class SpiUtil:
@@ -2257,6 +2257,8 @@ class NodeVisitor:
 class NativeMethod(Enum):
     WRITE = "WRITE"
     WRITELN = "WRITELN"
+    LOW = "LOW"
+    HIGH = "HIGH"
     LENGTH = "LENGTH"
     SETLENGTH = "SETLENGTH"
 
@@ -2512,6 +2514,24 @@ class ScopedSymbolTable:
         self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.LENGTH.name,
+                return_type=Type(
+                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
+                ),
+                formal_params=[],
+            )
+        )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.LOW.name,
+                return_type=Type(
+                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
+                ),
+                formal_params=[],
+            )
+        )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.HIGH.name,
                 return_type=Type(
                     token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
                 ),
@@ -3687,13 +3707,51 @@ class Interpreter(NodeVisitor):
                 self.log(f"ENTER: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
-                ar[RETURN_NUM_FOR_LENGTH] = len(self.visit(actual_params[i]))
+                ar[RETURN_NUM] = len(self.visit(actual_params[i]))
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
                 self.call_stack.pop()
-                return ar[RETURN_NUM_FOR_LENGTH]
+                return ar[RETURN_NUM]
+            elif func_symbol.name.upper() == NativeMethod.LOW.name:
+                actual_params = node.actual_params
+
+                # [0] = LENGTH, [1] = ARRAY_NAME
+                for i in range(0, len(actual_params)):
+                    ar[i] = self.visit(actual_params[i])
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
+
+                ar[RETURN_NUM] = min(self.visit(actual_params[i]))
+
+                self.log(f"LEAVE: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return ar[RETURN_NUM]
+            elif func_symbol.name.upper() == NativeMethod.HIGH.name:
+                actual_params = node.actual_params
+
+                # [0] = LENGTH, [1] = ARRAY_NAME
+                for i in range(0, len(actual_params)):
+                    ar[i] = self.visit(actual_params[i])
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
+
+                ar[RETURN_NUM] = max(self.visit(actual_params[i]))
+
+                self.log(f"LEAVE: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return ar[RETURN_NUM]
             else:
                 raise UnknownBuiltinFunctionError()
         else:
