@@ -2257,6 +2257,8 @@ class NodeVisitor:
 class NativeMethod(Enum):
     WRITE = "WRITE"
     WRITELN = "WRITELN"
+    READ = "READ"
+    READLN = "READLN"
     LOW = "LOW"
     HIGH = "HIGH"
     LENGTH = "LENGTH"
@@ -2507,6 +2509,12 @@ class ScopedSymbolTable:
         )
         self.insert(
             BuiltinProcedureSymbol(name=NativeMethod.WRITELN.name, output_params=[])
+        )
+        self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.READ.name, output_params=[])
+        )
+        self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.READLN.name, output_params=[])
         )
         self.insert(
             BuiltinProcedureSymbol(name=NativeMethod.SETLENGTH.name, output_params=[])
@@ -3587,6 +3595,42 @@ class Interpreter(NodeVisitor):
                 for argument_node in actual_params:
                     print(self.visit(argument_node), end="")
                 print()
+
+                self.log(f"LEAVE: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return
+            elif proc_symbol.name.upper() == NativeMethod.READ.name:
+                actual_params = node.actual_params
+                var_name = actual_params[0].value
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                # output actual params
+                user_input = input("")
+                ar[var_name] = user_input
+
+                self.log(f"LEAVE: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return
+            elif proc_symbol.name.upper() == NativeMethod.READLN.name:
+                actual_params = node.actual_params
+                var_name = actual_params[0].value
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: PROCEDURE {proc_name}")
+                self.log(str(self.call_stack))
+
+                # output actual params
+                user_input = input("")
+                ar[var_name] = user_input
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
