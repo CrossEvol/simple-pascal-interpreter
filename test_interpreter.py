@@ -1036,6 +1036,62 @@ end.
         self.assertEqual(ar["person2"]["age"], 18)
         self.assertEqual(ar.nesting_level, 3)
 
+    def test_enum(self):
+        text = """\
+program EnumIndexExample;
+
+{$mode objfpc}{$H+}
+
+type
+  TDayOfWeek = (Sun, Mon, Tue, Wed, Thu, Fri, Sat);
+
+var
+  d0, d1, d2, d3, d4, d5, d6 : TDayOfWeek;
+  o0 ,o1,o2,o3,o4,o5,o6 : integer;
+begin
+  d0 := TDayOfWeek.Sun;
+  d1 := TDayOfWeek.Mon;
+  d2 := TDayOfWeek.Tue;
+  d3 := TDayOfWeek.Wed;
+  d4 := TDayOfWeek.Thu;
+  d5 := TDayOfWeek.Fri;
+  d6 := TDayOfWeek.Sat;
+  o0 := Ord(d0);
+  o1 := Ord(d1);
+  o2 := Ord(d2);
+  o3 := Ord(d3);
+  o4 := Ord(d4);
+  o5 := Ord(d5);
+  o6 := Ord(d6);
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["d0"].name, "Sun")
+        self.assertEqual(ar["d0"].index, 0)
+        self.assertEqual(ar["d1"].name, "Mon")
+        self.assertEqual(ar["d1"].index, 1)
+        self.assertEqual(ar["d2"].name, "Tue")
+        self.assertEqual(ar["d2"].index, 2)
+        self.assertEqual(ar["d3"].name, "Wed")
+        self.assertEqual(ar["d3"].index, 3)
+        self.assertEqual(ar["d4"].name, "Thu")
+        self.assertEqual(ar["d4"].index, 4)
+        self.assertEqual(ar["d5"].name, "Fri")
+        self.assertEqual(ar["d5"].index, 5)
+        self.assertEqual(ar["d6"].name, "Sat")
+        self.assertEqual(ar["d6"].index, 6)
+        self.assertEqual(ar["o0"], 0)
+        self.assertEqual(ar["o1"], 1)
+        self.assertEqual(ar["o2"], 2)
+        self.assertEqual(ar["o3"], 3)
+        self.assertEqual(ar["o4"], 4)
+        self.assertEqual(ar["o5"], 5)
+        self.assertEqual(ar["o6"], 6)
+        self.assertEqual(ar.nesting_level, 2)
+
     def test_program(self):
         text = """\
 PROGRAM Part12;

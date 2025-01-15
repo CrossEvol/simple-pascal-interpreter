@@ -15,6 +15,18 @@ _SHOULD_LOG_STACK = False  # see '--stack' command line option
 RETURN_NUM = "RETURN_NUM"
 
 
+class Object:
+    def __init__(self, type: ElementType):
+        self.type = type
+
+
+class EnumObject(Object):
+    def __init__(self, index: int, name: str):
+        super().__init__(type=ElementType.ENUM)
+        self.index = index
+        self.name = name
+
+
 class SpiUtil:
     @staticmethod
     def print_w(message: Any):
@@ -56,6 +68,7 @@ class ElementType(Enum):
     ARRAY = "ARRAY"
     CLASS = "CLASS"
     INSTANCE = "INSTANCE"
+    ENUM = "ENUM"
 
 
 class ErrorCode(Enum):
@@ -109,6 +122,10 @@ class ParserError(Error):
     pass
 
 
+class InvalidEnumDeclError(ParserError):
+    pass
+
+
 class VarDuplicateInScopeError(ParserError):
     pass
 
@@ -137,6 +154,10 @@ class UnknownArrayElementTypeError(UnknownTypeError):
 
 
 class UnknownClassTypeError(UnknownTypeError):
+    pass
+
+
+class UnknownEnumTypeError(UnknownTypeError):
     pass
 
 
@@ -244,6 +265,7 @@ class TokenType(Enum):
     FUNCTION = "FUNCTION"
     TYPE = "TYPE"
     CLASS = "CLASS"
+    ENUM = "ENUM"
     PRIVATE = "PRIVATE"
     PUBLIC = "PUBLIC"
     CONSTRUCTOR = "CONSTRUCTOR"
@@ -882,6 +904,14 @@ class ClassDecl(Decl):
         self.destructor = destructor
 
 
+class EnumDecl(Decl):
+    def __init__(self, enum_name: str, entries: dict[int, str]):
+        super().__init__()
+        self.enum_name = enum_name
+        self.entries = entries
+        self.reversed_entries = {value: key for key, value in entries.items()}
+
+
 class Type(AST):
     def __init__(self, token: Token) -> None:
         self.token = token
@@ -940,6 +970,14 @@ class ClassType(Type):
 
     def __str__(self):
         return "Class[{class_name}]".format(class_name=self.value)
+
+
+class EnumType(Type):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def __str__(self):
+        return "Enum[{enum_name}]".format(enum_name=self.value)
 
 
 class Param(AST):
@@ -1054,7 +1092,9 @@ class Parser:
         self.lexer = lexer
         # set current token to the first token taken from the input
         self.current_token = self.get_next_token()
-        self.current_class_id = ""
+        self.current_type_id = ""
+        self.classes: list[str] = []
+        self.enums: list[str] = []
 
     def newZeroNum(self, lineno: int = -1, column: int = -1) -> Num:
         return Num(
@@ -1179,27 +1219,34 @@ class Parser:
     def type_declaration(self) -> list[Decl]:
         """
         type_declaration:
-            TYPE (class_definition)*
+            TYPE (class_definition | enum_definition)*
         """
         decl_list: list[Decl] = []
         self.eat(TokenType.TYPE)
         while self.current_token.type == TokenType.ID:
             # will be used in class_definition()
-            self.current_class_id = SpiUtil.toClassName(
-                cast(str, self.current_token.value)
-            )
+            token = self.current_token
             self.eat(TokenType.ID)
             self.eat(TokenType.EQ)
             if self.current_token.type == TokenType.CLASS:
+                class_name = cast(str, token.value)
+                self.current_type_id = SpiUtil.toClassName(class_name)
+                self.classes.append(class_name)
                 self.eat(TokenType.CLASS)
                 class_def = self.class_definition()
                 decl_list.append(class_def)
+            elif self.current_token.type == TokenType.LPAREN:
+                enum_name = cast(str, token.value)
+                self.current_type_id = enum_name
+                self.enums.append(enum_name)
+                enum_decl = self.enum_definition()
+                decl_list.append(enum_decl)
         return decl_list
 
     def class_definition(self) -> ClassDecl:
         """
         class_definition:
-            ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)?
+            ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)? END SEMI
         """
         self.eat(TokenType.PRIVATE)
         fields: list[FieldDecl] = []
@@ -1261,7 +1308,7 @@ class Parser:
                 )
 
             constructor = MethodDecl(
-                method_full_name=SpiUtil.extraClassName(self.current_class_id)
+                method_full_name=SpiUtil.extraClassName(self.current_type_id)
                 + "."
                 + "Create",
                 params=[],
@@ -1294,7 +1341,7 @@ class Parser:
                     )
                 )
             destructor = MethodDecl(
-                method_full_name=SpiUtil.extraClassName(self.current_class_id)
+                method_full_name=SpiUtil.extraClassName(self.current_type_id)
                 + "."
                 + "Free",
                 params=[],
@@ -1303,14 +1350,39 @@ class Parser:
                 block=Block(declarations=[], compound_statement=compound),
             )
         class_decl = ClassDecl(
-            class_name=self.current_class_id,
+            class_name=self.current_type_id,
             fields=fields,
             methods=methods,
             constructor=constructor,
             destructor=destructor,
         )
-        self.current_class_id = ""  # reset here
+        self.current_type_id = ""  # reset here
         return class_decl
+
+    def enum_definition(self) -> EnumDecl:
+        """
+        enum_definition:
+            ID = LPAREN ID ( COMMA ID )* RPAREN SEMI
+        """
+        self.eat(TokenType.LPAREN)
+        if self.current_token.type == TokenType.RPAREN:
+            raise InvalidEnumDeclError()
+        entries: dict[int, str] = {}
+        index = 0
+        while self.current_token.type == TokenType.ID:
+            token = self.current_token
+            self.eat(TokenType.ID)
+            entries[index] = token.value
+            index += 1
+            if self.current_token.type != TokenType.COMMA:
+                break
+            else:
+                self.eat(TokenType.COMMA)
+        self.eat(TokenType.RPAREN)
+        self.eat(TokenType.SEMI)
+        node = EnumDecl(enum_name=self.current_type_id, entries=entries)
+        self.current_type_id = ""
+        return node
 
     def formal_parameters(self) -> list[Param]:
         """formal_parameters : ID (COMMA ID)* COLON type_spec"""
@@ -1429,6 +1501,9 @@ class Parser:
         self.eat(TokenType.COLON)
 
         type_node = self.type_spec()
+        if isinstance(type_node, ClassType):
+            for i in range(0, len(var_nodes)):
+                self.classes.append(var_nodes[i].value)
         var_declarations = [VarDecl(var_node, type_node) for var_node in var_nodes]
         return var_declarations
 
@@ -1554,7 +1629,7 @@ class Parser:
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec | enum_type_spec
         """
         if self.current_token.type in (
             TokenType.INTEGER,
@@ -1567,7 +1642,12 @@ class Parser:
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
         elif self.current_token.type == TokenType.ID:
-            return self.class_type_spec()
+            if self.current_token.value in self.classes:
+                return self.class_type_spec()
+            elif self.current_token.value in self.enums:
+                return self.enum_type_spec()
+            else:
+                raise UnknownTypeError()
         else:
             raise UnknownTypeError()
 
@@ -1629,6 +1709,19 @@ class Parser:
             upper=upper,
             dynamic=dynamic,
         )
+        return node
+
+    def enum_type_spec(self) -> EnumType:
+        token = self.current_token
+        node = EnumType(
+            token=Token(
+                type=TokenType.ENUM,
+                value=token.value,
+                lineno=token.lineno,
+                column=token.column,
+            )
+        )
+        self.eat(TokenType.ID)
         return node
 
     def class_type_spec(self) -> ClassType:
@@ -2081,10 +2174,15 @@ class Parser:
             self.eat(TokenType.STRING_CONST)
             return String(token=token)
 
-        # call method
         if token.type == TokenType.ID and self.peek_next_token().type == TokenType.DOT:
-            node = self.method_call_expr()
-            return node
+            if token.value in self.classes:
+                # call method
+                node = self.method_call_expr()
+                return node
+            elif token.value in self.enums:
+                # call enum variable
+                node = self.variable()
+                return node
 
         # call procedure
         if (
@@ -2104,10 +2202,13 @@ class Parser:
         block : declarations compound_statement
 
         type_declaration:
-            TYPE class_definition
+            TYPE (class_definition | enum_definition)*
 
         class_definition:
-            ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)?
+            ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)? END SEMI
+
+        enum_definition:
+            ID = LPAREN ID ( COMMA ID )* RPAREN SEMI
 
         field_definition: variable_declaration
 
@@ -2149,7 +2250,7 @@ class Parser:
 
         formal_parameters : ID (COMMA ID)* COLON type_spec
 
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec | enum_type_spec
 
         primitive_type_spec : INTEGER | REAL | BOOLEAN
 
@@ -2259,6 +2360,7 @@ class NativeMethod(Enum):
     WRITELN = "WRITELN"
     READ = "READ"
     READLN = "READLN"
+    ORD = "ORD"
     LOW = "LOW"
     HIGH = "HIGH"
     LENGTH = "LENGTH"
@@ -2391,6 +2493,25 @@ class FunctionSymbol(Symbol):
             name=self.name,
             return_type=self.return_type,
             params=self.formal_params,
+        )
+
+    __repr__ = __str__
+
+
+class EnumSymbol(Symbol):
+    def __init__(
+        self,
+        name: str,
+        entries: dict[str, int] = {},
+    ) -> None:
+        super().__init__(name, None)
+        self.entries = entries
+
+    def __str__(self) -> str:
+        return "<{class_name}(name='{name}', entries = {entries}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            entries=self.entries,
         )
 
     __repr__ = __str__
@@ -2546,6 +2667,15 @@ class ScopedSymbolTable:
                 formal_params=[],
             )
         )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.ORD.name,
+                return_type=Type(
+                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
+                ),
+                formal_params=[],
+            )
+        )
 
     def __str__(self) -> str:
         h1 = "SCOPE (SCOPED SYMBOL TABLE)"
@@ -2661,6 +2791,16 @@ class SemanticAnalyzer(NodeVisitor):
         pass
 
     def visit_Member(self, node: Member) -> None:
+        pass
+
+    def visit_EnumDecl(self, node: EnumDecl) -> None:
+        reversed_entries = {value: key for key, value in node.entries.items()}
+        enum_symbol = EnumSymbol(name=node.enum_name, entries=reversed_entries)
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        if self.current_scope.lookup(node.enum_name, current_scope_only=True):
+            raise DuplicateClassError()
+        self.current_scope.insert_pair(node.enum_name, enum_symbol)
         pass
 
     def visit_ClassDecl(self, node: ClassDecl) -> None:
@@ -2900,6 +3040,13 @@ class SemanticAnalyzer(NodeVisitor):
         if symbol is None:
             raise UnknownClassTypeError()
 
+    def visit_EnumType(self, node: EnumType):
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        symbol = self.current_scope.lookup(node.value)
+        if symbol is None:
+            raise UnknownEnumTypeError()
+
     def visit_FieldDecl(self, node: FieldDecl) -> FieldSymbol:
         var_symbol = self.visit_VarDecl(node.to_VarDecl())
         return var_symbol.to_FieldSymbol()
@@ -2960,15 +3107,25 @@ class SemanticAnalyzer(NodeVisitor):
             pass
 
     def visit_Var(self, node: Var) -> None:
-        var_name = node.value
+        var_name = cast(str, node.value)
         if self.current_scope is None:
             self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
             return
 
-        var_symbol = self.current_scope.lookup(var_name)
-        if var_symbol is None:
-            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
-            return
+        if var_name.find(".") != -1:
+            enum_name, enum_key = var_name.split(".")
+            symbol = self.current_scope.lookup(enum_name)
+            if symbol is None:
+                self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
+                return
+            enum_symbol = cast(EnumSymbol, symbol)
+            if not enum_key in enum_symbol.entries:
+                raise UnknownEnumTypeError()
+        else:
+            var_symbol = self.current_scope.lookup(var_name)
+            if var_symbol is None:
+                self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
+                return
 
     def visit_IndexVar(self, node: IndexVar) -> None:
         var_name = node.value
@@ -3138,6 +3295,7 @@ class MemberMeta:
         self.dynamic = dynamic
         self.limit = limit
         self.is_class = False
+        self.is_enum = False
         self.is_instance = False
         self.ref_class_name = ""
 
@@ -3188,6 +3346,9 @@ class ActivationRecord:
 
     def set_is_instance(self, key: str, is_instance: bool):
         self.members_meta[key].is_instance = is_instance
+
+    def set_is_enum(self, key: str):
+        self.members_meta[key].is_enum = True
 
     def set_ref_class_name(self, key: str, ref_class_name: str):
         self.members_meta[key].ref_class_name = ref_class_name
@@ -3351,6 +3512,14 @@ class Interpreter(NodeVisitor):
         # Do nothing
         pass
 
+    def visit_ClassType(self, node: ClassType) -> None:
+        # Do nothing
+        pass
+
+    def visit_EnumType(self, node: EnumType) -> None:
+        # Do nothing
+        pass
+
     def visit_Decl(self, node: Decl) -> None:
         pass
 
@@ -3367,6 +3536,13 @@ class Interpreter(NodeVisitor):
         raw_class_name = SpiUtil.extraClassName(node.class_name)
         ar.set_meta(raw_class_name, ElementType.CLASS)
         ar.set_is_class(raw_class_name, True)
+        pass
+
+    def visit_EnumDecl(self, node: EnumDecl) -> None:
+        ar = self.call_stack.peek()
+        ar[node.enum_name] = node
+        ar.set_meta(node.enum_name, ElementType.ENUM)
+        ar.set_is_enum(node.enum_name)
         pass
 
     def visit_ConstructorDecl(self, node: ConstructorDecl) -> None:
@@ -3486,9 +3662,16 @@ class Interpreter(NodeVisitor):
         var_name = node.value
 
         ar = self.call_stack.peek()
-        var_value = ar.get(var_name)
-
-        return var_value
+        if var_name.find(".") != -1:
+            enum_name, enum_key = var_name.split(".")
+            enum_decl: EnumDecl | None = ar.get(enum_name)
+            if enum_decl is None:
+                raise NullPointerError()
+            index = enum_decl.reversed_entries[enum_key]
+            return EnumObject(index=index, name=enum_key)
+        else:
+            var_value = ar.get(var_name)
+            return var_value
 
     def visit_IndexVar(self, node: IndexVar) -> Any:
         var_name = node.value
@@ -3573,7 +3756,11 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node), end="")
+                    object = self.visit(argument_node)
+                    if isinstance(object, EnumObject):
+                        print(object.name, end="")
+                    else:
+                        print(object, end="")
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -3593,7 +3780,11 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node), end="")
+                    object = self.visit(argument_node)
+                    if isinstance(object, EnumObject):
+                        print(object.name, end="")
+                    else:
+                        print(object, end="")
                 print()
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
@@ -3790,6 +3981,21 @@ class Interpreter(NodeVisitor):
                 self.log(str(self.call_stack))
 
                 ar[RETURN_NUM] = max(self.visit(actual_params[i]))
+
+                self.log(f"LEAVE: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
+
+                self.call_stack.pop()
+                return ar[RETURN_NUM]
+            elif func_symbol.name.upper() == NativeMethod.ORD.name:
+                actual_params = node.actual_params
+
+                self.call_stack.push(ar)
+
+                self.log(f"ENTER: FUNCTION {func_name}")
+                self.log(str(self.call_stack))
+
+                ar[RETURN_NUM] = self.visit(actual_params[1]).index
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
