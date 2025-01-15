@@ -69,6 +69,7 @@ class ElementType(Enum):
     CLASS = "CLASS"
     INSTANCE = "INSTANCE"
     ENUM = "ENUM"
+    RECORD = "RECORD"
 
 
 class ErrorCode(Enum):
@@ -126,6 +127,10 @@ class InvalidEnumDeclError(ParserError):
     pass
 
 
+class InvalidRecordDeclError(ParserError):
+    pass
+
+
 class VarDuplicateInScopeError(ParserError):
     pass
 
@@ -158,6 +163,14 @@ class UnknownClassTypeError(UnknownTypeError):
 
 
 class UnknownEnumTypeError(UnknownTypeError):
+    pass
+
+
+class UnknownRecordTypeError(UnknownTypeError):
+    pass
+
+
+class UnknownRecordFieldError(UnknownTypeError):
     pass
 
 
@@ -265,6 +278,7 @@ class TokenType(Enum):
     FUNCTION = "FUNCTION"
     TYPE = "TYPE"
     CLASS = "CLASS"
+    RECORD = "RECORD"
     ENUM = "ENUM"
     PRIVATE = "PRIVATE"
     PUBLIC = "PUBLIC"
@@ -788,6 +802,24 @@ class Var(AST):
         self.value = token.value
 
 
+class EnumVar(Var):
+    """in the form like Color.Red"""
+
+    def __init__(self, token: Token, name: str, key: str) -> None:
+        self.token = token
+        self.name = name
+        self.key = key
+
+
+class RecordVar(Var):
+    """in the form like user.ID"""
+
+    def __init__(self, token: Token, name: str, key: str) -> None:
+        self.token = token
+        self.name = name
+        self.key = key
+
+
 class IndexVar(Var):
     """The IndexVar is for ID[index]"""
 
@@ -904,6 +936,17 @@ class ClassDecl(Decl):
         self.destructor = destructor
 
 
+class RecordDecl(Decl):
+    def __init__(
+        self,
+        record_name: str,
+        fields: list[FieldDecl],
+    ):
+        super().__init__()
+        self.record_name = record_name
+        self.fields = fields
+
+
 class EnumDecl(Decl):
     def __init__(self, enum_name: str, entries: dict[int, str]):
         super().__init__()
@@ -978,6 +1021,14 @@ class EnumType(Type):
 
     def __str__(self):
         return "Enum[{enum_name}]".format(enum_name=self.value)
+
+
+class RecordType(Type):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def __str__(self):
+        return "Record[{record_name}]".format(record_name=self.value)
 
 
 class Param(AST):
@@ -1095,6 +1146,7 @@ class Parser:
         self.current_type_id = ""
         self.classes: list[str] = []
         self.enums: list[str] = []
+        self.records: list[str] = []
 
     def newZeroNum(self, lineno: int = -1, column: int = -1) -> Num:
         return Num(
@@ -1219,7 +1271,7 @@ class Parser:
     def type_declaration(self) -> list[Decl]:
         """
         type_declaration:
-            TYPE (class_definition | enum_definition)*
+            TYPE ( class_definition | enum_definition | record_definition )*
         """
         decl_list: list[Decl] = []
         self.eat(TokenType.TYPE)
@@ -1235,6 +1287,13 @@ class Parser:
                 self.eat(TokenType.CLASS)
                 class_def = self.class_definition()
                 decl_list.append(class_def)
+            elif self.current_token.type == TokenType.RECORD:
+                record_name = cast(str, token.value)
+                self.current_type_id = record_name
+                self.records.append(record_name)
+                self.eat(TokenType.RECORD)
+                record_decl = self.record_definition()
+                decl_list.append(record_decl)
             elif self.current_token.type == TokenType.LPAREN:
                 enum_name = cast(str, token.value)
                 self.current_type_id = enum_name
@@ -1358,6 +1417,31 @@ class Parser:
         )
         self.current_type_id = ""  # reset here
         return class_decl
+
+    def record_definition(self) -> RecordDecl:
+        """
+        record_definition:
+            ID = RECORD ( field_definition SEMI )+ END SEMI
+        """
+        fields: list[FieldDecl] = []
+        if self.current_token.type != TokenType.ID:
+            raise InvalidRecordDeclError()
+        var_decl = self.variable_declaration()[0]
+        self.eat(token_type=TokenType.SEMI)
+        fields.append(
+            FieldDecl(var_node=var_decl.var_node, type_node=var_decl.type_node)
+        )
+        while self.current_token.type == TokenType.ID:
+            var_decl = self.variable_declaration()[0]
+            self.eat(token_type=TokenType.SEMI)
+            fields.append(
+                FieldDecl(var_node=var_decl.var_node, type_node=var_decl.type_node)
+            )
+        self.eat(token_type=TokenType.END)
+        self.eat(token_type=TokenType.SEMI)
+        record_decl = RecordDecl(record_name=self.current_type_id, fields=fields)
+        self.current_type_id = ""
+        return record_decl
 
     def enum_definition(self) -> EnumDecl:
         """
@@ -1504,6 +1588,9 @@ class Parser:
         if isinstance(type_node, ClassType):
             for i in range(0, len(var_nodes)):
                 self.classes.append(var_nodes[i].value)
+        elif isinstance(type_node, RecordType):
+            for i in range(0, len(var_nodes)):
+                self.records.append(var_nodes[i].value)
         var_declarations = [VarDecl(var_node, type_node) for var_node in var_nodes]
         return var_declarations
 
@@ -1629,7 +1716,12 @@ class Parser:
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec | enum_type_spec
+        type_spec : primitive_type_spec
+                    | string_type_spec
+                    | array_type_spec
+                    | class_type_spec
+                    | enum_type_spec
+                    | record_type_spec
         """
         if self.current_token.type in (
             TokenType.INTEGER,
@@ -1646,6 +1738,8 @@ class Parser:
                 return self.class_type_spec()
             elif self.current_token.value in self.enums:
                 return self.enum_type_spec()
+            elif self.current_token.value in self.records:
+                return self.record_type_spec()
             else:
                 raise UnknownTypeError()
         else:
@@ -1737,6 +1831,19 @@ class Parser:
         self.eat(TokenType.ID)
         return node
 
+    def record_type_spec(self) -> RecordType:
+        token = self.current_token
+        node = RecordType(
+            token=Token(
+                type=TokenType.RECORD,
+                value=token.value,
+                lineno=token.lineno,
+                column=token.column,
+            )
+        )
+        self.eat(TokenType.ID)
+        return node
+
     def compound_statement(self) -> Compound:
         """
         compound_statement: BEGIN statement_list END
@@ -1788,11 +1895,15 @@ class Parser:
         elif self.current_token.type == TokenType.FOR:
             node = self.for_statement()
         elif self.current_token.type == TokenType.ID:
+            token = self.current_token
             next_token_type = self.peek_next_token().type
             if next_token_type == TokenType.LPAREN:
                 node = self.proccall_statement()
             elif next_token_type == TokenType.DOT:
-                node = self.method_call_statement()
+                if token.value in self.records:
+                    node = self.assignment_statement()
+                else:
+                    node = self.method_call_statement()
             else:
                 node = self.assignment_statement()
         else:
@@ -2015,6 +2126,13 @@ class Parser:
                 column=token.column,
             )
         )
+        if var_name.find(".") != -1:
+            type_name, type_key = var_name.split(".")
+            if type_name in self.records:
+                return RecordVar(token=node.token, name=type_name, key=type_key)
+            elif type_name in self.enums:
+                # TODO: should use EnumVar instead of Var for enum type ?
+                pass
         if self.current_token.type == TokenType.LBRACKET:
             self.eat(TokenType.LBRACKET)
             index = self.summation_expr()
@@ -2183,6 +2301,10 @@ class Parser:
                 # call enum variable
                 node = self.variable()
                 return node
+            elif token.value in self.records:
+                # call enum variable
+                node = self.variable()
+                return node
 
         # call procedure
         if (
@@ -2202,10 +2324,13 @@ class Parser:
         block : declarations compound_statement
 
         type_declaration:
-            TYPE (class_definition | enum_definition)*
+            TYPE ( class_definition | enum_definition | record_definition )*
 
         class_definition:
             ID = CLASS (PRIVATE (field_definition SEMI)+)? (PUBLIC  (method_definition)+)? END SEMI
+
+        record_definition:
+            ID = RECORD ( field_definition SEMI )+ END SEMI
 
         enum_definition:
             ID = LPAREN ID ( COMMA ID )* RPAREN SEMI
@@ -2250,7 +2375,12 @@ class Parser:
 
         formal_parameters : ID (COMMA ID)* COLON type_spec
 
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec | class_type_spec | enum_type_spec
+        type_spec : primitive_type_spec
+                    | string_type_spec
+                    | array_type_spec
+                    | class_type_spec
+                    | enum_type_spec
+                    | record_type_spec
 
         primitive_type_spec : INTEGER | REAL | BOOLEAN
 
@@ -2512,6 +2642,25 @@ class EnumSymbol(Symbol):
             class_name=self.__class__.__name__,
             name=self.name,
             entries=self.entries,
+        )
+
+    __repr__ = __str__
+
+
+class RecordSymbol(Symbol):
+    def __init__(
+        self,
+        name: str,
+        fields: dict[str, FieldSymbol] = {},
+    ) -> None:
+        super().__init__(name, None)
+        self.fields = fields
+
+    def __str__(self) -> str:
+        return "<{class_name}(name='{name}', fields='{fields}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            fields=self.fields,
         )
 
     __repr__ = __str__
@@ -2832,6 +2981,20 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit_MethodDecl(node.destructor)
         pass
 
+    def visit_RecordDecl(self, node: RecordDecl) -> None:
+        fields: dict[str, FieldSymbol] = {}
+        for f in node.fields:
+            field_symbol = self.visit_FieldDecl(f)
+            fields[field_symbol.name] = field_symbol
+        record_symbol = RecordSymbol(name=node.record_name, fields=fields)
+
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        if self.current_scope.lookup(node.record_name, current_scope_only=True):
+            raise DuplicateClassError()
+        self.current_scope.insert_pair(node.record_name, record_symbol)
+        pass
+
     def visit_ConstructorDecl(self, node: ConstructorDecl) -> None:
         pass
 
@@ -3047,6 +3210,13 @@ class SemanticAnalyzer(NodeVisitor):
         if symbol is None:
             raise UnknownEnumTypeError()
 
+    def visit_RecordType(self, node: RecordType):
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        symbol = self.current_scope.lookup(node.value)
+        if symbol is None:
+            raise UnknownRecordTypeError()
+
     def visit_FieldDecl(self, node: FieldDecl) -> FieldSymbol:
         var_symbol = self.visit_VarDecl(node.to_VarDecl())
         return var_symbol.to_FieldSymbol()
@@ -3062,6 +3232,9 @@ class SemanticAnalyzer(NodeVisitor):
         elif isinstance(node.type_node, StringType):
             self.visit(node.type_node)
             type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
+        elif isinstance(node.type_node, RecordType):
+            self.visit(node.type_node)
+            type_name = node.type_node.value
         elif isinstance(node.type_node, ClassType):
             self.visit(node.type_node)
             type_name = SpiUtil.toClassName(type_name)
@@ -3086,46 +3259,73 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Assign(self, node: Assign) -> None:
         # right-hand side
         self.visit(node.right)
-        # left-hand side
-        if node.left.value in self.unmodified_vars:
-            self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
-        self.visit(node.left)
         if self.current_scope is None:
             raise MissingCurrentScopeError()
-        var_symbol = self.current_scope.lookup(node.left.value)
-        if var_symbol is None:
-            raise UnknownSymbolError()
-        if var_symbol.type is None:
-            raise UnknownSymbolError()
-        if isinstance(var_symbol.type, StringTypeSymbol):
-            # string_size = var_symbol.type.limit
-            # if isinstance(node.right, String):
-            #     string_value = node.right.value
-            #     if len(string_value) > string_size:
-            #         message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
-            #         SpiUtil.print_w(message=message)
-            pass
+        # left-hand side
+        if isinstance(node.left, RecordVar):
+            self.visit(node.left)
+            record_name, record_field = node.left.name, node.left.key
+            symbol = self.current_scope.lookup(record_name)
+            if symbol is None:
+                raise UnknownSymbolError()
+            record_symbol = cast(RecordSymbol, cast(VarSymbol, symbol).type)
+            if not record_field in record_symbol.fields.keys():
+                raise UnknownRecordFieldError()
+        else:
+            if node.left.value in self.unmodified_vars:
+                self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
+            self.visit(node.left)
+            var_name = node.left.value
+            if var_name.find(".") == -1:
+                var_symbol = self.current_scope.lookup(var_name)
+                if var_symbol is None:
+                    raise UnknownSymbolError()
+                if var_symbol.type is None:
+                    raise UnknownSymbolError()
+                if isinstance(var_symbol.type, StringTypeSymbol):
+                    # string_size = var_symbol.type.limit
+                    # if isinstance(node.right, String):
+                    #     string_value = node.right.value
+                    #     if len(string_value) > string_size:
+                    #         message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
+                    #         SpiUtil.print_w(message=message)
+                    pass
 
     def visit_Var(self, node: Var) -> None:
         var_name = cast(str, node.value)
         if self.current_scope is None:
-            self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
-            return
+            raise MissingCurrentScopeError()
 
         if var_name.find(".") != -1:
-            enum_name, enum_key = var_name.split(".")
-            symbol = self.current_scope.lookup(enum_name)
+            type_name, type_key = var_name.split(".")
+            symbol = self.current_scope.lookup(type_name)
             if symbol is None:
                 self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
                 return
-            enum_symbol = cast(EnumSymbol, symbol)
-            if not enum_key in enum_symbol.entries:
-                raise UnknownEnumTypeError()
+            if isinstance(symbol, EnumSymbol):
+                enum_symbol = cast(EnumSymbol, symbol)
+                if not type_key in enum_symbol.entries:
+                    raise UnknownEnumTypeError()
+            elif isinstance(symbol, RecordSymbol):
+                record_symbol = cast(RecordSymbol, symbol)
+                if not type_key in record_symbol.fields:
+                    raise UnknownRecordFieldError()
         else:
             var_symbol = self.current_scope.lookup(var_name)
             if var_symbol is None:
                 self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
                 return
+
+    def visit_RecordVar(self, node: RecordVar) -> None:
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        var_symbol = self.current_scope.lookup(node.name)
+        if var_symbol is None:
+            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
+            return
+        record_symbol = cast(RecordSymbol, var_symbol.type)
+        if not node.key in record_symbol.fields.keys():
+            raise UnknownRecordFieldError()
 
     def visit_IndexVar(self, node: IndexVar) -> None:
         var_name = node.value
@@ -3296,8 +3496,11 @@ class MemberMeta:
         self.limit = limit
         self.is_class = False
         self.is_enum = False
+        self.is_record = False
         self.is_instance = False
+        self.is_record_instance = False
         self.ref_class_name = ""
+        self.ref_record_name = ""
 
 
 class ActivationRecord:
@@ -3347,11 +3550,23 @@ class ActivationRecord:
     def set_is_instance(self, key: str, is_instance: bool):
         self.members_meta[key].is_instance = is_instance
 
+    def set_is_record_instance(
+        self,
+        key: str,
+    ):
+        self.members_meta[key].is_record_instance = True
+
     def set_is_enum(self, key: str):
         self.members_meta[key].is_enum = True
 
+    def set_is_record(self, key: str):
+        self.members_meta[key].is_record = True
+
     def set_ref_class_name(self, key: str, ref_class_name: str):
         self.members_meta[key].ref_class_name = ref_class_name
+
+    def set_ref_record_name(self, key: str, ref_record_name: str):
+        self.members_meta[key].ref_record_name = ref_record_name
 
     def __str__(self) -> str:
         lines = [
@@ -3422,16 +3637,37 @@ class Interpreter(NodeVisitor):
             ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
             ar.set_limit(key=node.var_node.value, limit=limit)
         elif node.type_node.token.type == TokenType.ARRAY:
-            ar[node.var_node.value] = self.__initArray(node.type_node, ar)
+            ar[node.var_node.value] = self.__initArray(node.type_node)
             self.__set_member_type(node, ar)
             if (cast(ArrayType, node.type_node)).dynamic is True:
                 ar.set_dynamic(node.var_node.value, True)
+        elif node.type_node.token.type == TokenType.RECORD:
+            # TODO: should write this in recursion
+            record_decl: RecordDecl = ar.get(node.type_node.token.value)
+            instance: dict[str, Any] = {}
+            for field in record_decl.fields:
+                if field.type_node.token.type == TokenType.BOOLEAN:
+                    instance[field.var_node.value] = False
+                elif field.type_node.token.type == TokenType.INTEGER:
+                    instance[field.var_node.value] = 0
+                elif field.type_node.token.type == TokenType.REAL:
+                    instance[field.var_node.value] = 0.0
+                elif field.type_node.token.type == TokenType.STRING:
+                    instance[field.var_node.value] = ""
+                elif field.type_node.token.type == TokenType.ARRAY:
+                    instance[field.var_node.value] = self.__initArray(field.type_node)
+                elif field.type_node.token.type == TokenType.CLASS:
+                    instance[field.var_node.value] = {}
+            ar[node.var_node.value] = instance
+            ar.set_meta(node.var_node.value, ElementType.INSTANCE)
+            ar.set_is_record_instance(node.var_node.value)
+            ar.set_ref_record_name(node.var_node.value, record_decl.record_name)
         elif node.type_node.token.type == TokenType.CLASS:
             # TODO: should write this in recursion
             class_decl: ClassDecl = ar.get(
                 SpiUtil.toClassName(node.type_node.token.value)
             )
-            instance: dict[str, Any] = {}
+            instance = {}
             for field in class_decl.fields:
                 if field.type_node.token.type == TokenType.BOOLEAN:
                     instance[field.var_node.value] = False
@@ -3442,7 +3678,7 @@ class Interpreter(NodeVisitor):
                 elif field.type_node.token.type == TokenType.STRING:
                     instance[field.var_node.value] = ""
                 elif field.type_node.token.type == TokenType.ARRAY:
-                    instance[field.var_node.value] = []
+                    instance[field.var_node.value] = self.__initArray(field.type_node)
                 elif field.type_node.token.type == TokenType.CLASS:
                     instance[field.var_node.value] = {}
             ar[node.var_node.value] = instance
@@ -3464,7 +3700,10 @@ class Interpreter(NodeVisitor):
         else:
             pass
 
-    def __initArray(self, node: Type, ar: ActivationRecord) -> dict[Any, Any]:
+    def __initArray(
+        self,
+        node: Type,
+    ) -> dict[Any, Any]:
         if isinstance(node, ArrayType):
             lower_bound: int = self.visit(node.lower)
             upper_bound: int = self.visit(node.upper)
@@ -3492,7 +3731,7 @@ class Interpreter(NodeVisitor):
                 arr_arr: dict[int, dict] = {}
                 if node.dynamic is False:
                     for i in range(lower_bound, upper_bound + 1):
-                        arr_arr[i] = self.__initArray(node.element_type, ar)
+                        arr_arr[i] = self.__initArray(node.element_type)
                 return arr_arr
         raise UnknownTypeError()
 
@@ -3520,6 +3759,10 @@ class Interpreter(NodeVisitor):
         # Do nothing
         pass
 
+    def visit_RecordType(self, node: RecordType) -> None:
+        # Do nothing
+        pass
+
     def visit_Decl(self, node: Decl) -> None:
         pass
 
@@ -3543,6 +3786,15 @@ class Interpreter(NodeVisitor):
         ar[node.enum_name] = node
         ar.set_meta(node.enum_name, ElementType.ENUM)
         ar.set_is_enum(node.enum_name)
+        pass
+
+    def visit_RecordDecl(self, node: RecordDecl) -> None:
+        ar = self.call_stack.peek()
+        for field in node.fields:
+            self.visit(field)
+        ar[node.record_name] = node
+        ar.set_meta(node.record_name, ElementType.RECORD)
+        ar.set_is_record(node.record_name)
         pass
 
     def visit_ConstructorDecl(self, node: ConstructorDecl) -> None:
@@ -3636,16 +3888,21 @@ class Interpreter(NodeVisitor):
             self.visit(child)
 
     def visit_Assign(self, node: Assign) -> None:
-        var_name = node.left.value
         var_value = self.visit(node.right)
         ar = self.call_stack.peek()
 
         if isinstance(node.left, IndexVar):
             # array [index] = value
+            var_name = node.left.value
             index: int = self.visit(node.left.index)
             ar[var_name][index] = var_value
+        elif isinstance(node.left, RecordVar):
+            # user.Age = value
+            record_name, record_key = node.left.name, node.left.key
+            ar[record_name][record_key] = var_value
         else:
             # identifier = value
+            var_name = node.left.value
             if var_name in ar.members_meta:
                 limit = ar.get_meta(var_name).limit
                 if limit > 0:
@@ -3663,15 +3920,27 @@ class Interpreter(NodeVisitor):
 
         ar = self.call_stack.peek()
         if var_name.find(".") != -1:
-            enum_name, enum_key = var_name.split(".")
-            enum_decl: EnumDecl | None = ar.get(enum_name)
-            if enum_decl is None:
-                raise NullPointerError()
-            index = enum_decl.reversed_entries[enum_key]
-            return EnumObject(index=index, name=enum_key)
+            type_name, type_key = var_name.split(".")
+            meta = ar.get_meta(type_name)
+            if meta.is_enum:
+                enum_decl: EnumDecl | None = ar.get(type_name)
+                if enum_decl is None:
+                    raise NullPointerError()
+                index = enum_decl.reversed_entries[type_key]
+                return EnumObject(index=index, name=type_key)
+            elif meta.is_record_instance:
+                # TODO: it will not dispatch RecordVar to here
+                raise InterpreterError()
+            else:
+                raise InterpreterError()
         else:
             var_value = ar.get(var_name)
             return var_value
+
+    def visit_RecordVar(self, node: RecordVar) -> Any:
+        ar = self.call_stack.peek()
+        var_value = ar.get(node.name)
+        return var_value[node.key]
 
     def visit_IndexVar(self, node: IndexVar) -> Any:
         var_name = node.value

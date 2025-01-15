@@ -68,6 +68,7 @@ class LexerTestCase(unittest.TestCase):
             ("PUBLIC", TokenType.PUBLIC, "PUBLIC"),
             ("CONSTRUCTOR", TokenType.CONSTRUCTOR, "CONSTRUCTOR"),
             ("_this_self", TokenType.ID, "_this_self"),
+            ("RECORD", TokenType.RECORD, "RECORD"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -1090,6 +1091,45 @@ end.
         self.assertEqual(ar["o4"], 4)
         self.assertEqual(ar["o5"], 5)
         self.assertEqual(ar["o6"], 6)
+        self.assertEqual(ar.nesting_level, 2)
+
+    def test_record(self):
+        text = """\
+program RecordExample;
+
+type
+    User = record
+        ID: Integer; {Integer field}
+        Name: String[50]; {String field with a maximum length of 50 characters}
+        Age: Integer;  {Integer field}
+        Salary: Real; { Real number field}
+        Active: Boolean;  {Boolean field}
+        Scores: array[1..5] of Integer; { Array of integers with 5 elements}
+    end;
+
+var
+    exampleUser: User;
+    i: Integer;
+
+begin
+    exampleUser.ID := 1;
+    exampleUser.Name := 'John Doe';
+    exampleUser.Age := 30;
+    exampleUser.Salary := 45000.50;
+    exampleUser.Active := True;
+    i := length(exampleUser.Scores);
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["exampleUser"]["ID"], 1)
+        self.assertEqual(ar["exampleUser"]["Name"], "John Doe")
+        self.assertEqual(ar["exampleUser"]["Age"], 30)
+        self.assertEqual(ar["exampleUser"]["Salary"], 45000.50)
+        self.assertEqual(ar["exampleUser"]["Active"], True)
+        self.assertEqual(ar["i"], 5)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_program(self):
