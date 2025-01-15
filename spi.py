@@ -823,8 +823,9 @@ class RecordVar(Var):
 class IndexVar(Var):
     """The IndexVar is for ID[index]"""
 
-    def __init__(self, token, index: AST):
+    def __init__(self, token, left: Var, index: AST):
         super().__init__(token)
+        self.left = left
         self.index = index
 
 
@@ -2129,7 +2130,7 @@ class Parser:
         if var_name.find(".") != -1:
             type_name, type_key = var_name.split(".")
             if type_name in self.records:
-                return RecordVar(token=node.token, name=type_name, key=type_key)
+                node = RecordVar(token=node.token, name=type_name, key=type_key)
             elif type_name in self.enums:
                 # TODO: should use EnumVar instead of Var for enum type ?
                 pass
@@ -2137,7 +2138,7 @@ class Parser:
             self.eat(TokenType.LBRACKET)
             index = self.summation_expr()
             self.eat(TokenType.RBRACKET)
-            return IndexVar(token=node.token, index=index)
+            return IndexVar(token=node.token, left=node, index=index)
         return node
 
     def empty(self) -> NoOp:
@@ -3333,10 +3334,13 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
             return
 
-        var_symbol = self.current_scope.lookup(var_name)
-        if var_symbol is None:
-            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
-            return
+        if var_name.find(".") != -1:
+            self.visit(node.left)
+        else:
+            var_symbol = self.current_scope.lookup(var_name)
+            if var_symbol is None:
+                self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
+                return
         self.visit(node.index)
 
     def visit_Num(self, node: Num) -> None:
@@ -3894,8 +3898,12 @@ class Interpreter(NodeVisitor):
         if isinstance(node.left, IndexVar):
             # array [index] = value
             var_name = node.left.value
-            index: int = self.visit(node.left.index)
-            ar[var_name][index] = var_value
+            index: int = self.visit(node.left.index) 
+            if var_name.find(".") != -1:
+                record_name,record_key = var_name.split(".")
+                ar[record_name][record_key][index] = var_value    
+            else:
+                ar[var_name][index] = var_value
         elif isinstance(node.left, RecordVar):
             # user.Age = value
             record_name, record_key = node.left.name, node.left.key

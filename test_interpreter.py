@@ -1117,6 +1117,11 @@ begin
     exampleUser.Age := 30;
     exampleUser.Salary := 45000.50;
     exampleUser.Active := True;
+    exampleUser.Scores[1] := 85;
+    exampleUser.Scores[2] := 90;
+    exampleUser.Scores[3] := 78;
+    exampleUser.Scores[4] := 92;
+    exampleUser.Scores[5] := 88;
     i := length(exampleUser.Scores);
 end.
     """
@@ -1129,6 +1134,11 @@ end.
         self.assertEqual(ar["exampleUser"]["Age"], 30)
         self.assertEqual(ar["exampleUser"]["Salary"], 45000.50)
         self.assertEqual(ar["exampleUser"]["Active"], True)
+        self.assertEqual(ar["exampleUser"]["Scores"][1], 85)
+        self.assertEqual(ar["exampleUser"]["Scores"][2], 90)
+        self.assertEqual(ar["exampleUser"]["Scores"][3], 78)
+        self.assertEqual(ar["exampleUser"]["Scores"][4], 92)
+        self.assertEqual(ar["exampleUser"]["Scores"][5], 88)
         self.assertEqual(ar["i"], 5)
         self.assertEqual(ar.nesting_level, 2)
 
