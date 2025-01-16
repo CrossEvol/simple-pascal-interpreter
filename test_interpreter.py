@@ -70,6 +70,7 @@ class LexerTestCase(unittest.TestCase):
             ("_this_self", TokenType.ID, "_this_self"),
             ("RECORD", TokenType.RECORD, "RECORD"),
             ("CONST", TokenType.CONST, "CONST"),
+            ("CASE", TokenType.CASE, "CASE"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -132,6 +133,31 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
         self.assertEqual(the_exception.token.value, "(")
         self.assertEqual(the_exception.token.lineno, 6)
+
+    def test_real_const_is_invalid_case(self):
+        from spi import ParserError, InvalidCaseStatementError
+
+        parser = self.makeParser(
+            """
+            program checkCase;
+            var
+            grade: real;
+            begin
+                grade := 1.0;
+                case (grade) of
+                    1.1 : writeln('Excellent!' );
+                    1.2, 'C': writeln('Well done' );
+                    1.3 : writeln('You passed' );
+                else
+                    writeln('You really did not study right!' );
+                end; 
+            end.
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertIsInstance(the_exception, InvalidCaseStatementError)
 
     def test_maximum_one_VAR_block_is_allowed(self):
         from spi import ParserError, VarDuplicateInScopeError
@@ -1217,6 +1243,96 @@ end.
         self.assertEqual(ar["a2"], 2)
         self.assertEqual(ar["a3"], 3)
         self.assertEqual(ar.nesting_level, 1)
+
+    def test_case_of_statement(self):
+        text = """\
+program CaseOfExample;
+
+{$mode objfpc}{$H+}
+
+type
+  Day = (Sun, Mon, Tue, Wed, Thu, Fri, Sat);
+
+var
+  i1, i2: Integer;
+  f1, f2: BOOLEAN;
+  s1, s2, s3,s4: String;
+  d1, d2 : Day;
+  
+
+begin
+  i1 := 2;
+
+  case i1 of
+    1: i2 := 10;
+    2: i2 := 20;
+    3: i2 := 30;
+  else
+    Writeln('Invalid!');
+  end;
+  Writeln(i2);
+
+  f1 := true;
+  case f1 of
+    true: f2 := true;
+    false: f2 := false;
+  else
+    Writeln('Invalid!');
+  end;
+  Writeln(f2);
+
+  s1 := 'a';
+  case s1 of
+    'a': s2 := 'a';
+    'b': s2 := 'b';
+    'c': s2 := 'c';
+  else
+    Writeln('Invalid!');
+  end;
+  Writeln(s2);
+
+  s3 := 'a';
+  case s1 of
+    'a1': s4 := 'a';
+    'b1': s4 := 'b';
+    'c1': s4 := 'c';
+  else
+    s4 := 'd';
+  end;
+  Writeln(s4);
+
+  d1 := Day.Sun;
+  case d1 of
+    Day.Sun: d2 := Day.Sun;
+    Day.Mon: d2 := Day.Mon;
+    Day.Tue: d2 := Day.Tue;
+    Day.Wed: d2 := Day.Wed;
+    Day.Thu: d2 := Day.Thu;
+    Day.Fri: d2 := Day.Fri;
+    Day.Sat: d2 := Day.Sat;
+  else
+    Writeln('Invalid!');
+  end;
+  Writeln(d2);
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i1"], 2)
+        self.assertEqual(ar["i2"], 20)
+        self.assertEqual(ar["f1"], True)
+        self.assertEqual(ar["f2"], True)
+        self.assertEqual(ar["s1"], "a")
+        self.assertEqual(ar["s2"], "a")
+        self.assertEqual(ar["s3"], "a")
+        self.assertEqual(ar["s4"], "d")
+        self.assertEqual(ar["d1"].name, "Sun")
+        self.assertEqual(ar["d1"].index, 0)
+        self.assertEqual(ar["d2"].name, "Sun")
+        self.assertEqual(ar["d2"].index, 0)
+        self.assertEqual(ar.nesting_level, 2)
 
     def test_program(self):
         text = """\

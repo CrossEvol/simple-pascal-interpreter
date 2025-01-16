@@ -26,6 +26,11 @@ class EnumObject(Object):
         self.index = index
         self.name = name
 
+    def __eq__(self, other):
+        if isinstance(other, EnumObject):
+            return self.index == other.index and self.name == other.name
+        return False
+
 
 class SpiUtil:
     @staticmethod
@@ -124,6 +129,10 @@ class ParserError(Error):
     pass
 
 
+class InvalidCaseStatementError(ParserError):
+    pass
+
+
 class InvalidEnumDeclError(ParserError):
     pass
 
@@ -137,6 +146,10 @@ class InvalidConstAssignError(ParserError):
 
 
 class VarDuplicateInScopeError(ParserError):
+    pass
+
+
+class UnknownLiteralError(ParserError):
     pass
 
 
@@ -300,6 +313,7 @@ class TokenType(Enum):
     OR = "OR"
     NOT = "NOT"
     VAR = "VAR"
+    CASE = "CASE"
     IF = "IF"
     THEN = "THEN"
     ELSE = "ELSE"
@@ -782,6 +796,20 @@ class IfStatement(AST):
         self.else_branch = else_branch
 
 
+class CaseStatement(AST):
+    """Represents a 'case ... of ... else ... end' statement"""
+
+    def __init__(
+        self,
+        matcher: AST,
+        branches: list[tuple[AST, AST]],
+        else_branch: AST | None,
+    ) -> None:
+        self.matcher = matcher
+        self.branches = branches
+        self.else_branch = else_branch
+
+
 class WhileStatement(AST):
     """Represents a 'WHILE ... DO ... BEGIN ... END' block"""
 
@@ -1164,7 +1192,7 @@ class MethodCall(AbstractCall):
         self.method_type: MethodType = MethodType.UNDEFINED
 
 
-type Statement = Compound | ProcedureCall | MethodCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
+type Statement = Compound | ProcedureCall | MethodCall | Assign | NoOp | IfStatement | CaseStatement | WhileStatement | ForStatement
 type Expr = "Factor"
 type Term = "Factor"
 type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | MethodCall | String
@@ -1973,6 +2001,7 @@ class Parser:
                   | method_call_statement
                   | assignment_statement
                   | if_statement
+                  | case_statement
                   | for_statement
                   | while_statement
                   | empty
@@ -1982,6 +2011,8 @@ class Parser:
             node = self.compound_statement()
         elif self.current_token.type == TokenType.IF:
             node = self.if_statement()
+        elif self.current_token.type == TokenType.CASE:
+            node = self.case_statement()
         elif self.current_token.type == TokenType.WHILE:
             node = self.while_statement()
         elif self.current_token.type == TokenType.FOR:
@@ -2075,6 +2106,55 @@ class Parser:
             condition,
             then_branch,
             else_if_branches,
+            else_branch,
+        )
+        return node
+
+    def case_statement(self) -> CaseStatement:
+        """
+        case_statement:
+            CASE expr OF ( ( literal | variable ) COLON statement SEMI )+ ( ELSE statement SEMI )? END SEMI
+        """
+        self.eat(TokenType.CASE)
+        matcher = self.expr()
+        self.eat(TokenType.OF)
+
+        branches: list[tuple[AST, AST]] = []
+        else_branch: AST | None = None
+        if self.current_token.type in (
+            TokenType.INTEGER_CONST,
+            TokenType.STRING_CONST,
+            TokenType.TRUE,
+            TokenType.FALSE,
+            TokenType.ID,
+        ):
+            condition = self.expr()
+            self.eat(TokenType.COLON)
+            branch = self.statement()
+            self.eat(TokenType.SEMI)
+            branches.append((condition, branch))
+        else:
+            raise InvalidCaseStatementError()
+        while self.current_token.type in (
+            TokenType.INTEGER_CONST,
+            TokenType.STRING_CONST,
+            TokenType.TRUE,
+            TokenType.FALSE,
+            TokenType.ID,
+        ):
+            condition = self.expr()
+            self.eat(TokenType.COLON)
+            branch = self.statement()
+            self.eat(TokenType.SEMI)
+            branches.append((condition, branch))
+        if self.current_token.type == TokenType.ELSE:
+            self.eat(TokenType.ELSE)
+            else_branch = self.statement()
+            self.eat(TokenType.SEMI)
+        self.eat(TokenType.END)
+        node = CaseStatement(
+            matcher,
+            branches,
             else_branch,
         )
         return node
@@ -2329,11 +2409,7 @@ class Parser:
         factor : not comparison_expr
                | PLUS factor
                | MINUS factor
-               | INTEGER_CONST
-               | STRING_CONST
-               | REAL_CONST
-               | TRUE_CONST
-               | FALSE_CONST
+               | literal
                | LPAREN expr RPAREN
                | func_call_expr
                | method_call_expr
@@ -2357,19 +2433,14 @@ class Parser:
             node = UnaryOp(token, self.factor())
             return node
 
-        # value
-        if token.type == TokenType.INTEGER_CONST:
-            self.eat(TokenType.INTEGER_CONST)
-            return Num(token)
-        elif token.type == TokenType.REAL_CONST:
-            self.eat(TokenType.REAL_CONST)
-            return Num(token)
-        elif token.type == TokenType.TRUE:
-            self.eat(TokenType.TRUE)
-            return Bool(token)
-        elif token.type == TokenType.FALSE:
-            self.eat(TokenType.FALSE)
-            return Bool(token)
+        if token.type in (
+            TokenType.INTEGER_CONST,
+            TokenType.REAL_CONST,
+            TokenType.TRUE,
+            TokenType.FALSE,
+            TokenType.STRING_CONST,
+        ):
+            return self.literal()
 
         # parent take precedence
         if token.type == TokenType.LPAREN:
@@ -2377,12 +2448,6 @@ class Parser:
             node = self.summation_expr()
             self.eat(TokenType.RPAREN)
             return node
-
-        # parse string expr
-        if self.current_token.type == TokenType.STRING_CONST:
-            token = self.current_token
-            self.eat(TokenType.STRING_CONST)
-            return String(token=token)
 
         if token.type == TokenType.ID and self.peek_next_token().type == TokenType.DOT:
             if token.value in self.classes:
@@ -2408,6 +2473,32 @@ class Parser:
         else:
             node = self.variable()
             return node
+
+    def literal(self) -> Factor:
+        """
+        literal :
+            INTEGER_CONST | STRING_CONST | REAL_CONST | TRUE_CONST| FALSE_CONST
+        """
+        token = self.current_token
+        # value
+        if token.type == TokenType.INTEGER_CONST:
+            self.eat(TokenType.INTEGER_CONST)
+            return Num(token)
+        elif token.type == TokenType.REAL_CONST:
+            self.eat(TokenType.REAL_CONST)
+            return Num(token)
+        elif token.type == TokenType.TRUE:
+            self.eat(TokenType.TRUE)
+            return Bool(token)
+        elif token.type == TokenType.FALSE:
+            self.eat(TokenType.FALSE)
+            return Bool(token)
+        elif self.current_token.type == TokenType.STRING_CONST:
+            token = self.current_token
+            self.eat(TokenType.STRING_CONST)
+            return String(token=token)
+        else:
+            raise UnknownLiteralError()
 
     def parse(self):
         """
@@ -2499,6 +2590,7 @@ class Parser:
                   | method_call_statement
                   | assignment_statement
                   | if_statement
+                  | case_statement
                   | for_statement
                   | while_statement
                   | empty
@@ -2506,6 +2598,9 @@ class Parser:
         if_statement: IF logic_expr THEN (statement | compound_statement)
                     (ELSE IF logic_expr THEN (statement | compound_statement))*
                     (ELSE (statement | compound_statement))? SEMI
+
+        case_statement:
+            CASE expr OF ( ( literal | variable ) COLON statement SEMI )+ ( ELSE statement SEMI )? END SEMI
 
         while_statement:  WHILE logic_expr DO compound_statement SEMI
 
@@ -2536,15 +2631,14 @@ class Parser:
         factor : not comparison_expr
                | PLUS factor
                | MINUS factor
-               | INTEGER_CONST
-               | STRING_CONST
-               | REAL_CONST
-               | TRUE_CONST
-               | FALSE_CONST
+               | literal
                | LPAREN expr RPAREN
                | func_call_expr
                | method_call_expr
                | variable
+
+        literal :
+            INTEGER_CONST | STRING_CONST | REAL_CONST | TRUE_CONST| FALSE_CONST
 
         variable: id_expr (LBRACKET summation_expr RBRACKET)?
 
@@ -3265,6 +3359,14 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.condition)
         self.visit(node.then_branch)
         for branch in node.else_if_branches:
+            self.visit(branch)
+        if node.else_branch != None:
+            self.visit(node.else_branch)
+
+    def visit_CaseStatement(self, node: CaseStatement) -> None:
+        self.visit(node.matcher)
+        for condition, branch in node.branches:
+            self.visit(condition)
             self.visit(branch)
         if node.else_branch != None:
             self.visit(node.else_branch)
@@ -4380,6 +4482,20 @@ class Interpreter(NodeVisitor):
                 if sub_flag == True:
                     self.visit(branch.then_branch)
                     return
+
+        if node.else_branch != None:
+            self.visit(node.else_branch)
+
+    def visit_CaseStatement(self, node: CaseStatement) -> None:
+        matcher_value = self.visit(node.matcher)
+
+        for condition, branch in node.branches:
+            condition_value = self.visit(condition)
+            if matcher_value == condition_value:
+                self.visit(branch)
+                return
+            else:
+                continue
 
         if node.else_branch != None:
             self.visit(node.else_branch)
