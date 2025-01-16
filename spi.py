@@ -3898,10 +3898,10 @@ class Interpreter(NodeVisitor):
         if isinstance(node.left, IndexVar):
             # array [index] = value
             var_name = node.left.value
-            index: int = self.visit(node.left.index) 
+            index: int = self.visit(node.left.index)
             if var_name.find(".") != -1:
-                record_name,record_key = var_name.split(".")
-                ar[record_name][record_key][index] = var_value    
+                record_name, record_key = var_name.split(".")
+                ar[record_name][record_key][index] = var_value
             else:
                 ar[var_name][index] = var_value
         elif isinstance(node.left, RecordVar):
@@ -3953,31 +3953,64 @@ class Interpreter(NodeVisitor):
     def visit_IndexVar(self, node: IndexVar) -> Any:
         var_name = node.value
         index: int = self.visit(node.index)
-
         ar = self.call_stack.peek()
-        if ar.get_meta(var_name).type == ElementType.STRING:
-            string_const = ar.get(var_name)
-            if len(string_const) >= index:
-                return string_const[index - 1]
+        if isinstance(node.left, RecordVar):
+            record_name, record_field = node.left.name, node.left.key
+            meta = ar.get_meta(record_name)
+            record_decl: RecordDecl = ar[meta.ref_record_name]
+            field_decl: FieldDecl
+            for f in record_decl.fields:
+                if f.var_node.value == record_field:
+                    field_decl = f
+                    break
+            if ElementType(field_decl.type_node.value) == ElementType.STRING:
+                string_const = ar[record_name][record_field]
+                if len(string_const) >= index:
+                    return string_const[index - 1]
+                else:
+                    return ""
             else:
-                return ""
-        else:
-            array = ar.get(var_name)
+                array = ar[record_name][record_field]
 
-            if index in array:
-                return array[index]
+                if index in array:
+                    return array[index]
+                else:
+                    message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
+                    SpiUtil.print_w(message=message)
+                    element_type = ElementType((cast(ArrayType,field_decl.type_node)).element_type.value)
+                    if element_type == ElementType.BOOL:
+                        return False
+                    if element_type == ElementType.INTEGER:
+                        return 0
+                    if element_type == ElementType.REAL:
+                        return 0.0
+                    if element_type == ElementType.ARRAY:
+                        return {}
+            return ar[record_name][record_field][index]
+        else:
+            if ar.get_meta(var_name).type == ElementType.STRING:
+                string_const = ar.get(var_name)
+                if len(string_const) >= index:
+                    return string_const[index - 1]
+                else:
+                    return ""
             else:
-                message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
-                SpiUtil.print_w(message=message)
-                element_type = ar.get_meta(var_name).type
-                if element_type == ElementType.BOOL:
-                    return False
-                if element_type == ElementType.INTEGER:
-                    return 0
-                if element_type == ElementType.REAL:
-                    return 0.0
-                if element_type == ElementType.ARRAY:
-                    return {}
+                array = ar.get(var_name)
+
+                if index in array:
+                    return array[index]
+                else:
+                    message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
+                    SpiUtil.print_w(message=message)
+                    element_type = ar.get_meta(var_name).type
+                    if element_type == ElementType.BOOL:
+                        return False
+                    if element_type == ElementType.INTEGER:
+                        return 0
+                    if element_type == ElementType.REAL:
+                        return 0.0
+                    if element_type == ElementType.ARRAY:
+                        return {}
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass

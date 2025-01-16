@@ -1109,8 +1109,8 @@ type
 
 var
     exampleUser: User;
-    i: Integer;
-
+    i , j: Integer;
+    c : string;
 begin
     exampleUser.ID := 1;
     exampleUser.Name := 'John Doe';
@@ -1123,6 +1123,8 @@ begin
     exampleUser.Scores[4] := 92;
     exampleUser.Scores[5] := 88;
     i := length(exampleUser.Scores);
+    j := exampleUser.Scores[6];
+    c := exampleUser.Name[1];
 end.
     """
         interpreter = self.makeInterpreter(text)
@@ -1140,6 +1142,8 @@ end.
         self.assertEqual(ar["exampleUser"]["Scores"][4], 92)
         self.assertEqual(ar["exampleUser"]["Scores"][5], 88)
         self.assertEqual(ar["i"], 5)
+        self.assertEqual(ar["j"], 0)
+        self.assertEqual(ar["c"], "J")
         self.assertEqual(ar.nesting_level, 2)
 
     def test_program(self):

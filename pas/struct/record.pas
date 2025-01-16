@@ -33,12 +33,14 @@ begin
     WriteLn('User ID: ', exampleUser.ID);
     WriteLn('Name: ', exampleUser.Name);
     WriteLn('Age: ', exampleUser.Age);
-    WriteLn('Salary: ', exampleUser.Salary:0:2);
+    WriteLn('Salary: ', exampleUser.Salary);
     WriteLn('Active: ', exampleUser.Active);
     Write('Scores: ');
     for i := 1 to 5 do
     begin
         Write(exampleUser.Scores[i], ' ');
     end;
-    WriteLn;
+    WriteLn();
+    WriteLn(exampleUser.Scores[-1]);
+    WriteLn(exampleUser.Name[1]);
 end.
