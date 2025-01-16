@@ -83,6 +83,7 @@ class ErrorCode(Enum):
     MODIFY_LOOP_VAR_NOT_ALLOW = (
         "modify loop control variable is not allowed inside for-statement"
     )
+    MODIFY_CONST_NOT_ALLOW = "constant can not be modified"
 
 
 class Error(Exception):
@@ -128,6 +129,10 @@ class InvalidEnumDeclError(ParserError):
 
 
 class InvalidRecordDeclError(ParserError):
+    pass
+
+
+class InvalidConstAssignError(ParserError):
     pass
 
 
@@ -275,6 +280,7 @@ class TokenType(Enum):
     LE = "<="
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
+    CONST = "CONST"
     FUNCTION = "FUNCTION"
     TYPE = "TYPE"
     CLASS = "CLASS"
@@ -753,6 +759,12 @@ class Compound(AST):
     def __init__(self) -> None:
         self.children: list[AST] = []
 
+    @staticmethod
+    def of(params: list[AST]) -> Compound:
+        compound = Compound()
+        compound.children = params
+        return compound
+
 
 class IfStatement(AST):
     """Represents a 'if ... then... elseif ... then ... else' statement"""
@@ -788,10 +800,30 @@ class ForStatement(AST):
 
 
 class Assign(AST):
-    def __init__(self, left: Var, op: Token, right) -> None:
+    def __init__(self, left: Var, op: Token, right: AST) -> None:
         self.left = left
         self.token = self.op = op
         self.right = right
+
+
+class ConstType(Enum):
+    NON_ARRAY = "NON_ARRAY"
+    ARRAY = "ARRAY"
+    UNDEFINED = "UNDEFINED"
+
+
+class ConstAssign(Assign, Decl):
+    def __init__(
+        self,
+        left: Var,
+        op: Token,
+        right: AST,
+        const_type: ConstType,
+        type: Type | None = None,
+    ):
+        super().__init__(left, op, right)
+        self.const_type = const_type
+        self.type = type
 
 
 class Var(AST):
@@ -1215,6 +1247,7 @@ class Parser:
     def declarations(self) -> list[Decl]:
         """
         declarations :
+            (const_declaration)?
             (type_declaration)?
             (VAR (variable_declaration SEMI)+)?
             procedure_declaration*
@@ -1226,6 +1259,10 @@ class Parser:
         """
         hasVar: bool = False
         declarations: list[Decl] = []
+
+        if self.current_token.type == TokenType.CONST:
+            const_list = self.const_declaration()
+            declarations.extend(const_list)
 
         if self.current_token.type == TokenType.TYPE:
             type_decl_list = self.type_declaration()
@@ -1268,6 +1305,60 @@ class Parser:
                 self.eat(TokenType.SEMI)
 
         return declarations
+
+    def const_declaration(self) -> list[ConstAssign]:
+        """
+        const_declaration:
+            CONST (const_assignment_statement)+
+        """
+        decl_list: list[ConstAssign] = []
+        self.eat(TokenType.CONST)
+        decl_list.append(self.const_assign_statement())
+        while self.current_token.type == TokenType.ID:
+            decl_list.append(self.const_assign_statement())
+        return decl_list
+
+    def const_assign_statement(self) -> ConstAssign:
+        """
+        const_assignment_statement:
+            (ID EQ expr SEMI) | (ID COLON array_type_spec EQ LPAREN expr ( COMMA expr )* RPAREN SEMI)
+        """
+        if self.current_token.type == TokenType.ID:
+            var = self.variable()
+            if self.current_token.type == TokenType.EQ:
+                token: Token = self.current_token
+                self.eat(TokenType.EQ)
+                right = self.expr()
+                self.eat(TokenType.SEMI)
+                return ConstAssign(
+                    left=var, op=token, right=right, const_type=ConstType.NON_ARRAY
+                )
+            elif self.current_token.type == TokenType.COLON:
+                token = self.current_token
+                self.eat(TokenType.COLON)
+                array_type = self.array_type_spec()
+                self.eat(TokenType.EQ)
+                self.eat(TokenType.LPAREN)
+                array: list[AST] = []
+                element = self.expr()
+                array.append(element)
+                while self.current_token.type == TokenType.COMMA:
+                    self.eat(TokenType.COMMA)
+                    element = self.expr()
+                    array.append(element)
+                self.eat(TokenType.RPAREN)
+                self.eat(TokenType.SEMI)
+                return ConstAssign(
+                    left=var,
+                    op=token,
+                    right=Compound.of(array),
+                    const_type=ConstType.ARRAY,
+                    type=array_type,
+                )
+            else:
+                raise InvalidConstAssignError()
+        else:
+            raise InvalidConstAssignError()
 
     def type_declaration(self) -> list[Decl]:
         """
@@ -2324,6 +2415,20 @@ class Parser:
 
         block : declarations compound_statement
 
+        declarations :
+            (const_declaration)?
+            (type_declaration)?
+            (VAR (variable_declaration SEMI)+)?
+            procedure_declaration*
+            function_declaration*
+            (VAR (variable_declaration SEMI)+)?
+
+        const_declaration:
+            CONST (const_assignment_statement)+
+
+        const_assignment_statement:
+            (ID EQ factor SEMI) | (ID COLON array_type_spec EQ LPAREN factor ( COMMA factor )* RPAREN SEMI)
+
         type_declaration:
             TYPE ( class_definition | enum_definition | record_definition )*
 
@@ -2344,15 +2449,6 @@ class Parser:
         method_declaration :
             method_definition block SEMI
 
-        declarations :
-            (type_declaration)?
-            (VAR (variable_declaration SEMI)+)?
-            procedure_declaration*
-            function_declaration*
-            (VAR (variable_declaration SEMI)+)?
-
-        variable_declaration : ID (COMMA ID)* COLON type_spec
-
         constructor_declaration :
             constructor_definition SEMI block SEMI
 
@@ -2370,6 +2466,8 @@ class Parser:
 
         function_definition:
             FUNCTION id_expr LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI
+
+        variable_declaration : ID (COMMA ID)* COLON type_spec
 
         formal_params_list : formal_parameters
                            | formal_parameters SEMI formal_parameter_list
@@ -2519,6 +2617,21 @@ class VarSymbol(Symbol):
     def to_FieldSymbol(self) -> FieldSymbol:
         field_symbol = FieldSymbol(name=self.name, type=self.type)
         return field_symbol
+
+    __repr__ = __str__
+
+
+class ConstSymbol(Symbol):
+    def __init__(self, name: str, type: Symbol | None, const_type: ConstType) -> None:
+        super().__init__(name, type)
+        self.const_type = const_type
+
+    def __str__(self) -> str:
+        return "<{class_name}(name='{name}', const_type='{const_type}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            const_type=self.const_type,
+        )
 
     __repr__ = __str__
 
@@ -2890,7 +3003,8 @@ class SemanticAnalyzer(NodeVisitor):
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
         # used for for-loop
-        self.unmodified_vars: list[str] = []
+        self.loop_vars: list[str] = []
+        self.constants: list[str] = []
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
@@ -3143,9 +3257,9 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.initialization)
         self.visit(node.bound)
         var_name = node.initialization.left.value
-        self.unmodified_vars.append(var_name)
+        self.loop_vars.append(var_name)
         self.visit(node.block)
-        self.unmodified_vars.remove(var_name)
+        self.loop_vars.remove(var_name)
 
     def visit_IfStatement(self, node: IfStatement) -> None:
         self.visit(node.condition)
@@ -3222,6 +3336,32 @@ class SemanticAnalyzer(NodeVisitor):
         var_symbol = self.visit_VarDecl(node.to_VarDecl())
         return var_symbol.to_FieldSymbol()
 
+    def visit_ConstAssign(self, node: ConstAssign):
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+        if node.const_type == ConstType.ARRAY:
+            assert node.type is not None
+            self.visit(node.type)
+            self.visit(node.right)
+            const_name = node.left.value
+            type_name = str(node.type)
+            type_symbol = self.current_scope.lookup(type_name)
+            const_symbol = ConstSymbol(
+                name=const_name, type=type_symbol, const_type=ConstType.ARRAY
+            )
+            self.current_scope.insert(const_symbol)
+            self.constants.append(const_name)
+        elif node.const_type == ConstType.NON_ARRAY:
+            self.visit(node.right)
+            const_name = node.left.value
+            const_symbol = ConstSymbol(
+                name=const_name, type=None, const_type=ConstType.NON_ARRAY
+            )
+            self.current_scope.insert(const_symbol)
+            self.constants.append(const_name)
+        else:
+            raise SemanticError()
+
     def visit_VarDecl(self, node: VarDecl) -> VarSymbol:
         if self.current_scope is None:
             raise MissingCurrentScopeError()
@@ -3273,7 +3413,9 @@ class SemanticAnalyzer(NodeVisitor):
             if not record_field in record_symbol.fields.keys():
                 raise UnknownRecordFieldError()
         else:
-            if node.left.value in self.unmodified_vars:
+            if node.left.value in self.constants:
+                self.error(ErrorCode.MODIFY_CONST_NOT_ALLOW, token=node.left.token)
+            if node.left.value in self.loop_vars:
                 self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
             self.visit(node.left)
             var_name = node.left.value
@@ -3891,6 +4033,25 @@ class Interpreter(NodeVisitor):
         for child in node.children:
             self.visit(child)
 
+    def visit_ConstAssign(self, node: ConstAssign):
+        ar = self.call_stack.peek()
+        if node.const_type == ConstType.NON_ARRAY:
+            const_name = node.left.value
+            value = self.visit(node.right)
+            ar[const_name] = value
+        elif node.const_type == ConstType.ARRAY:
+            const_name = node.left.value
+            elements: dict[int, Any] = {}
+            array_type = cast(ArrayType, node.type)
+            indices = list(
+                range(self.visit(array_type.lower), self.visit(array_type.upper) + 1)
+            )
+            params = cast(Compound, node.right).children
+            for k, v in zip(indices, params):
+                elements[k] = self.visit(v)
+            ar[const_name] = elements
+            ar.set_meta(const_name, ElementType.ARRAY)
+
     def visit_Assign(self, node: Assign) -> None:
         var_value = self.visit(node.right)
         ar = self.call_stack.peek()
@@ -3977,7 +4138,9 @@ class Interpreter(NodeVisitor):
                 else:
                     message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
                     SpiUtil.print_w(message=message)
-                    element_type = ElementType((cast(ArrayType,field_decl.type_node)).element_type.value)
+                    element_type = ElementType(
+                        (cast(ArrayType, field_decl.type_node)).element_type.value
+                    )
                     if element_type == ElementType.BOOL:
                         return False
                     if element_type == ElementType.INTEGER:

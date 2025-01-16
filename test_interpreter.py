@@ -69,6 +69,7 @@ class LexerTestCase(unittest.TestCase):
             ("CONSTRUCTOR", TokenType.CONSTRUCTOR, "CONSTRUCTOR"),
             ("_this_self", TokenType.ID, "_this_self"),
             ("RECORD", TokenType.RECORD, "RECORD"),
+            ("CONST", TokenType.CONST, "CONST"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -229,6 +230,27 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         the_exception = cm.exception
         self.assertEqual(the_exception.error_code, ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW)
         self.assertEqual(the_exception.token.value, "a")
+        self.assertEqual(the_exception.token.lineno, 8)
+
+    def test_const_can_not_modified(self):
+        from spi import SemanticError, ErrorCode
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program const_example;
+
+            const
+            PI = 3.14;
+
+            begin
+            PI := 5.2;
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.MODIFY_CONST_NOT_ALLOW)
+        self.assertEqual(the_exception.token.value, "PI")
         self.assertEqual(the_exception.token.lineno, 8)
 
     def test_semantic_id_not_found_error(self):
@@ -1145,6 +1167,56 @@ end.
         self.assertEqual(ar["j"], 0)
         self.assertEqual(ar["c"], "J")
         self.assertEqual(ar.nesting_level, 2)
+
+    def test_const(self):
+        text = """\
+program const_example;
+
+const
+  PI = 3.141592654;
+  FLAG = true;
+  NUM = 100;
+  STR = 'str';
+  ARR: array[0..2] of Integer = (1, 2, 3);  {Declaring an array constant}
+
+var
+  r: REAL;
+  b: BOOLEAN;
+  i: INTEGER;
+  s: String;
+  a1 : integer;
+  a2 : integer;
+  a3 : integer;
+
+begin
+  r := PI;
+  b := FLAG;
+  i := NUM;
+  s := STR;
+  a1 := ARR[0];
+  a2 := ARR[1];
+  a3 := ARR[2];
+end.
+    """
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["PI"], 3.141592654)
+        self.assertEqual(ar["FLAG"], True)
+        self.assertEqual(ar["NUM"], 100)
+        self.assertEqual(ar["STR"], "str")
+        self.assertEqual(ar["ARR"][0], 1)
+        self.assertEqual(ar["ARR"][1], 2)
+        self.assertEqual(ar["ARR"][2], 3)
+        self.assertEqual(ar["r"], 3.141592654)
+        self.assertEqual(ar["b"], True)
+        self.assertEqual(ar["i"], 100)
+        self.assertEqual(ar["s"], "str")
+        self.assertEqual(ar["a1"], 1)
+        self.assertEqual(ar["a2"], 2)
+        self.assertEqual(ar["a3"], 3)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_program(self):
         text = """\
