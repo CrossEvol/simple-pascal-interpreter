@@ -3,13 +3,13 @@ import unittest
 
 class LexerTestCase(unittest.TestCase):
     def makeLexer(self, text):
-        from spi import Lexer
+        from src.lexer import Lexer
 
         lexer = Lexer(text)
         return lexer
 
     def test_tokens(self):
-        from spi import TokenType
+        from src.spi_token import TokenType
 
         records = (
             ("234", TokenType.INTEGER_CONST, 234),
@@ -79,7 +79,7 @@ class LexerTestCase(unittest.TestCase):
             self.assertEqual(token.value, tok_val)
 
     def test_lexer_exception(self):
-        from spi import LexerError
+        from src.error import LexerError
 
         lexer = self.makeLexer("!")
         with self.assertRaises(LexerError):
@@ -88,14 +88,15 @@ class LexerTestCase(unittest.TestCase):
 
 class ParserTestCase(unittest.TestCase):
     def makeParser(self, text):
-        from spi import Lexer, Parser
+        from src.lexer import Lexer
+        from src.parser import Parser
 
         lexer = Lexer(text)
         parser = Parser(lexer)
         return parser
 
     def test_expression_invalid_syntax_01(self):
-        from spi import ParserError, ErrorCode
+        from src.error import ParserError, ErrorCode
 
         parser = self.makeParser(
             """
@@ -115,7 +116,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 6)
 
     def test_expression_invalid_syntax_02(self):
-        from spi import ParserError, ErrorCode
+        from src.error import ParserError, ErrorCode
 
         parser = self.makeParser(
             """
@@ -135,7 +136,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 6)
 
     def test_real_const_is_invalid_case(self):
-        from spi import ParserError, InvalidCaseStatementError
+        from src.error import ParserError, InvalidCaseStatementError
 
         parser = self.makeParser(
             """
@@ -160,7 +161,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertIsInstance(the_exception, InvalidCaseStatementError)
 
     def test_maximum_one_VAR_block_is_allowed(self):
-        from spi import ParserError, VarDuplicateInScopeError
+        from src.error import ParserError, VarDuplicateInScopeError
 
         # zero VARs
         parser = self.makeParser(
@@ -205,7 +206,9 @@ class ParserTestCase(unittest.TestCase):
 
 class SemanticAnalyzerTestCase(unittest.TestCase):
     def runSemanticAnalyzer(self, text):
-        from spi import Lexer, Parser, SemanticAnalyzer
+        from src.lexer import Lexer
+        from src.parser import Parser
+        from src.sematic_analyzer import SemanticAnalyzer
 
         lexer = Lexer(text)
         parser = Parser(lexer)
@@ -216,7 +219,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         return semantic_analyzer
 
     def test_semantic_duplicate_id_error(self):
-        from spi import SemanticError, ErrorCode
+        from src.error import SemanticError, ErrorCode
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -236,7 +239,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 5)
 
     def test_loop_control_variable_can_not_modified(self):
-        from spi import SemanticError, ErrorCode
+        from src.error import SemanticError, ErrorCode
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -259,7 +262,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 8)
 
     def test_const_can_not_modified(self):
-        from spi import SemanticError, ErrorCode
+        from src.error import SemanticError, ErrorCode
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -280,7 +283,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 8)
 
     def test_semantic_id_not_found_error(self):
-        from spi import SemanticError, ErrorCode
+        from src.error import SemanticError, ErrorCode
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -315,7 +318,10 @@ class TestCallStack:
 
 class InterpreterTestCase(unittest.TestCase):
     def makeInterpreter(self, text):
-        from spi import Lexer, Parser, SemanticAnalyzer, Interpreter
+        from src.lexer import Lexer
+        from src.parser import Parser
+        from src.sematic_analyzer import SemanticAnalyzer
+        from src.interpreter import Interpreter
 
         lexer = Lexer(text)
         parser = Parser(lexer)
@@ -858,7 +864,7 @@ end.
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array_range_invalid(self):
-        from spi import InterpreterError, ArrayRangeInvalidError
+        from src.error import InterpreterError, ArrayRangeInvalidError
 
         text = """\
 program ArranRange;
@@ -877,7 +883,7 @@ end.
         self.assertIsInstance(cm.exception, ArrayRangeInvalidError)
 
     def test_static_array_modify_length(self):
-        from spi import InterpreterError, StaticArrayModifyLengthError
+        from src.error import InterpreterError, StaticArrayModifyLengthError
 
         text = """\
 program ArranRange;

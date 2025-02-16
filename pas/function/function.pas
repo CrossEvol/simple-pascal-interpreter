@@ -8,5 +8,5 @@ end;
 
 begin
   sum := Add(5, 3);
-  {WriteLn('Sum: ', sum);}
+  WriteLn('Sum: ', sum);
 end.

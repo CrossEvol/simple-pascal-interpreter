@@ -7,25 +7,10 @@
 import argparse
 import textwrap
 
-from spi import (
-    Assign,
-    BinOp,
-    Block,
-    Compound,
-    Lexer,
-    NoOp,
-    Num,
-    Param,
-    Parser,
-    NodeVisitor,
-    ProcedureCall,
-    ProcedureDecl,
-    Program,
-    Type,
-    UnaryOp,
-    Var,
-    VarDecl,
-)
+from src.lexer import Lexer
+from src.spi_ast import *
+from src.parser import Parser
+from src.visitor import NodeVisitor
 
 
 class ASTVisualizer(NodeVisitor):
