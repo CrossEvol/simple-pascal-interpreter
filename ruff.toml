@@ -1,0 +1,10 @@
+# Enable or disable specific rules
+[lint]
+# Existing rules might be here...
+
+# Allow wildcard imports and their undefined names
+[lint.per-file-ignores]
+"**/*.py" = ["F403", "F405"]  # Allow wildcard imports and their undefined names in all Python files
+
+# File patterns that import from src.spi_ast
+"**/your_specific_file.py" = ["F403"]  # Replace with actual file path 

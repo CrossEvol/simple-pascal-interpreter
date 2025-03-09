@@ -10,15 +10,16 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, cast
-from src.object import EnumObject
-from src.globals import _SHOULD_LOG_STACK, RETURN_NUM
-from src.sematic_analyzer import NativeMethod, SemanticAnalyzer
-from src.visitor import NodeVisitor
-from src.spi_ast import *
-from src.symbol import *
+
 from src.error import *
-from src.util import SpiUtil
+from src.globals import _SHOULD_LOG_STACK, RETURN_NUM
+from src.object import EnumObject
+from src.sematic_analyzer import NativeMethod
+from src.spi_ast import *
 from src.spi_token import ElementType, TokenType
+from src.symbol import *
+from src.util import SpiUtil
+from src.visitor import NodeVisitor
 
 
 class ARType(Enum):
@@ -788,17 +789,17 @@ class Interpreter(NodeVisitor):
     def visit_IfStatement(self, node: IfStatement) -> None:
         flag: bool = self.visit(node.condition)
 
-        if flag == True:
+        if flag is True:
             self.visit(node.then_branch)
             return
         else:
             for branch in node.else_if_branches:
                 sub_flag: bool = self.visit(branch)
-                if sub_flag == True:
+                if sub_flag is True:
                     self.visit(branch.then_branch)
                     return
 
-        if node.else_branch != None:
+        if node.else_branch is not None:
             self.visit(node.else_branch)
 
     def visit_CaseStatement(self, node: CaseStatement) -> None:
@@ -812,7 +813,7 @@ class Interpreter(NodeVisitor):
             else:
                 continue
 
-        if node.else_branch != None:
+        if node.else_branch is not None:
             self.visit(node.else_branch)
 
     def visit_FunctionCall(self, node: FunctionCall) -> Any:

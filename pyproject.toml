@@ -1,0 +1,7 @@
+[tool.ruff]
+# Existing configuration might be here...
+
+# Allow wildcard imports and their undefined names
+[tool.ruff.per-file-ignores]
+"**/*.py" = ["F403", "F405"]  # For all files, or you can be more specific:
+# "__init__.py" = ["F403", "F405"]  # Only for __init__.py files 

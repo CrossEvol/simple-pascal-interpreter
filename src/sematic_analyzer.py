@@ -5,17 +5,18 @@
 ###############################################################################
 
 from __future__ import annotations
+
 from enum import Enum
 from typing import cast
 
-from src.spi_ast import *
 from src.error import *
 from src.globals import _SHOULD_LOG_SCOPE
-from src.symbol import *
+from src.spi_ast import *
 from src.spi_token import *
-
+from src.symbol import *
 from src.util import SpiUtil
 from src.visitor import NodeVisitor
+
 
 class NativeMethod(Enum):
     WRITE = "WRITE"
@@ -30,7 +31,6 @@ class NativeMethod(Enum):
 
 
 class ScopedSymbolTable:
-
     def __init__(
         self,
         scope_name: str,
@@ -425,7 +425,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.then_branch)
         for branch in node.else_if_branches:
             self.visit(branch)
-        if node.else_branch != None:
+        if node.else_branch is not None:
             self.visit(node.else_branch)
 
     def visit_CaseStatement(self, node: CaseStatement) -> None:
@@ -433,7 +433,7 @@ class SemanticAnalyzer(NodeVisitor):
         for condition, branch in node.branches:
             self.visit(condition)
             self.visit(branch)
-        if node.else_branch != None:
+        if node.else_branch is not None:
             self.visit(node.else_branch)
 
     def visit_BinOp(self, node: BinOp) -> None:
@@ -577,7 +577,7 @@ class SemanticAnalyzer(NodeVisitor):
             if symbol is None:
                 raise UnknownSymbolError()
             record_symbol = cast(RecordSymbol, cast(VarSymbol, symbol).type)
-            if not record_field in record_symbol.fields.keys():
+            if record_field not in record_symbol.fields.keys():
                 raise UnknownRecordFieldError()
         else:
             if node.left.value in self.constants:
@@ -614,11 +614,11 @@ class SemanticAnalyzer(NodeVisitor):
                 return
             if isinstance(symbol, EnumSymbol):
                 enum_symbol = cast(EnumSymbol, symbol)
-                if not type_key in enum_symbol.entries:
+                if type_key not in enum_symbol.entries:
                     raise UnknownEnumTypeError()
             elif isinstance(symbol, RecordSymbol):
                 record_symbol = cast(RecordSymbol, symbol)
-                if not type_key in record_symbol.fields:
+                if type_key not in record_symbol.fields:
                     raise UnknownRecordFieldError()
         else:
             var_symbol = self.current_scope.lookup(var_name)
@@ -634,7 +634,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
             return
         record_symbol = cast(RecordSymbol, var_symbol.type)
-        if not node.key in record_symbol.fields.keys():
+        if node.key not in record_symbol.fields.keys():
             raise UnknownRecordFieldError()
 
     def visit_IndexVar(self, node: IndexVar) -> None:
