@@ -484,7 +484,36 @@ class MethodCall(AbstractCall):
         self.method_type: MethodType = MethodType.UNDEFINED
 
 
-type Statement = Compound | ProcedureCall | MethodCall | Assign | NoOp | IfStatement | CaseStatement | WhileStatement | ForStatement
-type Expr = Factor
+class GetItem(AST):
+    """Represents a property access or array index access"""
+    
+    def __init__(self, token: Token, key: str | AST) -> None:
+        self.token = token
+        self.key = key  # String for property access, AST for index access
+        self.is_property = isinstance(key, str)
+
+
+class ExprGet(AST):
+    """Represents a complex property access like a.b.c[0].d[1]"""
+    
+    def __init__(self, object: AST, gets: list[GetItem]) -> None:
+        self.object = object  # Base object being accessed
+        self.gets = gets      # List of property/index accesses
+        
+    def add_get(self, get_item: GetItem) -> None:
+        self.gets.append(get_item)
+
+
+class ExprSet(AST):
+    """Represents an assignment to a complex property like a.b.c[0].d[1] = 2"""
+    
+    def __init__(self, expr_get: ExprGet, value: AST, token: Token) -> None:
+        self.expr_get = expr_get  # Left side complex property access
+        self.value = value        # Right side value to assign
+        self.token = token        # Assignment token
+
+
+type Statement = Compound | ProcedureCall | MethodCall | Assign | NoOp | IfStatement | CaseStatement | WhileStatement | ForStatement | ExprSet
+type Expr = Factor | ExprGet
 type Term = Factor
 type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | MethodCall | String

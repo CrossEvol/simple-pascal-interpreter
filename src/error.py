@@ -15,6 +15,7 @@ class ErrorCode(Enum):
         "modify loop control variable is not allowed inside for-statement"
     )
     MODIFY_CONST_NOT_ALLOW = "constant can not be modified"
+    PROPERTY_ACCESS = "Property access should be handled by expr_get"
 
 
 class Error(Exception):
@@ -187,3 +188,8 @@ class UnknownOperatorError(InterpreterError):
         self.token = token
         # add exception class name before the message
         self.message = f"{self.__class__.__name__}: {None}"
+
+
+# Add the new error class
+class PropertyAccessError(ParserError):
+    pass

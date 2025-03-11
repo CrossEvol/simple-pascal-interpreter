@@ -5,15 +5,15 @@
 ###############################################################################
 
 from typing import cast
-from src.lexer import Lexer
-from src.spi_token import TokenType
-from src.spi_ast import *
+
 from src.error import *
+from src.lexer import Lexer
+from src.spi_ast import *
+from src.spi_token import TokenType
 from src.util import SpiUtil
 
 
 class Parser:
-
     def __init__(self, lexer: Lexer) -> None:
         self.lexer = lexer
         # set current token to the first token taken from the input
@@ -1084,23 +1084,59 @@ class Parser:
         )
         return node
 
-    def assignment_statement(self) -> Assign:
+    def assignment_statement(self) -> Assign | ExprSet:
         """
-        assignment_statement : variable ASSIGN expr
+        assignment_statement : variable ASSIGN expr | expr_get ASSIGN expr
         """
-        left = self.variable()
-        if not isinstance(left, Var):
-            self.error(ErrorCode.UNEXPECTED_TOKEN, left.token)
-        token = self.current_token
-        self.eat(TokenType.ASSIGN)
-        right = self.expr()
-        assert isinstance(left, Var)
-        node = Assign(left, token, right)
-        return node
+        # Check if we have a complex property access
+        if self.current_token.type == TokenType.ID and self.peek_next_token().type in (
+            TokenType.DOT,
+            TokenType.LBRACKET,
+        ):
+            left = self.expr_get()
+            token = self.current_token
+            self.eat(TokenType.ASSIGN)
+            right = self.expr()
+            node = ExprSet(left, right, token)
+            return node
+        else:
+            # Original variable assignment
+            left = self.variable()
+            if not isinstance(left, Var):
+                self.error(ErrorCode.UNEXPECTED_TOKEN, left.token)
+            token = self.current_token
+            self.eat(TokenType.ASSIGN)
+            right = self.expr()
+            assert isinstance(left, Var)
+            node = Assign(left, token, right)
+            return node
+
+    def expr_get(self) -> ExprGet:
+        """
+        expr_get : variable (DOT ID | LBRACKET expr RBRACKET)+
+        """
+        base_object = self.variable()
+        gets = []
+
+        while self.current_token.type in (TokenType.DOT, TokenType.LBRACKET):
+            if self.current_token.type == TokenType.DOT:
+                token = self.current_token
+                self.eat(TokenType.DOT)
+                property_name = self.current_token.value
+                self.eat(TokenType.ID)
+                gets.append(GetItem(token, property_name))
+            elif self.current_token.type == TokenType.LBRACKET:
+                token = self.current_token
+                self.eat(TokenType.LBRACKET)
+                index = self.expr()
+                self.eat(TokenType.RBRACKET)
+                gets.append(GetItem(token, index))
+
+        return ExprGet(base_object, gets)
 
     def variable(self) -> Var:
         """
-        variable: id_expr (LBRACKET summation_expr RBRACKET)?
+        variable: ID
         """
         token = self.current_token
         var_name = self.id_expr()
@@ -1119,11 +1155,8 @@ class Parser:
             elif type_name in self.enums:
                 # TODO: should use EnumVar instead of Var for enum type ?
                 pass
-        if self.current_token.type == TokenType.LBRACKET:
-            self.eat(TokenType.LBRACKET)
-            index = self.summation_expr()
-            self.eat(TokenType.RBRACKET)
-            return IndexVar(token=node.token, left=node, index=index)
+
+        # We no longer handle indexing here as it's part of expr_get now
         return node
 
     def empty(self) -> NoOp:
@@ -1227,6 +1260,7 @@ class Parser:
                | LPAREN expr RPAREN
                | func_call_expr
                | method_call_expr
+               | expr_get
                | variable
         """
         token = self.current_token
@@ -1285,6 +1319,13 @@ class Parser:
             node = self.func_call_expr()
             return node
         else:
+            # Check if this could be a complex property access
+            if token.type == TokenType.ID:
+                next_token = self.peek_next_token()
+                if next_token.type in (TokenType.DOT, TokenType.LBRACKET):
+                    node = self.expr_get()
+                    return node
+
             node = self.variable()
             return node
 
@@ -1449,6 +1490,7 @@ class Parser:
                | LPAREN expr RPAREN
                | func_call_expr
                | method_call_expr
+               | expr_get
                | variable
 
         literal :

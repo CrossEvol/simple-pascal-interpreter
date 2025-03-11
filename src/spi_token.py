@@ -11,6 +11,7 @@ class ElementType(Enum):
     INSTANCE = "INSTANCE"
     ENUM = "ENUM"
     RECORD = "RECORD"
+    UNKNOWN = "UNKNOWN"
 
 
 class TokenType(Enum):

@@ -8,12 +8,25 @@
 
 from __future__ import annotations
 
+import copy
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Dict, cast
 
 from src.error import *
 from src.globals import _SHOULD_LOG_STACK, RETURN_NUM
-from src.object import EnumObject
+from src.object import (
+    ArrayObject,
+    BooleanObject,
+    ClassObject,
+    EnumObject,
+    InstanceObject,
+    IntegerObject,
+    Object,
+    OperationNotSupportedError,
+    RealObject,
+    RecordObject,
+    StringObject,
+)
 from src.sematic_analyzer import NativeMethod
 from src.spi_ast import *
 from src.spi_token import ElementType, TokenType
@@ -187,13 +200,16 @@ class Interpreter(NodeVisitor):
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
         if node.type_node.token.type == TokenType.BOOLEAN:
-            ar[node.var_node.value] = False
+            ar[node.var_node.value] = BooleanObject(False)
+            ar.set_meta(key=node.var_node.value, type=ElementType.BOOL)
         elif node.type_node.token.type == TokenType.INTEGER:
-            ar[node.var_node.value] = 0
+            ar[node.var_node.value] = IntegerObject(0)
+            ar.set_meta(key=node.var_node.value, type=ElementType.INTEGER)
         elif node.type_node.token.type == TokenType.REAL:
-            ar[node.var_node.value] = 0.0
+            ar[node.var_node.value] = RealObject(0.0)
+            ar.set_meta(key=node.var_node.value, type=ElementType.REAL)
         elif node.type_node.token.type == TokenType.STRING:
-            ar[node.var_node.value] = ""
+            ar[node.var_node.value] = StringObject("")
             string_node = cast(StringType, node.type_node)
             limit: int = 255
             if string_node.limit is not None:
@@ -201,29 +217,31 @@ class Interpreter(NodeVisitor):
             ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
             ar.set_limit(key=node.var_node.value, limit=limit)
         elif node.type_node.token.type == TokenType.ARRAY:
-            ar[node.var_node.value] = self.__initArray(node.type_node)
-            self.__set_member_type(node, ar)
+            elements, element_type = self.__initArray(node.type_node)
+            ar[node.var_node.value] = ArrayObject(elements, element_type)
+            ar.set_meta(key=node.var_node.value, type=ElementType.ARRAY)
             if (cast(ArrayType, node.type_node)).dynamic is True:
                 ar.set_dynamic(node.var_node.value, True)
         elif node.type_node.token.type == TokenType.RECORD:
             # TODO: should write this in recursion
             record_decl: RecordDecl = ar.get(node.type_node.token.value)
-            instance: dict[str, Any] = {}
+            fields: dict[str, Any] = {}
             for field in record_decl.fields:
                 if field.type_node.token.type == TokenType.BOOLEAN:
-                    instance[field.var_node.value] = False
+                    fields[field.var_node.value] = BooleanObject(False)
                 elif field.type_node.token.type == TokenType.INTEGER:
-                    instance[field.var_node.value] = 0
+                    fields[field.var_node.value] = IntegerObject(0)
                 elif field.type_node.token.type == TokenType.REAL:
-                    instance[field.var_node.value] = 0.0
+                    fields[field.var_node.value] = RealObject(0.0)
                 elif field.type_node.token.type == TokenType.STRING:
-                    instance[field.var_node.value] = ""
+                    fields[field.var_node.value] = StringObject("")
                 elif field.type_node.token.type == TokenType.ARRAY:
-                    instance[field.var_node.value] = self.__initArray(field.type_node)
+                    elements, element_type = self.__initArray(field.type_node)
+                    fields[field.var_node.value] = ArrayObject(elements, element_type)
                 elif field.type_node.token.type == TokenType.CLASS:
-                    instance[field.var_node.value] = {}
-            ar[node.var_node.value] = instance
-            ar.set_meta(node.var_node.value, ElementType.INSTANCE)
+                    fields[field.var_node.value] = {}
+            ar[node.var_node.value] = RecordObject(fields)
+            ar.set_meta(node.var_node.value, ElementType.RECORD)
             ar.set_is_record_instance(node.var_node.value)
             ar.set_ref_record_name(node.var_node.value, record_decl.record_name)
         elif node.type_node.token.type == TokenType.CLASS:
@@ -231,21 +249,8 @@ class Interpreter(NodeVisitor):
             class_decl: ClassDecl = ar.get(
                 SpiUtil.toClassName(node.type_node.token.value)
             )
-            instance = {}
-            for field in class_decl.fields:
-                if field.type_node.token.type == TokenType.BOOLEAN:
-                    instance[field.var_node.value] = False
-                elif field.type_node.token.type == TokenType.INTEGER:
-                    instance[field.var_node.value] = 0
-                elif field.type_node.token.type == TokenType.REAL:
-                    instance[field.var_node.value] = 0.0
-                elif field.type_node.token.type == TokenType.STRING:
-                    instance[field.var_node.value] = ""
-                elif field.type_node.token.type == TokenType.ARRAY:
-                    instance[field.var_node.value] = self.__initArray(field.type_node)
-                elif field.type_node.token.type == TokenType.CLASS:
-                    instance[field.var_node.value] = {}
-            ar[node.var_node.value] = instance
+            fields = class_decl.fields.copy()
+            ar[node.var_node.value] = InstanceObject(class_decl.class_name, fields)
             ar.set_meta(node.var_node.value, ElementType.INSTANCE)
             ar.set_is_instance(node.var_node.value, True)
             ar.set_ref_class_name(node.var_node.value, class_decl.class_name)
@@ -267,36 +272,40 @@ class Interpreter(NodeVisitor):
     def __initArray(
         self,
         node: Type,
-    ) -> dict[Any, Any]:
+    ) -> tuple[dict[Any, Any], ElementType]:
         if isinstance(node, ArrayType):
-            lower_bound: int = self.visit(node.lower)
-            upper_bound: int = self.visit(node.upper)
+            lower_bound: IntegerObject = self.visit(node.lower)
+            upper_bound: IntegerObject = self.visit(node.upper)
             if lower_bound > upper_bound:
                 raise ArrayRangeInvalidError()
+
+            elements: dict[int, Object] = {}
+            element_type = ElementType.INTEGER  # Default type
+
             if node.element_type.token.type == TokenType.BOOLEAN:
-                bool_arr: dict[int, bool] = {}
+                element_type = ElementType.BOOL
                 if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        bool_arr[i] = False
-                return bool_arr
+                    for i in range(lower_bound.value, upper_bound.value + 1):
+                        elements[i] = BooleanObject(False)
             elif node.element_type.token.type == TokenType.INTEGER:
-                int_arr: dict[int, int] = {}
+                element_type = ElementType.INTEGER
                 if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        int_arr[i] = 0
-                return int_arr
+                    for i in range(lower_bound.value, upper_bound.value + 1):
+                        elements[i] = IntegerObject(0)
             elif node.element_type.token.type == TokenType.REAL:
-                real_arr: dict[int, float] = {}
+                element_type = ElementType.REAL
                 if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        real_arr[i] = 0.0
-                return real_arr
+                    for i in range(lower_bound.value, upper_bound.value + 1):
+                        elements[i] = RealObject(0.0)
             elif node.element_type.token.type == TokenType.ARRAY:
-                arr_arr: dict[int, dict] = {}
+                element_type = ElementType.ARRAY
                 if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        arr_arr[i] = self.__initArray(node.element_type)
-                return arr_arr
+                    for i in range(lower_bound.value, upper_bound.value + 1):
+                        sub_elements, sub_element_type = self.__initArray(
+                            node.element_type
+                        )
+                        elements[i] = ArrayObject(sub_elements, sub_element_type)
+            return elements, element_type
         raise UnknownTypeError()
 
     def visit_Type(self, node: Type) -> None:
@@ -333,13 +342,58 @@ class Interpreter(NodeVisitor):
     def visit_Member(self, node: Member) -> None:
         pass
 
+    def __convert_class_decl_to_object(self, node: ClassDecl) -> "ClassObject":
+        """Converts a ClassDecl AST node to a ClassObject instance."""
+
+        # Initialize empty dictionaries for fields and methods
+        fields: Dict[str, Any] = {}
+        methods: Dict[str, Any] = {}
+
+        # Process fields
+        for field in node.fields:
+            field_name = field.var_node.value
+
+            # Initialize field with default value based on type
+            if field.type_node.token.type == TokenType.BOOLEAN:
+                fields[field_name] = BooleanObject(False)
+            elif field.type_node.token.type == TokenType.INTEGER:
+                fields[field_name] = IntegerObject(0)
+            elif field.type_node.token.type == TokenType.REAL:
+                fields[field_name] = RealObject(0.0)
+            elif field.type_node.token.type == TokenType.STRING:
+                fields[field_name] = StringObject("")
+            elif field.type_node.token.type == TokenType.ARRAY:
+                elements, element_type = self.__initArray(field.type_node)
+                fields[field_name] = ArrayObject(elements, element_type)
+            elif field.type_node.token.type == TokenType.CLASS:
+                fields[field_name] = {}
+
+        # Process methods
+        for method in node.methods:
+            methods[method.method_name] = method
+
+        # Add constructor if present
+        if node.constructor:
+            methods["constructor"] = node.constructor
+
+        # Add destructor if present
+        if node.destructor:
+            methods["destructor"] = node.destructor
+
+        # Create and return ClassObject
+        return ClassObject(node.class_name, fields, methods)
+
     def visit_ClassDecl(self, node: ClassDecl) -> None:
         ar = self.call_stack.peek()
         for field in node.fields:
             self.visit(field)
         for method in node.methods:
             self.visit(method)
-        ar[node.class_name] = node
+
+        # Convert ClassDecl to ClassObject and store it
+        class_object = self.__convert_class_decl_to_object(node)
+        ar[node.class_name] = class_object
+
         raw_class_name = SpiUtil.extraClassName(node.class_name)
         ar.set_meta(raw_class_name, ElementType.CLASS)
         ar.set_is_class(raw_class_name, True)
@@ -385,66 +439,147 @@ class Interpreter(NodeVisitor):
     def visit_FunctionDef(self, node: FunctionDef) -> None:
         pass
 
-    def visit_BinOp(self, node: BinOp) -> Number | bool | str:
-        # logic operator
+    def visit_BinOp(self, node: BinOp) -> Object:
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+
+        # Ensure we're working with Object instances
+        if not isinstance(left, Object):
+            if isinstance(left, bool):
+                left = BooleanObject(left)
+            elif isinstance(left, int):
+                left = IntegerObject(left)
+            elif isinstance(left, float):
+                left = RealObject(left)
+            elif isinstance(left, str):
+                left = StringObject(left)
+
+        if not isinstance(right, Object):
+            if isinstance(right, bool):
+                right = BooleanObject(right)
+            elif isinstance(right, int):
+                right = IntegerObject(right)
+            elif isinstance(right, float):
+                right = RealObject(right)
+            elif isinstance(right, str):
+                right = StringObject(right)
+
+        # Logic operators
         if node.op.type == TokenType.AND:
-            return bool(self.visit(node.left)) and bool(self.visit(node.right))
+            if isinstance(left, BooleanObject) and isinstance(right, BooleanObject):
+                return BooleanObject(left.value and right.value)
+            raise OperationNotSupportedError(
+                "logical AND", f"{left.type.value} with {right.type.value}"
+            )
         elif node.op.type == TokenType.OR:
-            return bool(self.visit(node.left)) or bool(self.visit(node.right))
+            if isinstance(left, BooleanObject) and isinstance(right, BooleanObject):
+                return BooleanObject(left.value or right.value)
+            raise OperationNotSupportedError(
+                "logical OR", f"{left.type.value} with {right.type.value}"
+            )
 
-        # arithmetic operator
+        # Arithmetic operators
         if node.op.type == TokenType.PLUS:
-            return cast(Number | str, self.visit(node.left) + self.visit(node.right))
+            return left.plus(right)
         elif node.op.type == TokenType.MINUS:
-            return cast(Number, self.visit(node.left) - self.visit(node.right))
+            return left.minus(right)
         elif node.op.type == TokenType.MUL:
-            return cast(Number, self.visit(node.left) * self.visit(node.right))
+            return left.multiply(right)
         elif node.op.type == TokenType.INTEGER_DIV:
-            return cast(Number, self.visit(node.left) // self.visit(node.right))
+            if isinstance(left, IntegerObject) and isinstance(right, IntegerObject):
+                return IntegerObject(left.value // right.value)
+            raise OperationNotSupportedError(
+                "integer division", f"{left.type.value} with {right.type.value}"
+            )
         elif node.op.type == TokenType.FLOAT_DIV:
-            return float(self.visit(node.left)) / float(self.visit(node.right))
+            return left.divide(right)
 
-        # comparison operator
+        # Comparison operators
         if node.op.type == TokenType.LT:
-            return float(self.visit(node.left)) < float(self.visit(node.right))
+            if isinstance(left, (IntegerObject, RealObject)) and isinstance(
+                right, (IntegerObject, RealObject)
+            ):
+                return BooleanObject(left.value < right.value)
+            raise OperationNotSupportedError(
+                "less than", f"{left.type.value} with {right.type.value}"
+            )
         elif node.op.type == TokenType.GT:
-            return float(self.visit(node.left)) > float(self.visit(node.right))
+            if isinstance(left, (IntegerObject, RealObject)) and isinstance(
+                right, (IntegerObject, RealObject)
+            ):
+                return BooleanObject(left.value > right.value)
+            raise OperationNotSupportedError(
+                "greater than", f"{left.type.value} with {right.type.value}"
+            )
         elif node.op.type == TokenType.EQ:
-            return float(self.visit(node.left)) == float(self.visit(node.right))
+            return BooleanObject(left == right)
         elif node.op.type == TokenType.NE:
-            return float(self.visit(node.left)) != float(self.visit(node.right))
+            return BooleanObject(left != right)
         elif node.op.type == TokenType.LE:
-            return float(self.visit(node.left)) <= float(self.visit(node.right))
+            if isinstance(left, (IntegerObject, RealObject)) and isinstance(
+                right, (IntegerObject, RealObject)
+            ):
+                return BooleanObject(left.value <= right.value)
+            raise OperationNotSupportedError(
+                "less than or equal", f"{left.type.value} with {right.type.value}"
+            )
         elif node.op.type == TokenType.GE:
-            return float(self.visit(node.left)) >= float(self.visit(node.right))
+            if isinstance(left, (IntegerObject, RealObject)) and isinstance(
+                right, (IntegerObject, RealObject)
+            ):
+                return BooleanObject(left.value >= right.value)
+            raise OperationNotSupportedError(
+                "greater than or equal", f"{left.type.value} with {right.type.value}"
+            )
 
-        # !!
+        # Unknown operator
         raise UnknownOperatorError(ErrorCode.UNKNOWN_BIN_OP, node.token)
 
-    def visit_Num(self, node: Num):
-        return node.value
+    def visit_Num(self, node: Num) -> Object:
+        if isinstance(node.value, int):
+            return IntegerObject(node.value)
+        elif isinstance(node.value, float):
+            return RealObject(node.value)
+        else:
+            raise TypeError(f"Unexpected number type: {type(node.value)}")
 
-    def visit_String(self, node: String):
-        return node.value
+    def visit_String(self, node: String) -> Object:
+        return StringObject(node.value)
 
-    def visit_Bool(self, node: Bool):
+    def visit_Bool(self, node: Bool) -> Object:
         if node.token.type == TokenType.TRUE:
-            return True
+            return BooleanObject(True)
         elif node.token.type == TokenType.FALSE:
-            return False
+            return BooleanObject(False)
         raise UnknownBooleanError()
 
-    def visit_UnaryOp(self, node: UnaryOp) -> Number | bool:
-        op = node.op.type
-        # negative bang
-        if op == TokenType.NOT:
-            return not self.visit(node.expr)
+    def visit_UnaryOp(self, node: UnaryOp) -> Object:
+        operand = self.visit(node.expr)
 
-        # signal bang
-        if op == TokenType.PLUS:
-            return cast(Number, +self.visit(node.expr))
+        # Convert primitive values to Object instances if needed
+        if not isinstance(operand, Object):
+            if isinstance(operand, bool):
+                operand = BooleanObject(operand)
+            elif isinstance(operand, int):
+                operand = IntegerObject(operand)
+            elif isinstance(operand, float):
+                operand = RealObject(operand)
+
+        op = node.op.type
+        if op == TokenType.NOT:
+            if isinstance(operand, BooleanObject):
+                return BooleanObject(not operand.value)
+            raise OperationNotSupportedError("logical NOT", operand.type.value)
+        elif op == TokenType.PLUS:
+            if isinstance(operand, (IntegerObject, RealObject)):
+                return operand  # Unary plus doesn't change the value
+            raise OperationNotSupportedError("unary plus", operand.type.value)
         elif op == TokenType.MINUS:
-            return cast(Number, -self.visit(node.expr))
+            if isinstance(operand, IntegerObject):
+                return IntegerObject(-operand.value)
+            elif isinstance(operand, RealObject):
+                return RealObject(-operand.value)
+            raise OperationNotSupportedError("unary minus", operand.type.value)
         raise UnknownOperatorError(ErrorCode.UNKNOWN_UNARY_OP, node.token)
 
     def visit_Compound(self, node: Compound) -> None:
@@ -459,15 +594,27 @@ class Interpreter(NodeVisitor):
             ar[const_name] = value
         elif node.const_type == ConstType.ARRAY:
             const_name = node.left.value
-            elements: dict[int, Any] = {}
             array_type = cast(ArrayType, node.type)
+            element_type = ElementType.INTEGER  # Default
+
+            if array_type.element_type.token.type == TokenType.BOOLEAN:
+                element_type = ElementType.BOOL
+            elif array_type.element_type.token.type == TokenType.INTEGER:
+                element_type = ElementType.INTEGER
+            elif array_type.element_type.token.type == TokenType.REAL:
+                element_type = ElementType.REAL
+
+            elements: dict[int, Object] = {}
             indices = list(
-                range(self.visit(array_type.lower), self.visit(array_type.upper) + 1)
+                range(
+                    self.visit(array_type.lower).value,
+                    self.visit(array_type.upper).value + 1,
+                )
             )
             params = cast(Compound, node.right).children
             for k, v in zip(indices, params):
                 elements[k] = self.visit(v)
-            ar[const_name] = elements
+            ar[const_name] = ArrayObject(elements, element_type)
             ar.set_meta(const_name, ElementType.ARRAY)
 
     def visit_Assign(self, node: Assign) -> None:
@@ -480,23 +627,46 @@ class Interpreter(NodeVisitor):
             index: int = self.visit(node.left.index)
             if var_name.find(".") != -1:
                 record_name, record_key = var_name.split(".")
-                ar[record_name][record_key][index] = var_value
+                record_obj = ar[record_name]
+                if isinstance(record_obj, RecordObject):
+                    array_obj = record_obj.fields[record_key]
+                    if isinstance(array_obj, ArrayObject):
+                        array_obj[index] = var_value
             else:
-                ar[var_name][index] = var_value
+                array_obj = ar[var_name]
+                if isinstance(array_obj, ArrayObject):
+                    array_obj[index] = var_value
         elif isinstance(node.left, RecordVar):
             # user.Age = value
             record_name, record_key = node.left.name, node.left.key
-            ar[record_name][record_key] = var_value
+            record_obj = ar[record_name]
+            if isinstance(record_obj, (RecordObject, InstanceObject)):
+                record_obj[record_key] = var_value
         else:
             # identifier = value
             var_name = node.left.value
             if var_name in ar.members_meta:
-                limit = ar.get_meta(var_name).limit
-                if limit > 0:
-                    if len(var_value) > limit:
-                        message = f"Warning: String literal has more characters[{len(var_value)}] than short string length[{limit}]"
-                        SpiUtil.print_w(message=message)
-                    ar[var_name] = cast(str, var_value)[0:limit]
+                meta = ar.get_meta(var_name)
+                if meta.type == ElementType.STRING:
+                    if isinstance(var_value, StringObject):
+                        limit = meta.limit
+                        limit = (
+                            limit.value if isinstance(limit, IntegerObject) else limit
+                        )
+                        if limit > 0 and len(var_value.value) > limit:
+                            message = f"Warning: String literal has more characters[{len(var_value.value)}] than short string length[{limit}]"
+                            SpiUtil.print_w(message=message)
+                            ar[var_name] = StringObject(var_value.value[0:limit], limit)
+                        else:
+                            ar[var_name] = var_value
+                    elif isinstance(var_value, str):
+                        limit = meta.limit
+                        if limit > 0 and len(var_value) > limit:
+                            message = f"Warning: String literal has more characters[{len(var_value)}] than short string length[{limit}]"
+                            SpiUtil.print_w(message=message)
+                            ar[var_name] = StringObject(var_value[0:limit], limit)
+                        else:
+                            ar[var_name] = StringObject(var_value, limit)
                 else:
                     ar[var_name] = var_value
             else:
@@ -526,91 +696,62 @@ class Interpreter(NodeVisitor):
 
     def visit_RecordVar(self, node: RecordVar) -> Any:
         ar = self.call_stack.peek()
-        var_value = ar.get(node.name)
-        return var_value[node.key]
+        record_obj = ar.get(node.name)
+        if isinstance(record_obj, (RecordObject, InstanceObject)):
+            return record_obj[node.key]
+        return None
 
     def visit_IndexVar(self, node: IndexVar) -> Any:
         var_name = node.value
         index: int = self.visit(node.index)
         ar = self.call_stack.peek()
+
         if isinstance(node.left, RecordVar):
             record_name, record_field = node.left.name, node.left.key
             meta = ar.get_meta(record_name)
-            record_decl: RecordDecl = ar[meta.ref_record_name]
-            field_decl: FieldDecl
-            for f in record_decl.fields:
-                if f.var_node.value == record_field:
-                    field_decl = f
-                    break
-            if ElementType(field_decl.type_node.value) == ElementType.STRING:
-                string_const = ar[record_name][record_field]
-                if len(string_const) >= index:
-                    return string_const[index - 1]
-                else:
-                    return ""
-            else:
-                array = ar[record_name][record_field]
+            record_obj = ar[record_name]
 
-                if index in array:
-                    return array[index]
-                else:
-                    message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
-                    SpiUtil.print_w(message=message)
-                    element_type = ElementType(
-                        (cast(ArrayType, field_decl.type_node)).element_type.value
-                    )
-                    if element_type == ElementType.BOOL:
-                        return False
-                    if element_type == ElementType.INTEGER:
-                        return 0
-                    if element_type == ElementType.REAL:
-                        return 0.0
-                    if element_type == ElementType.ARRAY:
-                        return {}
-            return ar[record_name][record_field][index]
+            if isinstance(record_obj, RecordObject):
+                field_value = record_obj.fields[record_field]
+
+                if isinstance(field_value, StringObject):
+                    return field_value[index]
+                elif isinstance(field_value, ArrayObject):
+                    return field_value[index]
+
+            return None
         else:
-            if ar.get_meta(var_name).type == ElementType.STRING:
-                string_const = ar.get(var_name)
-                if len(string_const) >= index:
-                    return string_const[index - 1]
-                else:
-                    return ""
-            else:
-                array = ar.get(var_name)
-
-                if index in array:
-                    return array[index]
-                else:
-                    message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
-                    SpiUtil.print_w(message=message)
-                    element_type = ar.get_meta(var_name).type
-                    if element_type == ElementType.BOOL:
-                        return False
-                    if element_type == ElementType.INTEGER:
-                        return 0
-                    if element_type == ElementType.REAL:
-                        return 0.0
-                    if element_type == ElementType.ARRAY:
-                        return {}
+            obj = ar.get(var_name)
+            if isinstance(obj, StringObject):
+                return obj[index]
+            elif isinstance(obj, ArrayObject):
+                return obj[index]
+            return None
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
 
     def visit_WhileStatement(self, node: WhileStatement) -> None:
-        while self.visit(node.condition) is True:
+        while self.visit(node.condition).value is True:
             self.visit(node.block)
 
     def visit_ForStatement(self, node: ForStatement) -> None:
         ar = self.call_stack.peek()
         var_name = node.initialization.left.value
         self.visit(node.initialization)
-        bound_value = cast(Number, self.visit(node.bound))
-        var_value = ar[var_name]
-        while var_value <= bound_value:
-            self.visit(node.block)
-            var_value += 1
-            if var_value <= bound_value:
-                ar[var_name] = var_value
+        bound_value = self.visit(node.bound)
+        var_obj = ar[var_name]
+
+        if isinstance(var_obj, IntegerObject) and isinstance(
+            bound_value, IntegerObject
+        ):
+            while var_obj <= bound_value:
+                self.visit(node.block)
+                var_obj.value += 1
+            if var_obj > bound_value:
+                ar[var_name] = bound_value
+        else:
+            raise TypeError("For loop variables must be integers")
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         pass
@@ -732,26 +873,35 @@ class Interpreter(NodeVisitor):
 
                 # core
                 arr_name = actual_params[0].value
-                new_length = actual_params[1].value
+                new_length = self.visit(actual_params[1])
                 element_type = ar.get_meta(arr_name).type
                 if element_type == ElementType.STRING:
-                    if len(ar[arr_name]) > new_length:
+                    if len(ar[arr_name]) > new_length.value:
                         ar[arr_name] = ar[arr_name][0:new_length]
                 else:
                     if ar.get_meta(arr_name).dynamic is False:
                         raise StaticArrayModifyLengthError()
 
+                    new_length = (
+                        new_length.value
+                        if isinstance(new_length, IntegerObject)
+                        else new_length
+                    )
                     for i in range(0, new_length):
                         if i in ar[arr_name]:
                             continue
                         if element_type == ElementType.BOOL:
-                            ar[arr_name][i] = False
+                            ar[arr_name][i] = BooleanObject(value=False)
                         if element_type == ElementType.INTEGER:
-                            ar[arr_name][i] = 0
+                            ar[arr_name][i] = IntegerObject(value=0)
                         if element_type == ElementType.REAL:
-                            ar[arr_name][i] = 0.0
+                            ar[arr_name][i] = RealObject(value=0.0)
                         if element_type == ElementType.ARRAY:
-                            ar[arr_name][i] = {}
+                            ar[arr_name][i] = ArrayObject(
+                                elements={},
+                                element_type=ElementType.UNKNOWN,
+                                dynamic=True,
+                            )
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -787,14 +937,24 @@ class Interpreter(NodeVisitor):
         pass
 
     def visit_IfStatement(self, node: IfStatement) -> None:
-        flag: bool = self.visit(node.condition)
+        condition_result = self.visit(node.condition)
+
+        if isinstance(condition_result, BooleanObject):
+            flag = condition_result.value
+        else:
+            flag = bool(condition_result)
 
         if flag is True:
             self.visit(node.then_branch)
             return
         else:
             for branch in node.else_if_branches:
-                sub_flag: bool = self.visit(branch)
+                sub_condition = self.visit(branch)
+                if isinstance(sub_condition, BooleanObject):
+                    sub_flag = sub_condition.value
+                else:
+                    sub_flag = bool(sub_condition)
+
                 if sub_flag is True:
                     self.visit(branch.then_branch)
                     return
@@ -847,7 +1007,7 @@ class Interpreter(NodeVisitor):
                 self.log(f"ENTER: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
-                ar[RETURN_NUM] = len(self.visit(actual_params[i]))
+                ar[RETURN_NUM] = IntegerObject(value=len(self.visit(actual_params[i])))
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
@@ -857,7 +1017,7 @@ class Interpreter(NodeVisitor):
             elif func_symbol.name.upper() == NativeMethod.LOW.name:
                 actual_params = node.actual_params
 
-                # [0] = LENGTH, [1] = ARRAY_NAME
+                # Process parameters
                 for i in range(0, len(actual_params)):
                     ar[i] = self.visit(actual_params[i])
 
@@ -866,7 +1026,16 @@ class Interpreter(NodeVisitor):
                 self.log(f"ENTER: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
-                ar[RETURN_NUM] = min(self.visit(actual_params[i]))
+                # Get the array object
+                array_obj = self.visit(actual_params[i])
+
+                # Find the lowest index in the array
+                if isinstance(array_obj, ArrayObject) and array_obj.elements:
+                    lowest_index = min(array_obj.elements.keys())
+                    ar[RETURN_NUM] = IntegerObject(lowest_index)
+                else:
+                    # Return a default value if array is empty or not an array
+                    ar[RETURN_NUM] = IntegerObject(0)
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
@@ -876,7 +1045,7 @@ class Interpreter(NodeVisitor):
             elif func_symbol.name.upper() == NativeMethod.HIGH.name:
                 actual_params = node.actual_params
 
-                # [0] = LENGTH, [1] = ARRAY_NAME
+                # Process parameters
                 for i in range(0, len(actual_params)):
                     ar[i] = self.visit(actual_params[i])
 
@@ -885,7 +1054,16 @@ class Interpreter(NodeVisitor):
                 self.log(f"ENTER: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
-                ar[RETURN_NUM] = max(self.visit(actual_params[i]))
+                # Get the array object
+                array_obj = self.visit(actual_params[i])
+
+                # Find the highest index in the array
+                if isinstance(array_obj, ArrayObject) and array_obj.elements:
+                    highest_index = max(array_obj.elements.keys())
+                    ar[RETURN_NUM] = IntegerObject(highest_index)
+                else:
+                    # Return a default value if array is empty or not an array
+                    ar[RETURN_NUM] = IntegerObject(0)
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
@@ -900,7 +1078,7 @@ class Interpreter(NodeVisitor):
                 self.log(f"ENTER: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
-                ar[RETURN_NUM] = self.visit(actual_params[1]).index
+                ar[RETURN_NUM] = IntegerObject(value=self.visit(actual_params[1]).index)
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
@@ -946,7 +1124,7 @@ class Interpreter(NodeVisitor):
             type=ARType.METHOD,
             nesting_level=method_symbol.scope_level + 1,
         )
-        instance: dict[str, Any] = {}
+        instance = None
         pre_ar = self.call_stack.peek()
         if pre_ar is not None:
             ar.copy_from(pre_ar, False)
@@ -954,28 +1132,19 @@ class Interpreter(NodeVisitor):
             if meta.is_instance:
                 inst_name = class_or_inst_name
                 instance = pre_ar.get(inst_name)
-                for k, v in instance.items():
-                    ar[k] = v
+                # Copy fields from instance object to activation record
+                if isinstance(instance, InstanceObject):
+                    for k, v in instance.fields.items():
+                        ar[k] = v
+                else:
+                    raise TypeError(f"Expected InstanceObject but got {type(instance)}")
             elif meta.is_class:
                 class_name = class_or_inst_name
-                class_decl = pre_ar.get(SpiUtil.toClassName(class_name))
-                for field in class_decl.fields:
-                    if field.type_node.token.type == TokenType.BOOLEAN:
-                        instance[field.var_node.value] = False
-                    elif field.type_node.token.type == TokenType.INTEGER:
-                        instance[field.var_node.value] = 0
-                    elif field.type_node.token.type == TokenType.REAL:
-                        instance[field.var_node.value] = 0.0
-                    elif field.type_node.token.type == TokenType.STRING:
-                        instance[field.var_node.value] = ""
-                    elif field.type_node.token.type == TokenType.ARRAY:
-                        instance[field.var_node.value] = []
-                    elif field.type_node.token.type == TokenType.CLASS:
-                        instance[field.var_node.value] = {}
+                class_decl: ClassDecl = pre_ar.get(SpiUtil.toClassName(class_name))
+                fields = class_decl.fields.copy()
+                instance = InstanceObject(class_decl.class_name, fields)
             else:
                 raise UnknownMethodSymbolError()
-
-            pass
 
         formal_params = method_symbol.formal_params
         actual_params = node.actual_params
@@ -1001,9 +1170,11 @@ class Interpreter(NodeVisitor):
         self.log(f"LEAVE: METHOD {method_full_name}")
         self.log(str(self.call_stack))
 
-        # before leave method scope, should assign the modified field value outside
-        for k, v in instance.items():
-            instance[k] = ar[k]
+        # before leave method scope, update the instance fields with values from AR
+        if isinstance(instance, InstanceObject):
+            for k in instance.fields.keys():
+                if k in ar.members:
+                    instance.fields[k] = ar[k]
 
         self.call_stack.pop()
 
@@ -1016,6 +1187,149 @@ class Interpreter(NodeVisitor):
             return ar[method_name]
         else:
             return None
+
+    def visit_ExprGet(self, node: ExprGet) -> Any:
+        # First visit the base object
+        result = self.visit(node.object)
+
+        # Process each GetItem in sequence
+        for get_item in node.gets:
+            if get_item.is_property:
+                # Property access (like obj.property)
+                if isinstance(result, (RecordObject, InstanceObject)):
+                    result = result[get_item.key]
+                else:
+                    ar = self.call_stack.peek()
+                    meta = ar.get_meta(result)
+                    if meta.is_record_instance or meta.is_instance:
+                        record_obj = ar[result]
+                        if isinstance(record_obj, (RecordObject, InstanceObject)):
+                            result = record_obj[get_item.key]
+                    else:
+                        raise InterpreterError(
+                            f"Cannot access property {get_item.key} on non-object value"
+                        )
+            else:
+                # Index access (like arr[idx])
+                index = self.visit(get_item.key)
+
+                if isinstance(result, StringObject):
+                    # String indexing (1-based in Pascal)
+                    if isinstance(index, IntegerObject):
+                        idx_val = index.value
+                    else:
+                        idx_val = index
+
+                    result = result[idx_val]
+                elif isinstance(result, ArrayObject):
+                    # Array indexing
+                    if isinstance(index, IntegerObject):
+                        idx_val = index.value
+                    else:
+                        idx_val = index
+
+                    result = result[idx_val]
+                else:
+                    raise InterpreterError(
+                        "Cannot use index access on non-indexable value"
+                    )
+
+        return result
+
+    def visit_GetItem(self, node: GetItem) -> Any:
+        # This is mainly used by ExprGet and not visited directly
+        if node.is_property:
+            return node.key
+        else:
+            return self.visit(node.key)
+
+    def visit_ExprSet(self, node: ExprSet) -> None:
+        # Get the value to assign
+        value = self.visit(node.value)
+
+        # Get the base object and all but the last GetItem
+        object_value = self.visit(node.expr_get.object)
+        gets = node.expr_get.gets
+
+        if not gets:
+            # No property/index access, just assign to the variable
+            ar = self.call_stack.peek()
+            ar[object_value] = value
+            return
+
+        # Navigate to the parent object that will have its property/index modified
+        current_obj = object_value
+
+        # Process all but the last GetItem to find the parent object
+        for i in range(len(gets) - 1):
+            get_item = gets[i]
+
+            if get_item.is_property:
+                # Property access
+                if isinstance(current_obj, (RecordObject, InstanceObject)):
+                    current_obj = current_obj[get_item.key]
+                else:
+                    ar = self.call_stack.peek()
+                    meta = ar.get_meta(current_obj)
+                    if meta.is_record_instance or meta.is_instance:
+                        record_obj = ar[current_obj]
+                        if isinstance(record_obj, (RecordObject, InstanceObject)):
+                            current_obj = record_obj[get_item.key]
+                    else:
+                        raise InterpreterError(
+                            f"Cannot access property {get_item.key} on non-object value"
+                        )
+            else:
+                # Index access
+                index = self.visit(get_item.key)
+                if isinstance(index, IntegerObject):
+                    idx_val = index.value
+                else:
+                    idx_val = index
+
+                if isinstance(current_obj, ArrayObject):
+                    current_obj = current_obj[idx_val]
+                else:
+                    ar = self.call_stack.peek()
+                    array_obj = ar[current_obj]
+                    if isinstance(array_obj, ArrayObject):
+                        current_obj = array_obj[idx_val]
+
+        # Handle the final GetItem (the actual assignment target)
+        last_get = gets[-1]
+        ar = self.call_stack.peek()
+
+        if last_get.is_property:
+            # Property assignment
+            if isinstance(current_obj, (RecordObject, InstanceObject)):
+                current_obj[last_get.key] = value
+            else:
+                meta = ar.get_meta(current_obj)
+                if meta.is_record_instance or meta.is_instance:
+                    record_obj = ar[current_obj]
+                    if isinstance(record_obj, (RecordObject, InstanceObject)):
+                        record_obj[last_get.key] = value
+                else:
+                    # For simple variables that are mapped as member names
+                    ar[current_obj] = value
+        else:
+            # Index assignment
+            index = self.visit(last_get.key)
+            if isinstance(index, IntegerObject):
+                idx_val = index.value
+            else:
+                idx_val = index
+
+            if isinstance(current_obj, ArrayObject):
+                current_obj[idx_val] = copy.copy(value)
+            elif isinstance(current_obj, StringObject):
+                # Cannot modify string by index in most languages
+                raise InterpreterError("Cannot modify string by index")
+            else:
+                # For variables in the activation record that are arrays
+                array_obj = ar[current_obj]
+                if isinstance(array_obj, ArrayObject):
+                    array_obj[idx_val] = value
 
     def interpret(self):
         tree = self.tree

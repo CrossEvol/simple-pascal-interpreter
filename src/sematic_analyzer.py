@@ -762,3 +762,30 @@ class SemanticAnalyzer(NodeVisitor):
         func_symbol = self.current_scope.lookup(node.func_name)
         # accessed by the interpreter when executing procedure call
         node.func_symbol = cast(FunctionSymbol, func_symbol)
+
+    def visit_GetItem(self, node: GetItem) -> None:
+        if node.is_property:
+            # It's a property access, nothing to visit
+            pass
+        else:
+            # It's an index access, visit the index expression
+            self.visit(node.key)
+
+    def visit_ExprGet(self, node: ExprGet) -> None:
+        # Visit the base object
+        self.visit(node.object)
+        
+        # Visit all the property/index accesses
+        for get_item in node.gets:
+            self.visit(get_item)
+
+    def visit_ExprSet(self, node: ExprSet) -> None:
+        # Visit the left side (ExprGet)
+        self.visit(node.expr_get)
+        
+        # Visit the right side (value being assigned)
+        self.visit(node.value)
+        
+        # We could add additional checks here, like ensuring the types match
+        # or checking if the target is a constant or loop variable that
+        # shouldn't be modified, similar to visit_Assign
