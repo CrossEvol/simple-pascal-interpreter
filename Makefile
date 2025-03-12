@@ -11,8 +11,8 @@ test:
 	python test_interpreter.py
 
 dot:
-	@python gen_ast_dot.py ${file} >> ast.dot
-	@dot -Tpng -o ast.png ast.dot
+	@python gen_ast_dot.py ${file} >> temp/ast_$(shell date +%Y-%m-%d_%H-%M-%S).dot
+	@dot -Tpng -o temp/ast_$(shell date +%Y-%m-%d_%H-%M-%S).png temp/ast_$(shell date +%Y-%m-%d_%H-%M-%S).dot
 
 type:
 	@python auto_type.py ${file}
