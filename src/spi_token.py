@@ -10,7 +10,8 @@ class ElementType(Enum):
     CLASS = "CLASS"
     INSTANCE = "INSTANCE"
     ENUM = "ENUM"
-    RECORD = "RECORD"
+    RECORD_CLASS = "RECORD_CLASS"
+    RECORD_INSTANCE = "RECORD_INSTANCE"
     UNKNOWN = "UNKNOWN"
 
 

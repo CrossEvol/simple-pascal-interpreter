@@ -1,5 +1,5 @@
-from typing import Any, Dict, Union
 import copy
+from typing import Any, Dict, Union
 
 from src.spi_token import ElementType
 
@@ -103,7 +103,7 @@ class EnumObject(Object):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(index={self.index}, name='{self.name}')"
-        
+
     def __str__(self):
         return self.name
 
@@ -121,7 +121,7 @@ class IntegerObject(Object):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(value={self.value})"
-        
+
     def __str__(self):
         return str(self.value)
 
@@ -211,7 +211,7 @@ class RealObject(Object):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(value={self.value})"
-        
+
     def __str__(self):
         return str(self.value)
 
@@ -294,7 +294,7 @@ class BooleanObject(Object):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(value={self.value})"
-        
+
     def __str__(self):
         return str(self.value).lower()
 
@@ -322,7 +322,7 @@ class StringObject(Object):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(value='{self.value}', limit={self.limit})"
-        
+
     def __str__(self):
         return self.value
 
@@ -394,7 +394,7 @@ class ArrayObject(Object):
     def __repr__(self):
         elements_str = ", ".join([f"{k}: {v}" for k, v in self.elements.items()])
         return f"{self.__class__.__name__}({{{elements_str}}}, element_type={self.element_type}, dynamic={self.dynamic})"
-        
+
     def __str__(self):
         # Sort elements by key to ensure consistent output
         sorted_elements = sorted(self.elements.items())
@@ -444,7 +444,7 @@ class ArrayObject(Object):
         # Convert IntegerObject to int for dictionary access
         if isinstance(index, IntegerObject):
             index = index.value
-            
+
         return index in self.elements
 
     def __copy__(self):
@@ -453,27 +453,28 @@ class ArrayObject(Object):
     def __deepcopy__(self, memo):
         if id(self) in memo:
             return memo[id(self)]
-        
+
         # Create a new instance with empty elements
         result = ArrayObject({}, self.element_type, self.dynamic)
         memo[id(self)] = result
-        
+
         # Deep copy the elements
         for key, value in self.elements.items():
             result.elements[key] = copy.deepcopy(value, memo)
-            
+
         return result
 
 
-class RecordObject(Object):
-    def __init__(self, fields: Dict[str, Any]):
-        super().__init__(type=ElementType.RECORD)
+class RecordClassObject(Object):
+    def __init__(self, record_name: str, fields: Dict[str, Any]):
+        super().__init__(type=ElementType.RECORD_CLASS)
+        self.record_name = record_name
         self.fields = fields
 
     def __repr__(self):
         fields_str = ", ".join([f"{k}: {v}" for k, v in self.fields.items()])
-        return f"{self.__class__.__name__}({{{fields_str}}})"
-        
+        return f"{self.__class__.__name__}(record_name='{self.record_name}', fields={{{fields_str}}})"
+
     def __str__(self):
         fields_str = ", ".join([f"{k}: {str(v)}" for k, v in self.fields.items()])
         return f"{{{fields_str}}}"
@@ -490,25 +491,73 @@ class RecordObject(Object):
             raise KeyError(f"Field '{field_name}' not found in record")
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, RecordObject):
-            return self.fields == other.fields
+        if isinstance(other, RecordClassObject):
+            return self.record_name == other.record_name and self.fields == other.fields
         return False
 
     def __copy__(self):
-        return RecordObject(self.fields.copy())
+        return RecordClassObject(self.record_name, self.fields.copy())
 
     def __deepcopy__(self, memo):
         if id(self) in memo:
             return memo[id(self)]
-        
+
         # Create a new instance with empty fields
-        result = RecordObject({})
+        result = RecordClassObject(self.record_name, {})
         memo[id(self)] = result
-        
+
         # Deep copy the fields
         for key, value in self.fields.items():
             result.fields[key] = copy.deepcopy(value, memo)
-            
+
+        return result
+
+
+class RecordInstanceObject(Object):
+    def __init__(self, record_name: str, fields: Dict[str, Any]):
+        super().__init__(type=ElementType.RECORD_INSTANCE)
+        self.record_name = record_name
+        self.fields = fields
+
+    def __repr__(self):
+        fields_str = ", ".join([f"{k}: {v}" for k, v in self.fields.items()])
+        return f"{self.__class__.__name__}(record_name='{self.record_name}', fields={{{fields_str}}})"
+
+    def __str__(self):
+        fields_str = ", ".join([f"{k}: {str(v)}" for k, v in self.fields.items()])
+        return f"<record {self.record_name} {{{fields_str}}}>"
+
+    def __getitem__(self, field_name):
+        if field_name in self.fields:
+            return self.fields[field_name]
+        raise KeyError(f"Field '{field_name}' not found in record instance")
+
+    def __setitem__(self, field_name, value):
+        if field_name in self.fields:
+            self.fields[field_name] = value
+        else:
+            raise KeyError(f"Field '{field_name}' not found in record instance")
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, RecordInstanceObject):
+            return self.record_name == other.record_name and self.fields == other.fields
+        return False
+
+    def __copy__(self):
+        return RecordInstanceObject(self.record_name, self.fields.copy())
+
+    def __deepcopy__(self, memo):
+        if id(self) in memo:
+            return memo[id(self)]
+
+        # Create a new instance with empty fields
+        result = RecordInstanceObject(self.record_name, {})
+        memo[id(self)] = result
+
+        # Deep copy the fields
+        for key, value in self.fields.items():
+            result.fields[key] = copy.deepcopy(value, memo)
+
         return result
 
 
@@ -523,7 +572,7 @@ class ClassObject(Object):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(class_name='{self.class_name}', fields={len(self.fields)}, methods={len(self.methods)})"
-        
+
     def __str__(self):
         return f"<class {self.class_name}>"
 
@@ -538,18 +587,18 @@ class ClassObject(Object):
     def __deepcopy__(self, memo):
         if id(self) in memo:
             return memo[id(self)]
-        
+
         # Create a new instance
         result = ClassObject(self.class_name, {}, {})
         memo[id(self)] = result
-        
+
         # Deep copy fields and methods
         for key, value in self.fields.items():
             result.fields[key] = copy.deepcopy(value, memo)
-            
+
         for key, value in self.methods.items():
             result.methods[key] = copy.deepcopy(value, memo)
-            
+
         return result
 
 
@@ -562,7 +611,7 @@ class InstanceObject(Object):
     def __repr__(self):
         fields_str = ", ".join([f"{k}: {v}" for k, v in self.fields.items()])
         return f"{self.__class__.__name__}(class_name='{self.class_name}', fields={{{fields_str}}})"
-        
+
     def __str__(self):
         return f"<instance of {self.class_name}>"
 
@@ -592,13 +641,13 @@ class InstanceObject(Object):
     def __deepcopy__(self, memo):
         if id(self) in memo:
             return memo[id(self)]
-        
+
         # Create a new instance with empty fields
         result = InstanceObject(self.class_name, {})
         memo[id(self)] = result
-        
+
         # Deep copy the fields
         for key, value in self.fields.items():
             result.fields[key] = copy.deepcopy(value, memo)
-            
+
         return result

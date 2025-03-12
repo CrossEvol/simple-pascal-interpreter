@@ -1115,9 +1115,37 @@ class Parser:
         """
         expr_get : variable (DOT ID | LBRACKET expr RBRACKET)+
         """
-        base_object = self.variable()
+        base_var = self.variable()
         gets = []
 
+        # If we got a RecordVar, convert it to a base Var and a GetItem
+        if isinstance(base_var, RecordVar):
+            # Create a base variable for the record
+            base_object = Var(
+                Token(
+                    type=TokenType.ID,
+                    value=base_var.name,
+                    lineno=base_var.token.lineno,
+                    column=base_var.token.column,
+                )
+            )
+
+            # Add the property access as the first GetItem
+            gets.append(
+                GetItem(
+                    token=Token(
+                        type=TokenType.DOT,
+                        value=".",
+                        lineno=base_var.token.lineno,
+                        column=base_var.token.column,
+                    ),
+                    key=base_var.key,
+                )
+            )
+        else:
+            base_object = base_var
+
+        # Continue with any additional property or index accesses
         while self.current_token.type in (TokenType.DOT, TokenType.LBRACKET):
             if self.current_token.type == TokenType.DOT:
                 token = self.current_token
@@ -1308,7 +1336,7 @@ class Parser:
                 return node
             elif token.value in self.records:
                 # call enum variable
-                node = self.variable()
+                node = self.expr_get()
                 return node
 
         # call procedure

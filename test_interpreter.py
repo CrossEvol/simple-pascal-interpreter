@@ -1147,9 +1147,6 @@ end.
         self.assertEqual(ar["o6"].value, 6)
         self.assertEqual(ar.nesting_level, 2)
 
-    @unittest.skip(
-        "need to apply expr_get and convert value from primitive to Object first"
-    )
     def test_record(self):
         text = """\
 program RecordExample;

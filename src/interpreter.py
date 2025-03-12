@@ -24,7 +24,8 @@ from src.object import (
     Object,
     OperationNotSupportedError,
     RealObject,
-    RecordObject,
+    RecordClassObject,
+    RecordInstanceObject,
     StringObject,
 )
 from src.sematic_analyzer import NativeMethod
@@ -224,26 +225,14 @@ class Interpreter(NodeVisitor):
                 ar.set_dynamic(node.var_node.value, True)
         elif node.type_node.token.type == TokenType.RECORD:
             # TODO: should write this in recursion
-            record_decl: RecordDecl = ar.get(node.type_node.token.value)
-            fields: dict[str, Any] = {}
-            for field in record_decl.fields:
-                if field.type_node.token.type == TokenType.BOOLEAN:
-                    fields[field.var_node.value] = BooleanObject(False)
-                elif field.type_node.token.type == TokenType.INTEGER:
-                    fields[field.var_node.value] = IntegerObject(0)
-                elif field.type_node.token.type == TokenType.REAL:
-                    fields[field.var_node.value] = RealObject(0.0)
-                elif field.type_node.token.type == TokenType.STRING:
-                    fields[field.var_node.value] = StringObject("")
-                elif field.type_node.token.type == TokenType.ARRAY:
-                    elements, element_type = self.__initArray(field.type_node)
-                    fields[field.var_node.value] = ArrayObject(elements, element_type)
-                elif field.type_node.token.type == TokenType.CLASS:
-                    fields[field.var_node.value] = {}
-            ar[node.var_node.value] = RecordObject(fields)
-            ar.set_meta(node.var_node.value, ElementType.RECORD)
+            record_class: RecordClassObject = ar.get(node.type_node.token.value)
+            fields: dict[str, Any] = record_class.fields.copy()
+            ar[node.var_node.value] = RecordInstanceObject(
+                record_name=record_class.record_name, fields=fields
+            )
+            ar.set_meta(node.var_node.value, ElementType.RECORD_CLASS)
             ar.set_is_record_instance(node.var_node.value)
-            ar.set_ref_record_name(node.var_node.value, record_decl.record_name)
+            ar.set_ref_record_name(node.var_node.value, record_class.record_name)
         elif node.type_node.token.type == TokenType.CLASS:
             # TODO: should write this in recursion
             class_decl: ClassDecl = ar.get(
@@ -406,12 +395,51 @@ class Interpreter(NodeVisitor):
         ar.set_is_enum(node.enum_name)
         pass
 
+    def __convert_record_decl_to_object(self, node: RecordDecl) -> "RecordClassObject":
+        """Converts a RecordDecl AST node to a RecordObject instance."""
+
+        # Initialize empty dictionary for fields
+        fields: Dict[str, Any] = {}
+
+        # Process fields
+        for field in node.fields:
+            field_name = field.var_node.value
+
+            # Initialize field with default value based on type
+            if field.type_node.token.type == TokenType.BOOLEAN:
+                fields[field_name] = BooleanObject(False)
+            elif field.type_node.token.type == TokenType.INTEGER:
+                fields[field_name] = IntegerObject(0)
+            elif field.type_node.token.type == TokenType.REAL:
+                fields[field_name] = RealObject(0.0)
+            elif field.type_node.token.type == TokenType.STRING:
+                fields[field_name] = StringObject("")
+            elif field.type_node.token.type == TokenType.ARRAY:
+                elements, element_type = self.__initArray(field.type_node)
+                fields[field_name] = ArrayObject(elements, element_type)
+            elif field.type_node.token.type == TokenType.CLASS:
+                fields[field_name] = {}
+            elif field.type_node.token.type == TokenType.RECORD:
+                # Handle nested records
+                record_decl: RecordDecl = self.call_stack.peek().get(
+                    field.type_node.token.value
+                )
+                if record_decl:
+                    fields[field_name] = self.__convert_record_decl_to_object(
+                        record_decl
+                    )
+                else:
+                    fields[field_name] = {}
+
+        # Create and return RecordObject
+        return RecordClassObject(record_name=node.record_name, fields=fields)
+
     def visit_RecordDecl(self, node: RecordDecl) -> None:
         ar = self.call_stack.peek()
         for field in node.fields:
             self.visit(field)
-        ar[node.record_name] = node
-        ar.set_meta(node.record_name, ElementType.RECORD)
+        ar[node.record_name] = self.__convert_record_decl_to_object(node)
+        ar.set_meta(node.record_name, ElementType.RECORD_CLASS)
         ar.set_is_record(node.record_name)
         pass
 
@@ -628,7 +656,7 @@ class Interpreter(NodeVisitor):
             if var_name.find(".") != -1:
                 record_name, record_key = var_name.split(".")
                 record_obj = ar[record_name]
-                if isinstance(record_obj, RecordObject):
+                if isinstance(record_obj, RecordClassObject):
                     array_obj = record_obj.fields[record_key]
                     if isinstance(array_obj, ArrayObject):
                         array_obj[index] = var_value
@@ -640,7 +668,7 @@ class Interpreter(NodeVisitor):
             # user.Age = value
             record_name, record_key = node.left.name, node.left.key
             record_obj = ar[record_name]
-            if isinstance(record_obj, (RecordObject, InstanceObject)):
+            if isinstance(record_obj, (RecordClassObject, InstanceObject)):
                 record_obj[record_key] = var_value
         else:
             # identifier = value
@@ -697,9 +725,7 @@ class Interpreter(NodeVisitor):
     def visit_RecordVar(self, node: RecordVar) -> Any:
         ar = self.call_stack.peek()
         record_obj = ar.get(node.name)
-        if isinstance(record_obj, (RecordObject, InstanceObject)):
-            return record_obj[node.key]
-        return None
+        return record_obj
 
     def visit_IndexVar(self, node: IndexVar) -> Any:
         var_name = node.value
@@ -711,7 +737,7 @@ class Interpreter(NodeVisitor):
             meta = ar.get_meta(record_name)
             record_obj = ar[record_name]
 
-            if isinstance(record_obj, RecordObject):
+            if isinstance(record_obj, RecordClassObject):
                 field_value = record_obj.fields[record_field]
 
                 if isinstance(field_value, StringObject):
@@ -1196,14 +1222,16 @@ class Interpreter(NodeVisitor):
         for get_item in node.gets:
             if get_item.is_property:
                 # Property access (like obj.property)
-                if isinstance(result, (RecordObject, InstanceObject)):
+                if isinstance(result, (RecordInstanceObject, InstanceObject)):
                     result = result[get_item.key]
                 else:
                     ar = self.call_stack.peek()
                     meta = ar.get_meta(result)
                     if meta.is_record_instance or meta.is_instance:
                         record_obj = ar[result]
-                        if isinstance(record_obj, (RecordObject, InstanceObject)):
+                        if isinstance(
+                            record_obj, (RecordInstanceObject, InstanceObject)
+                        ):
                             result = record_obj[get_item.key]
                     else:
                         raise InterpreterError(
@@ -1266,14 +1294,16 @@ class Interpreter(NodeVisitor):
 
             if get_item.is_property:
                 # Property access
-                if isinstance(current_obj, (RecordObject, InstanceObject)):
+                if isinstance(current_obj, (RecordInstanceObject, InstanceObject)):
                     current_obj = current_obj[get_item.key]
                 else:
                     ar = self.call_stack.peek()
                     meta = ar.get_meta(current_obj)
                     if meta.is_record_instance or meta.is_instance:
                         record_obj = ar[current_obj]
-                        if isinstance(record_obj, (RecordObject, InstanceObject)):
+                        if isinstance(
+                            record_obj, (RecordInstanceObject, InstanceObject)
+                        ):
                             current_obj = record_obj[get_item.key]
                     else:
                         raise InterpreterError(
@@ -1301,13 +1331,13 @@ class Interpreter(NodeVisitor):
 
         if last_get.is_property:
             # Property assignment
-            if isinstance(current_obj, (RecordObject, InstanceObject)):
+            if isinstance(current_obj, (RecordInstanceObject, InstanceObject)):
                 current_obj[last_get.key] = value
             else:
                 meta = ar.get_meta(current_obj)
                 if meta.is_record_instance or meta.is_instance:
                     record_obj = ar[current_obj]
-                    if isinstance(record_obj, (RecordObject, InstanceObject)):
+                    if isinstance(record_obj, (RecordInstanceObject, InstanceObject)):
                         record_obj[last_get.key] = value
                 else:
                     # For simple variables that are mapped as member names
