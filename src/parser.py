@@ -69,15 +69,49 @@ class Parser:
             )
 
     def program(self) -> Program:
-        """program : PROGRAM variable SEMI block DOT"""
+        """program : PROGRAM variable SEMI (uses_clause)? block DOT"""
         self.eat(TokenType.PROGRAM)
         var_node = self.variable()
         prog_name = var_node.value
         self.eat(TokenType.SEMI)
+        
+        # Parse optional uses clause
+        uses_list = []
+        if self.current_token.type == TokenType.USES:
+            uses_list = self.uses_clause()
+        
         block_node = self.block()
-        program_node = Program(prog_name, block_node)
+        program_node = Program(prog_name, block_node, uses_list)
         self.eat(TokenType.DOT)
         return program_node
+
+    def uses_clause(self) -> list[str]:
+        """uses_clause : USES ID (COMMA ID)* SEMI"""
+        self.eat(TokenType.USES)
+        
+        # Parse first module name
+        if self.current_token.type != TokenType.ID:
+            self.error(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                token=self.current_token,
+            )
+        
+        module_names = [self.current_token.value]
+        self.eat(TokenType.ID)
+        
+        # Parse additional module names separated by commas
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            if self.current_token.type != TokenType.ID:
+                self.error(
+                    error_code=ErrorCode.UNEXPECTED_TOKEN,
+                    token=self.current_token,
+                )
+            module_names.append(self.current_token.value)
+            self.eat(TokenType.ID)
+        
+        self.eat(TokenType.SEMI)
+        return module_names
 
     def block(self) -> Block:
         """block : declarations compound_statement"""

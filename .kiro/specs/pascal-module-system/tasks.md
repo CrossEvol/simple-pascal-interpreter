@@ -25,7 +25,11 @@
   - Write unit tests for module data structures
   - _Requirements: 3.1, 4.1_
 
-- [ ] 3. Extend parser to handle uses clause
+- [x] 3. Extend parser to handle uses clause
+
+
+
+
   - Add new syntax grammar to parser.py.
   - Add uses_clause() method to parse comma-separated module names
   - Modify program() method to optionally parse uses clause after PROGRAM declaration

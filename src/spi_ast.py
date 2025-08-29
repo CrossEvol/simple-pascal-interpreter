@@ -199,9 +199,10 @@ class Block(AST):
 
 
 class Program(AST):
-    def __init__(self, name: str, block: Block) -> None:
+    def __init__(self, name: str, block: Block, uses_clause: list[str] = None) -> None:
         self.name = name
         self.block = block
+        self.uses_clause = uses_clause or []
 
 
 class Member(Decl):
