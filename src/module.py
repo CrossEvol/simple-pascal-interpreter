@@ -9,6 +9,105 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 from src.spi_ast import Block
 from src.sematic_analyzer import ScopedSymbolTable
+from src.symbol import Symbol
+
+
+class ModuleSymbolTable(ScopedSymbolTable):
+    """
+    Enhanced symbol table with module-aware symbol resolution.
+    
+    This class extends ScopedSymbolTable to support:
+    - Tracking imported modules and their symbols
+    - Cross-module symbol resolution
+    - Module-qualified symbol lookup
+    """
+    
+    def __init__(self, scope_name: str, scope_level: int, 
+                 enclosing_scope: ScopedSymbolTable | None = None, 
+                 module_name: str | None = None) -> None:
+        super().__init__(scope_name, scope_level, enclosing_scope)
+        self.module_name = module_name
+        self.imported_modules: Dict[str, ScopedSymbolTable] = {}
+    
+    def import_module_symbols(self, module_name: str, symbol_table: ScopedSymbolTable) -> None:
+        """
+        Import interface symbols from another module.
+        
+        Args:
+            module_name: Name of the module being imported
+            symbol_table: The interface symbol table of the module to import
+        """
+        self.imported_modules[module_name] = symbol_table
+    
+    def lookup_with_modules(self, name: str) -> Symbol | None:
+        """
+        Lookup a symbol with module-aware resolution.
+        
+        Resolution order:
+        1. Current scope and enclosing scopes (standard lookup)
+        2. Imported modules (in import order)
+        
+        Args:
+            name: Symbol name to lookup
+            
+        Returns:
+            Symbol if found, None otherwise
+        """
+        # First try standard lookup in current scope and enclosing scopes
+        symbol = self.lookup(name)
+        if symbol is not None:
+            return symbol
+        
+        # Then search in imported modules
+        for module_name, module_symbols in self.imported_modules.items():
+            symbol = module_symbols.lookup(name, current_scope_only=True)
+            if symbol is not None:
+                return symbol
+        
+        return None
+    
+    def resolve_qualified_name(self, module_name: str, symbol_name: str) -> Symbol | None:
+        """
+        Resolve a module-qualified symbol name (e.g., Math.ADD).
+        
+        Args:
+            module_name: Name of the module
+            symbol_name: Name of the symbol within the module
+            
+        Returns:
+            Symbol if found, None otherwise
+        """
+        if module_name in self.imported_modules:
+            return self.imported_modules[module_name].lookup(symbol_name, current_scope_only=True)
+        return None
+    
+    def get_imported_modules(self) -> List[str]:
+        """
+        Get list of imported module names.
+        
+        Returns:
+            List of module names that have been imported
+        """
+        return list(self.imported_modules.keys())
+    
+    def has_imported_module(self, module_name: str) -> bool:
+        """
+        Check if a module has been imported.
+        
+        Args:
+            module_name: Name of the module to check
+            
+        Returns:
+            True if module is imported, False otherwise
+        """
+        return module_name in self.imported_modules
+    
+    def __str__(self) -> str:
+        base_str = super().__str__()
+        if self.imported_modules:
+            imported_str = f"Imported modules: {list(self.imported_modules.keys())}"
+            return base_str + "\n" + imported_str
+        return base_str
 
 
 class Module:
@@ -27,15 +126,17 @@ class Module:
     def __init__(self, name: str, file_path: str) -> None:
         self.name = name
         self.file_path = file_path
-        self.interface_symbols = ScopedSymbolTable(
+        self.interface_symbols = ModuleSymbolTable(
             scope_name=f"{name}_interface",
             scope_level=1,
-            enclosing_scope=None
+            enclosing_scope=None,
+            module_name=name
         )
-        self.implementation_symbols = ScopedSymbolTable(
+        self.implementation_symbols = ModuleSymbolTable(
             scope_name=f"{name}_implementation", 
             scope_level=2,
-            enclosing_scope=self.interface_symbols
+            enclosing_scope=self.interface_symbols,
+            module_name=name
         )
         self.dependencies: List[str] = []
         self.is_loaded = False

@@ -1560,5 +1560,259 @@ class ModuleFileDiscoveryTestCase(unittest.TestCase):
         self.assertIn("'./stdlib']", str_repr)
 
 
+class ModuleSymbolTableTestCase(unittest.TestCase):
+    def makeModuleSymbolTable(self, module_name="TestModule"):
+        from src.module import ModuleSymbolTable
+        return ModuleSymbolTable(
+            scope_name=f"{module_name}_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name=module_name
+        )
+
+    def test_module_symbol_table_creation(self):
+        """Test basic ModuleSymbolTable creation and properties."""
+        table = self.makeModuleSymbolTable("Math")
+        
+        self.assertEqual(table.module_name, "Math")
+        self.assertEqual(table.scope_name, "Math_interface")
+        self.assertEqual(table.scope_level, 1)
+        self.assertEqual(len(table.imported_modules), 0)
+        self.assertIsNone(table.enclosing_scope)
+
+    def test_import_module_symbols(self):
+        """Test importing symbols from another module."""
+        from src.module import ModuleSymbolTable
+        from src.symbol import BuiltinFunctionSymbol
+        from src.spi_ast import Type
+        from src.spi_token import Token, TokenType
+        
+        # Create main module symbol table
+        main_table = self.makeModuleSymbolTable("Main")
+        
+        # Create a math module symbol table with some symbols
+        math_table = ModuleSymbolTable(
+            scope_name="Math_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="Math"
+        )
+        
+        # Add a function symbol to math module
+        add_func = BuiltinFunctionSymbol(
+            name="ADD",
+            return_type=Type(Token(TokenType.INTEGER, 0, -1, -1)),
+            formal_params=[]
+        )
+        math_table.insert(add_func)
+        
+        # Import math module symbols into main
+        main_table.import_module_symbols("Math", math_table)
+        
+        # Verify import
+        self.assertTrue(main_table.has_imported_module("Math"))
+        self.assertIn("Math", main_table.get_imported_modules())
+        self.assertEqual(len(main_table.imported_modules), 1)
+
+    def test_lookup_with_modules(self):
+        """Test symbol lookup across modules."""
+        from src.module import ModuleSymbolTable
+        from src.symbol import BuiltinFunctionSymbol, VarSymbol, BuiltinTypeSymbol
+        from src.spi_ast import Type
+        from src.spi_token import Token, TokenType
+        
+        # Create main module symbol table
+        main_table = self.makeModuleSymbolTable("Main")
+        
+        # Add a local symbol to main
+        local_var = VarSymbol("x", BuiltinTypeSymbol("INTEGER"))
+        main_table.insert(local_var)
+        
+        # Create math module with ADD function
+        math_table = ModuleSymbolTable(
+            scope_name="Math_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="Math"
+        )
+        add_func = BuiltinFunctionSymbol(
+            name="ADD",
+            return_type=Type(Token(TokenType.INTEGER, 0, -1, -1)),
+            formal_params=[]
+        )
+        math_table.insert(add_func)
+        
+        # Import math module
+        main_table.import_module_symbols("Math", math_table)
+        
+        # Test lookup - local symbol should be found first
+        found_x = main_table.lookup_with_modules("x")
+        self.assertIsNotNone(found_x)
+        self.assertEqual(found_x.name, "x")
+        
+        # Test lookup - imported symbol should be found
+        found_add = main_table.lookup_with_modules("ADD")
+        self.assertIsNotNone(found_add)
+        self.assertEqual(found_add.name, "ADD")
+        
+        # Test lookup - non-existent symbol
+        found_none = main_table.lookup_with_modules("NONEXISTENT")
+        self.assertIsNone(found_none)
+
+    def test_resolve_qualified_name(self):
+        """Test resolving module-qualified symbol names."""
+        from src.module import ModuleSymbolTable
+        from src.symbol import BuiltinFunctionSymbol
+        from src.spi_ast import Type
+        from src.spi_token import Token, TokenType
+        
+        # Create main module symbol table
+        main_table = self.makeModuleSymbolTable("Main")
+        
+        # Create math module with ADD function
+        math_table = ModuleSymbolTable(
+            scope_name="Math_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="Math"
+        )
+        add_func = BuiltinFunctionSymbol(
+            name="ADD",
+            return_type=Type(Token(TokenType.INTEGER, 0, -1, -1)),
+            formal_params=[]
+        )
+        math_table.insert(add_func)
+        
+        # Import math module
+        main_table.import_module_symbols("Math", math_table)
+        
+        # Test qualified lookup
+        found_add = main_table.resolve_qualified_name("Math", "ADD")
+        self.assertIsNotNone(found_add)
+        self.assertEqual(found_add.name, "ADD")
+        
+        # Test qualified lookup - non-existent module
+        found_none = main_table.resolve_qualified_name("NonExistent", "ADD")
+        self.assertIsNone(found_none)
+        
+        # Test qualified lookup - non-existent symbol
+        found_none = main_table.resolve_qualified_name("Math", "NONEXISTENT")
+        self.assertIsNone(found_none)
+
+    def test_multiple_module_imports(self):
+        """Test importing symbols from multiple modules."""
+        from src.module import ModuleSymbolTable
+        from src.symbol import BuiltinFunctionSymbol
+        from src.spi_ast import Type
+        from src.spi_token import Token, TokenType
+        
+        # Create main module symbol table
+        main_table = self.makeModuleSymbolTable("Main")
+        
+        # Create math module
+        math_table = ModuleSymbolTable(
+            scope_name="Math_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="Math"
+        )
+        add_func = BuiltinFunctionSymbol(
+            name="ADD",
+            return_type=Type(Token(TokenType.INTEGER, 0, -1, -1)),
+            formal_params=[]
+        )
+        math_table.insert(add_func)
+        
+        # Create array utils module
+        array_table = ModuleSymbolTable(
+            scope_name="ArrayUtils_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="ArrayUtils"
+        )
+        sort_func = BuiltinFunctionSymbol(
+            name="SORT",
+            return_type=Type(Token(TokenType.INTEGER, 0, -1, -1)),
+            formal_params=[]
+        )
+        array_table.insert(sort_func)
+        
+        # Import both modules
+        main_table.import_module_symbols("Math", math_table)
+        main_table.import_module_symbols("ArrayUtils", array_table)
+        
+        # Verify both modules are imported
+        imported_modules = main_table.get_imported_modules()
+        self.assertEqual(len(imported_modules), 2)
+        self.assertIn("Math", imported_modules)
+        self.assertIn("ArrayUtils", imported_modules)
+        
+        # Test lookup from both modules
+        found_add = main_table.lookup_with_modules("ADD")
+        self.assertIsNotNone(found_add)
+        self.assertEqual(found_add.name, "ADD")
+        
+        found_sort = main_table.lookup_with_modules("SORT")
+        self.assertIsNotNone(found_sort)
+        self.assertEqual(found_sort.name, "SORT")
+
+    def test_symbol_precedence(self):
+        """Test that local symbols take precedence over imported symbols."""
+        from src.module import ModuleSymbolTable
+        from src.symbol import BuiltinFunctionSymbol, VarSymbol, BuiltinTypeSymbol
+        from src.spi_ast import Type
+        from src.spi_token import Token, TokenType
+        
+        # Create main module symbol table
+        main_table = self.makeModuleSymbolTable("Main")
+        
+        # Add a local symbol named "ADD"
+        local_add = VarSymbol("ADD", BuiltinTypeSymbol("INTEGER"))
+        main_table.insert(local_add)
+        
+        # Create math module with ADD function
+        math_table = ModuleSymbolTable(
+            scope_name="Math_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="Math"
+        )
+        imported_add = BuiltinFunctionSymbol(
+            name="ADD",
+            return_type=Type(Token(TokenType.INTEGER, 0, -1, -1)),
+            formal_params=[]
+        )
+        math_table.insert(imported_add)
+        
+        # Import math module
+        main_table.import_module_symbols("Math", math_table)
+        
+        # Test that local symbol takes precedence
+        found_add = main_table.lookup_with_modules("ADD")
+        self.assertIsNotNone(found_add)
+        self.assertIsInstance(found_add, VarSymbol)  # Should be the local variable, not the function
+
+    def test_string_representation(self):
+        """Test string representation includes imported modules."""
+        from src.module import ModuleSymbolTable
+        
+        # Create main module symbol table
+        main_table = self.makeModuleSymbolTable("Main")
+        
+        # Create and import a math module
+        math_table = ModuleSymbolTable(
+            scope_name="Math_interface",
+            scope_level=1,
+            enclosing_scope=None,
+            module_name="Math"
+        )
+        main_table.import_module_symbols("Math", math_table)
+        
+        # Test string representation
+        str_repr = str(main_table)
+        self.assertIn("Main_interface", str_repr)
+        self.assertIn("Imported modules: ['Math']", str_repr)
+
+
 if __name__ == "__main__":
     unittest.main()

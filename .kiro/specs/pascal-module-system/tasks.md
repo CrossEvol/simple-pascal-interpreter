@@ -60,14 +60,27 @@
   - Write unit tests for module file discovery
   - _Requirements: 2.2, 2.5, 6.4_
 
-- [ ] 6. Implement basic module loading
+- [x] 6. Implement basic module loading
+
+
+
+
   - Add load_module() method to ModuleRegistry that parses unit files
   - Create separate lexer/parser instances for each module
   - Store parsed AST in Unit objects (interface_ast, implementation_ast)
   - Write unit tests for module loading
   - _Requirements: 2.2, 2.3_
 
-- [ ] 7. Enhance symbol table for module support
+- [x] 7. Enhance symbol table for module support
+
+
+
+
+
+
+
+
+
   - Create ModuleSymbolTable class extending SymbolTable
   - Add imported_modules dictionary to track imported symbols
   - Implement import_module_symbols() method to merge interface symbols
@@ -75,6 +88,14 @@
   - _Requirements: 3.1, 4.2, 4.3_
 
 - [ ] 8. Implement symbol visibility enforcement
+
+
+
+
+
+
+
+
   - Add visibility tracking to symbols (interface vs implementation)
   - Modify symbol lookup to respect interface/implementation boundaries
   - Ensure implementation symbols are not accessible from outside module
