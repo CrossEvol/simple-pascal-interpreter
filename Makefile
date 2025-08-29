@@ -8,7 +8,9 @@ main:
 	@python main.py
 
 test:
-	python test_interpreter.py
+	python test_interpreter.py 
+	echo "---------------> for integration testcases <---------------"
+	python integration_test.py
 
 dot:
 	@python gen_ast_dot.py ${file} >> temp/ast_$(shell date +%Y-%m-%d_%H-%M-%S).dot
