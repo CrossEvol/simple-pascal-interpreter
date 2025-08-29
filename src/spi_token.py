@@ -38,6 +38,10 @@ class TokenType(Enum):
     LE = "<="
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
+    UNIT = "UNIT"
+    INTERFACE = "INTERFACE"
+    IMPLEMENTATION = "IMPLEMENTATION"
+    USES = "USES"
     CONST = "CONST"
     FUNCTION = "FUNCTION"
     TYPE = "TYPE"

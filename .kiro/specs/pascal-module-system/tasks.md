@@ -1,6 +1,11 @@
 # Implementation Plan
 
-- [ ] 1. Add module-related tokens to the lexer
+- [x] 1. Add module-related tokens to the lexer
+
+
+
+
+
 
 
 

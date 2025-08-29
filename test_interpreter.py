@@ -71,6 +71,14 @@ class LexerTestCase(unittest.TestCase):
             ("RECORD", TokenType.RECORD, "RECORD"),
             ("CONST", TokenType.CONST, "CONST"),
             ("CASE", TokenType.CASE, "CASE"),
+            ("UNIT", TokenType.UNIT, "UNIT"),
+            ("unit", TokenType.UNIT, "UNIT"),
+            ("INTERFACE", TokenType.INTERFACE, "INTERFACE"),
+            ("interface", TokenType.INTERFACE, "INTERFACE"),
+            ("IMPLEMENTATION", TokenType.IMPLEMENTATION, "IMPLEMENTATION"),
+            ("implementation", TokenType.IMPLEMENTATION, "IMPLEMENTATION"),
+            ("USES", TokenType.USES, "USES"),
+            ("uses", TokenType.USES, "USES"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
