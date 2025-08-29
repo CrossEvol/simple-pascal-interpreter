@@ -1,8 +1,11 @@
 from __future__ import annotations
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from src.symbol import FunctionSymbol, MethodSymbol, ProcedureSymbol
 from src.spi_token import Token
+
+if TYPE_CHECKING:
+    from src.symbol import FunctionSymbol, MethodSymbol, ProcedureSymbol
 
 
 class AST:
@@ -456,7 +459,7 @@ class ProcedureCall(AbstractCall):
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
         # a reference to procedure declaration symbol
-        self.proc_symbol: ProcedureSymbol | None = None
+        self.proc_symbol: "ProcedureSymbol | None" = None
 
 
 class FunctionCall(AbstractCall):
@@ -467,7 +470,7 @@ class FunctionCall(AbstractCall):
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
         # a reference to procedure declaration symbol
-        self.func_symbol: FunctionSymbol | None = None
+        self.func_symbol: "FunctionSymbol | None" = None
 
 
 class MethodCall(AbstractCall):
@@ -481,7 +484,7 @@ class MethodCall(AbstractCall):
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
         # a reference to procedure declaration symbol
-        self.method_symbol: MethodSymbol | None = None
+        self.method_symbol: "MethodSymbol | None" = None
         self.method_type: MethodType = MethodType.UNDEFINED
 
 

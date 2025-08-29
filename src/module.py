@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 from src.spi_ast import Block
 from src.sematic_analyzer import ScopedSymbolTable
 from src.symbol import Symbol
+from src.visibility import VisibilityLevel
 
 
 class ModuleSymbolTable(ScopedSymbolTable):
@@ -32,12 +33,25 @@ class ModuleSymbolTable(ScopedSymbolTable):
     def import_module_symbols(self, module_name: str, symbol_table: ScopedSymbolTable) -> None:
         """
         Import interface symbols from another module.
+        Only symbols with INTERFACE visibility are imported.
         
         Args:
             module_name: Name of the module being imported
             symbol_table: The interface symbol table of the module to import
         """
-        self.imported_modules[module_name] = symbol_table
+        # Create a filtered symbol table containing only interface symbols
+        filtered_table = ScopedSymbolTable(
+            scope_name=f"{module_name}_interface_filtered",
+            scope_level=symbol_table.scope_level,
+            enclosing_scope=None
+        )
+        
+        # Only import symbols with INTERFACE visibility
+        for symbol_name, symbol in symbol_table._symbols.items():
+            if hasattr(symbol, 'visibility') and symbol.visibility == VisibilityLevel.INTERFACE:
+                filtered_table.insert(symbol)
+        
+        self.imported_modules[module_name] = filtered_table
     
     def lookup_with_modules(self, name: str) -> Symbol | None:
         """
@@ -101,6 +115,107 @@ class ModuleSymbolTable(ScopedSymbolTable):
             True if module is imported, False otherwise
         """
         return module_name in self.imported_modules
+    
+    def lookup_with_visibility(self, name: str, requesting_module: str | None = None) -> Symbol | None:
+        """
+        Lookup a symbol with visibility enforcement.
+        
+        Args:
+            name: Symbol name to lookup
+            requesting_module: Name of the module making the request (None for current module)
+            
+        Returns:
+            Symbol if found and accessible, None otherwise
+        """
+        # First try standard lookup in current scope and enclosing scopes
+        symbol = self.lookup(name)
+        if symbol is not None:
+            # If we're in the same module, all symbols are accessible
+            if requesting_module is None or requesting_module == self.module_name:
+                return symbol
+            # If requesting from different module, check visibility
+            if hasattr(symbol, 'visibility') and symbol.visibility == VisibilityLevel.INTERFACE:
+                return symbol
+            # Implementation and private symbols are not accessible from outside
+            return None
+        
+        # Then search in imported modules (these are already filtered to interface symbols)
+        for module_name, module_symbols in self.imported_modules.items():
+            symbol = module_symbols.lookup(name, current_scope_only=True)
+            if symbol is not None:
+                return symbol
+        
+        return None
+    
+    def insert_with_visibility(self, symbol: Symbol, visibility: VisibilityLevel) -> None:
+        """
+        Insert a symbol with explicit visibility level.
+        
+        Args:
+            symbol: The symbol to insert
+            visibility: The visibility level for the symbol
+        """
+        if hasattr(symbol, 'visibility'):
+            symbol.visibility = visibility
+        self.insert(symbol)
+    
+    def get_interface_symbols(self) -> Dict[str, Symbol]:
+        """
+        Get all symbols that are visible in the interface (public symbols).
+        
+        Returns:
+            Dictionary of symbol names to symbols that have INTERFACE visibility
+        """
+        interface_symbols = {}
+        for name, symbol in self._symbols.items():
+            if hasattr(symbol, 'visibility') and symbol.visibility == VisibilityLevel.INTERFACE:
+                interface_symbols[name] = symbol
+        return interface_symbols
+    
+    def get_implementation_symbols(self) -> Dict[str, Symbol]:
+        """
+        Get all symbols that are implementation-only (private to the module).
+        
+        Returns:
+            Dictionary of symbol names to symbols that have IMPLEMENTATION or PRIVATE visibility
+        """
+        impl_symbols = {}
+        for name, symbol in self._symbols.items():
+            if hasattr(symbol, 'visibility') and symbol.visibility in [VisibilityLevel.IMPLEMENTATION, VisibilityLevel.PRIVATE]:
+                impl_symbols[name] = symbol
+        return impl_symbols
+    
+    def set_current_section_visibility(self, visibility: VisibilityLevel) -> None:
+        """
+        Set the visibility level for symbols being added to this scope.
+        This is used during parsing to mark symbols as interface or implementation.
+        
+        Args:
+            visibility: The visibility level to use for new symbols
+        """
+        self._current_section_visibility = visibility
+    
+    def get_current_section_visibility(self) -> VisibilityLevel:
+        """
+        Get the current section visibility level.
+        
+        Returns:
+            The current visibility level for new symbols
+        """
+        return getattr(self, '_current_section_visibility', VisibilityLevel.PRIVATE)
+    
+    def insert(self, symbol: Symbol) -> None:
+        """
+        Override insert to automatically set visibility based on current section.
+        
+        Args:
+            symbol: The symbol to insert
+        """
+        if hasattr(symbol, 'visibility'):
+            # If symbol doesn't have explicit visibility, use current section visibility
+            if symbol.visibility == VisibilityLevel.PRIVATE:
+                symbol.visibility = self.get_current_section_visibility()
+        super().insert(symbol)
     
     def __str__(self) -> str:
         base_str = super().__str__()

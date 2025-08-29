@@ -247,3 +247,15 @@ class InterfaceImplementationMismatchError(ModuleError):
         self.impl_sig = impl_sig
         message = f"Interface/implementation mismatch for '{symbol_name}': interface='{interface_sig}', implementation='{impl_sig}'"
         super().__init__(message=message)
+
+
+class SymbolVisibilityError(ModuleError):
+    """Raised when trying to access a symbol that is not visible from the current context."""
+    
+    def __init__(self, symbol_name: str, symbol_visibility: str, requesting_module: str, owning_module: str) -> None:
+        self.symbol_name = symbol_name
+        self.symbol_visibility = symbol_visibility
+        self.requesting_module = requesting_module
+        self.owning_module = owning_module
+        message = f"Symbol '{symbol_name}' with visibility '{symbol_visibility}' in module '{owning_module}' is not accessible from module '{requesting_module}'"
+        super().__init__(message=message)

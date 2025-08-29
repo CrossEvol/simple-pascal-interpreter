@@ -87,7 +87,12 @@
   - Write unit tests for module symbol table operations
   - _Requirements: 3.1, 4.2, 4.3_
 
-- [ ] 8. Implement symbol visibility enforcement
+- [x] 8. Implement symbol visibility enforcement
+
+
+
+
+
 
 
 

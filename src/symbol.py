@@ -1,18 +1,20 @@
 from __future__ import annotations
 from src.spi_ast import *
+from src.visibility import VisibilityLevel
 
 
 class Symbol:
 
-    def __init__(self, name: str, type: Symbol | None = None) -> None:
+    def __init__(self, name: str, type: Symbol | None = None, visibility: VisibilityLevel = VisibilityLevel.PRIVATE) -> None:
         self.name = name
         self.type = type
         self.scope_level: int = 0
+        self.visibility = visibility
 
 
 class VarSymbol(Symbol):
-    def __init__(self, name: str, type: Symbol | None) -> None:
-        super().__init__(name, type)
+    def __init__(self, name: str, type: Symbol | None, visibility: VisibilityLevel = VisibilityLevel.PRIVATE) -> None:
+        super().__init__(name, type, visibility)
 
     def __str__(self) -> str:
         return "<{class_name}(name='{name}', type='{type}')>".format(
@@ -22,15 +24,15 @@ class VarSymbol(Symbol):
         )
 
     def to_FieldSymbol(self) -> "FieldSymbol":
-        field_symbol = FieldSymbol(name=self.name, type=self.type)
+        field_symbol = FieldSymbol(name=self.name, type=self.type, visibility=self.visibility)
         return field_symbol
 
     __repr__ = __str__
 
 
 class ConstSymbol(Symbol):
-    def __init__(self, name: str, type: Symbol | None, const_type: ConstType) -> None:
-        super().__init__(name, type)
+    def __init__(self, name: str, type: Symbol | None, const_type: ConstType, visibility: VisibilityLevel = VisibilityLevel.PRIVATE) -> None:
+        super().__init__(name, type, visibility)
         self.const_type = const_type
 
     def __str__(self) -> str:
@@ -44,8 +46,8 @@ class ConstSymbol(Symbol):
 
 
 class BuiltinTypeSymbol(Symbol):
-    def __init__(self, name: str) -> None:
-        super().__init__(name)
+    def __init__(self, name: str, visibility: VisibilityLevel = VisibilityLevel.INTERFACE) -> None:
+        super().__init__(name, visibility=visibility)
 
     def __str__(self) -> str:
         return self.name
@@ -58,8 +60,8 @@ class BuiltinTypeSymbol(Symbol):
 
 
 class StringTypeSymbol(Symbol):
-    def __init__(self, name: str, limit: int = 255) -> None:
-        super().__init__(name)
+    def __init__(self, name: str, limit: int = 255, visibility: VisibilityLevel = VisibilityLevel.INTERFACE) -> None:
+        super().__init__(name, visibility=visibility)
         self.limit = limit
 
     def __str__(self) -> str:
@@ -72,8 +74,8 @@ class StringTypeSymbol(Symbol):
 
 
 class ArrayTypeSymbol(Symbol):
-    def __init__(self, name: str, element_type: Symbol) -> None:
-        super().__init__(name)
+    def __init__(self, name: str, element_type: Symbol, visibility: VisibilityLevel = VisibilityLevel.PRIVATE) -> None:
+        super().__init__(name, visibility=visibility)
         self.element_type = element_type
 
     def __str__(self) -> str:
@@ -88,8 +90,8 @@ class ArrayTypeSymbol(Symbol):
 
 
 class ProcedureSymbol(Symbol):
-    def __init__(self, name: str, formal_params: list[Symbol] | None = None) -> None:
-        super().__init__(name)
+    def __init__(self, name: str, formal_params: list[Symbol] | None = None, visibility: VisibilityLevel = VisibilityLevel.PRIVATE) -> None:
+        super().__init__(name, visibility=visibility)
         # a list of VarSymbol objects
         self.formal_params: list[Symbol] = (
             [] if formal_params is None else formal_params
@@ -108,8 +110,8 @@ class ProcedureSymbol(Symbol):
 
 
 class BuiltinProcedureSymbol(Symbol):
-    def __init__(self, name: str, output_params: list[Symbol] | None = None) -> None:
-        super().__init__(name)
+    def __init__(self, name: str, output_params: list[Symbol] | None = None, visibility: VisibilityLevel = VisibilityLevel.INTERFACE) -> None:
+        super().__init__(name, visibility=visibility)
         # a list of VarSymbol objects
         self.output_params: list[Symbol] = (
             [] if output_params is None else output_params
@@ -127,9 +129,9 @@ class BuiltinProcedureSymbol(Symbol):
 
 class FunctionSymbol(Symbol):
     def __init__(
-        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
+        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None, visibility: VisibilityLevel = VisibilityLevel.PRIVATE
     ) -> None:
-        super().__init__(name)
+        super().__init__(name, visibility=visibility)
         # a list of VarSymbol objects
         self.formal_params: list[Symbol] = (
             [] if formal_params is None else formal_params
@@ -154,8 +156,9 @@ class EnumSymbol(Symbol):
         self,
         name: str,
         entries: dict[str, int] = {},
+        visibility: VisibilityLevel = VisibilityLevel.PRIVATE
     ) -> None:
-        super().__init__(name, None)
+        super().__init__(name, None, visibility)
         self.entries = entries
 
     def __str__(self) -> str:
@@ -169,8 +172,8 @@ class EnumSymbol(Symbol):
 
 
 class FieldSymbol(Symbol):
-    def __init__(self, name: str, type: Symbol | None) -> None:
-        super().__init__(name, type)
+    def __init__(self, name: str, type: Symbol | None, visibility: VisibilityLevel = VisibilityLevel.PRIVATE) -> None:
+        super().__init__(name, type, visibility)
 
     def __str__(self) -> str:
         return "<{class_name}(name='{name}', type='{type}')>".format(
@@ -180,7 +183,7 @@ class FieldSymbol(Symbol):
         )
 
     def to_VarSymbol(self) -> VarSymbol:
-        var_symbol = VarSymbol(name=self.name, type=self.type)
+        var_symbol = VarSymbol(name=self.name, type=self.type, visibility=self.visibility)
         return var_symbol
 
     __repr__ = __str__
@@ -193,8 +196,9 @@ class MethodSymbol(Symbol):
         return_type: Type | None,
         formal_params: list[Symbol],
         method_type: MethodType,
+        visibility: VisibilityLevel = VisibilityLevel.PRIVATE
     ) -> None:
-        super().__init__(name)
+        super().__init__(name, visibility=visibility)
         # a list of VarSymbol objects
         self.formal_params: list[Symbol] = formal_params
         self.return_type = return_type
@@ -218,8 +222,9 @@ class RecordSymbol(Symbol):
         self,
         name: str,
         fields: dict[str, FieldSymbol] = {},
+        visibility: VisibilityLevel = VisibilityLevel.PRIVATE
     ) -> None:
-        super().__init__(name, None)
+        super().__init__(name, None, visibility)
         self.fields = fields
 
     def __str__(self) -> str:
@@ -238,8 +243,9 @@ class ClassSymbol(Symbol):
         name: str,
         fields: dict[str, FieldSymbol] = {},
         methods: dict[str, MethodSymbol] = {},
+        visibility: VisibilityLevel = VisibilityLevel.PRIVATE
     ) -> None:
-        super().__init__(name, None)
+        super().__init__(name, None, visibility)
         self.fields = fields
         self.methods = methods
 
@@ -256,9 +262,9 @@ class ClassSymbol(Symbol):
 
 class BuiltinFunctionSymbol(Symbol):
     def __init__(
-        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
+        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None, visibility: VisibilityLevel = VisibilityLevel.INTERFACE
     ) -> None:
-        super().__init__(name)
+        super().__init__(name, visibility=visibility)
         # a list of VarSymbol objects
         self.formal_params: list[Symbol] = (
             [] if formal_params is None else formal_params
