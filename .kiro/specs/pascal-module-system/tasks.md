@@ -37,7 +37,11 @@
   - Write unit tests for uses clause parsing
   - _Requirements: 2.1, 2.2_
 
-- [ ] 4. Implement unit declaration parsing
+- [x] 4. Implement unit declaration parsing
+
+
+
+
   - Add unit_declaration() method to parse "unit UnitName;" syntax
   - Add interface_section() method to parse interface declarations
   - Add implementation_section() method to parse implementation code
@@ -45,7 +49,11 @@
   - Write unit tests for unit declaration parsing
   - _Requirements: 1.1, 1.2, 1.5_
 
-- [ ] 5. Create module file discovery system
+- [x] 5. Create module file discovery system
+
+
+
+
   - Implement find_module_file() method in ModuleRegistry to search for .pas files
   - Add support for searching current directory and ./stdlib directory
   - Create clear error messages for missing module files

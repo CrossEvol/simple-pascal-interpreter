@@ -1388,5 +1388,177 @@ END.  {Part12}
         self.assertAlmostEqual(ar["y"].value, float(20) / 7 + 3.14)  # 5.9971...
 
 
+class ModuleFileDiscoveryTestCase(unittest.TestCase):
+    """Test cases for module file discovery system."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from src.module import ModuleRegistry
+
+        self.registry = ModuleRegistry()
+
+    def test_find_module_file_in_current_directory(self):
+        """Test finding a module file in the current directory."""
+        import os
+
+        # Test finding CurrentDirModule.pas in current directory
+        file_path = self.registry.find_module_file("CurrentDirModule")
+        expected_path = os.path.join(".", "CurrentDirModule.pas")
+        self.assertEqual(file_path, expected_path)
+
+    def test_find_module_file_in_stdlib_directory(self):
+        """Test finding a module file in the stdlib directory."""
+        import os
+
+        # Test finding TestModule.pas in stdlib directory
+        file_path = self.registry.find_module_file("TestModule")
+        expected_path = os.path.join("./stdlib", "TestModule.pas")
+        self.assertEqual(file_path, expected_path)
+
+    def test_find_module_file_current_dir_takes_precedence(self):
+        """Test that current directory takes precedence over stdlib."""
+        # Create a module with same name in both directories
+        import os
+
+        # Create a test file in current directory
+        with open("TestPrecedence.pas", "w") as f:
+            f.write("unit TestPrecedence;\ninterface\nend.")
+
+        # Create a test file in stdlib directory
+        with open("stdlib/TestPrecedence.pas", "w") as f:
+            f.write("unit TestPrecedence;\ninterface\nend.")
+
+        try:
+            # Should find the one in current directory first
+            file_path = self.registry.find_module_file("TestPrecedence")
+            expected_path = os.path.join(".", "TestPrecedence.pas")
+            self.assertEqual(file_path, expected_path)
+        finally:
+            # Clean up test files
+            if os.path.exists("TestPrecedence.pas"):
+                os.remove("TestPrecedence.pas")
+            if os.path.exists("stdlib/TestPrecedence.pas"):
+                os.remove("stdlib/TestPrecedence.pas")
+
+    def test_find_module_file_not_found(self):
+        """Test error when module file is not found."""
+        from src.error import ModuleNotFoundError
+
+        with self.assertRaises(ModuleNotFoundError) as cm:
+            self.registry.find_module_file("NonExistentModule")
+
+        exception = cm.exception
+        self.assertEqual(exception.module_name, "NonExistentModule")
+        self.assertEqual(exception.search_paths, [".", "./stdlib"])
+        self.assertIn("NonExistentModule", str(exception))
+
+    def test_module_not_found_error_message(self):
+        """Test that ModuleNotFoundError provides clear error messages."""
+        from src.error import ModuleNotFoundError
+
+        error = ModuleNotFoundError("MissingModule", [".", "./stdlib", "./custom"])
+
+        self.assertEqual(error.module_name, "MissingModule")
+        self.assertEqual(error.search_paths, [".", "./stdlib", "./custom"])
+
+        error_message = str(error)
+        self.assertIn("MissingModule", error_message)
+        self.assertIn(".", error_message)
+        self.assertIn("./stdlib", error_message)
+        self.assertIn("./custom", error_message)
+
+    def test_load_module_with_file_discovery(self):
+        """Test loading a module using file discovery."""
+        # Load module from current directory
+        module = self.registry.load_module("CurrentDirModule")
+
+        self.assertEqual(module.name, "CurrentDirModule")
+        self.assertEqual(module.file_path, ".\\CurrentDirModule.pas")
+        self.assertFalse(module.is_loaded)
+
+        # Verify it's stored in the registry
+        self.assertIn("CurrentDirModule", self.registry.loaded_modules)
+        self.assertEqual(self.registry.get_module("CurrentDirModule"), module)
+
+    def test_load_module_from_stdlib(self):
+        """Test loading a module from stdlib directory."""
+        # Load module from stdlib directory
+        module = self.registry.load_module("TestModule")
+
+        self.assertEqual(module.name, "TestModule")
+        self.assertEqual(module.file_path, "./stdlib\\TestModule.pas")
+        self.assertFalse(module.is_loaded)
+
+        # Verify it's stored in the registry
+        self.assertIn("TestModule", self.registry.loaded_modules)
+        self.assertEqual(self.registry.get_module("TestModule"), module)
+
+    def test_load_module_with_explicit_path(self):
+        """Test loading a module with an explicit file path."""
+        # Load module with explicit path (should not use file discovery)
+        module = self.registry.load_module("ExplicitModule", "stdlib/TestModule.pas")
+
+        self.assertEqual(module.name, "ExplicitModule")
+        self.assertEqual(module.file_path, "stdlib/TestModule.pas")
+        self.assertFalse(module.is_loaded)
+
+    def test_load_module_already_loaded(self):
+        """Test that loading the same module twice returns the same instance."""
+        # Load module first time
+        module1 = self.registry.load_module("TestModule")
+
+        # Load same module second time
+        module2 = self.registry.load_module("TestModule")
+
+        # Should return the same instance
+        self.assertIs(module1, module2)
+
+    def test_custom_search_paths(self):
+        """Test module discovery with custom search paths."""
+        import os
+        from src.module import ModuleRegistry
+
+        # Create a custom directory with a module
+        os.makedirs("custom_lib", exist_ok=True)
+        with open("custom_lib\\CustomModule.pas", "w") as f:
+            f.write("unit CustomModule;\ninterface\nend.")
+
+        try:
+            # Create registry with custom search paths
+            custom_registry = ModuleRegistry()
+            custom_registry.search_paths = ["custom_lib", ".", "./stdlib"]
+
+            # Should find module in custom directory
+            file_path = custom_registry.find_module_file("CustomModule")
+            self.assertEqual(file_path, "custom_lib\\CustomModule.pas")
+        finally:
+            # Clean up
+            if os.path.exists("custom_lib/CustomModule.pas"):
+                os.remove("custom_lib/CustomModule.pas")
+            if os.path.exists("custom_lib"):
+                os.rmdir("custom_lib")
+
+    def test_search_paths_initialization(self):
+        """Test that ModuleRegistry initializes with correct default search paths."""
+        from src.module import ModuleRegistry
+        registry = ModuleRegistry()
+
+        self.assertEqual(registry.search_paths, [".", "./stdlib"])
+
+    def test_module_registry_string_representation(self):
+        """Test string representation of ModuleRegistry."""
+        from src.module import ModuleRegistry
+        registry = ModuleRegistry()
+
+        # Load a module to test the loaded count
+        registry.load_module("TestModule")
+
+        str_repr = str(registry)
+        self.assertIn("ModuleRegistry", str_repr)
+        self.assertIn("loaded=1", str_repr)
+        self.assertIn("paths=['.'", str_repr)
+        self.assertIn("'./stdlib']", str_repr)
+
+
 if __name__ == "__main__":
     unittest.main()
