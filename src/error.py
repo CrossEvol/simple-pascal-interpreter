@@ -193,3 +193,57 @@ class UnknownOperatorError(InterpreterError):
 # Add the new error class
 class PropertyAccessError(ParserError):
     pass
+
+
+###############################################################################
+#                                                                             #
+#  ModuleError                                                                #
+#                                                                             #
+###############################################################################
+
+
+class ModuleError(Error):
+    """Base class for module-related errors."""
+    pass
+
+
+class ModuleNotFoundError(ModuleError):
+    """Raised when a module file cannot be found in search paths."""
+    
+    def __init__(self, module_name: str, search_paths: list[str]) -> None:
+        self.module_name = module_name
+        self.search_paths = search_paths
+        message = f"Module '{module_name}' not found in search paths: {search_paths}"
+        super().__init__(message=message)
+
+
+class CircularDependencyError(ModuleError):
+    """Raised when circular dependencies are detected between modules."""
+    
+    def __init__(self, dependency_chain: list[str]) -> None:
+        self.dependency_chain = dependency_chain
+        chain_str = " -> ".join(dependency_chain)
+        message = f"Circular dependency detected: {chain_str}"
+        super().__init__(message=message)
+
+
+class SymbolNotFoundInModuleError(ModuleError):
+    """Raised when a symbol is not found in a specific module."""
+    
+    def __init__(self, symbol_name: str, module_name: str, available_symbols: list[str]) -> None:
+        self.symbol_name = symbol_name
+        self.module_name = module_name
+        self.available_symbols = available_symbols
+        message = f"Symbol '{symbol_name}' not found in module '{module_name}'. Available symbols: {available_symbols}"
+        super().__init__(message=message)
+
+
+class InterfaceImplementationMismatchError(ModuleError):
+    """Raised when interface and implementation signatures don't match."""
+    
+    def __init__(self, symbol_name: str, interface_sig: str, impl_sig: str) -> None:
+        self.symbol_name = symbol_name
+        self.interface_sig = interface_sig
+        self.impl_sig = impl_sig
+        message = f"Interface/implementation mismatch for '{symbol_name}': interface='{interface_sig}', implementation='{impl_sig}'"
+        super().__init__(message=message)

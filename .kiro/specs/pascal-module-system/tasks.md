@@ -14,7 +14,11 @@
   - Write unit tests for new token recognition in test_interpreter.py
   - _Requirements: 1.1, 2.1_
 
-- [ ] 2. Create core module data structures
+- [x] 2. Create core module data structures
+
+
+
+
   - Implement Module class with name, file_path, interface_symbols, implementation_symbols
   - Implement Unit class extending Module with interface_ast and implementation_ast
   - Create ModuleRegistry class with loaded_modules dictionary and search_paths
