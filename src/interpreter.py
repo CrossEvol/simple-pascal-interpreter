@@ -39,6 +39,7 @@ from src.lexer import Lexer
 from src.parser import Parser
 from src.sematic_analyzer import SemanticAnalyzer
 from src.visibility import VisibilityLevel
+from src.type_resolver import TypeResolver, TypeResolutionContext
 
 
 class ARType(Enum):
@@ -174,15 +175,18 @@ class Interpreter(NodeVisitor):
         self.tree = tree
         self.call_stack = CallStack()
         self.module_registry = ModuleRegistry()
+        self.type_resolver = TypeResolver(self.module_registry)
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_STACK:
             print(msg)
 
-    def _load_and_process_modules(self, module_names: list[str], ar: ActivationRecord) -> None:
+    def _load_and_process_modules(
+        self, module_names: list[str], ar: ActivationRecord
+    ) -> None:
         """
         Load and process modules specified in the uses clause.
-        
+
         Args:
             module_names: List of module names to load
             ar: Current activation record to populate with module symbols
@@ -190,32 +194,34 @@ class Interpreter(NodeVisitor):
         for module_name in module_names:
             try:
                 self.log(f"Loading module: {module_name}")
-                
+
                 # Load the module using the registry
                 module = self._load_module(module_name)
-                
+
                 # Import interface symbols into the current activation record
                 self._import_module_symbols(module, ar)
-                
+
                 self.log(f"Successfully loaded module: {module_name}")
-                
+
             except ModuleError as e:
                 # Re-raise module errors with context
                 raise e
             except Exception as e:
                 # Wrap unexpected errors in a module error
-                raise ModuleNotFoundError(module_name, self.module_registry.search_paths) from e
+                raise ModuleNotFoundError(
+                    module_name, self.module_registry.search_paths
+                ) from e
 
     def _load_module(self, module_name: str) -> Unit:
         """
         Load a module by name, parsing it if not already loaded.
-        
+
         Args:
             module_name: Name of the module to load
-            
+
         Returns:
             The loaded Unit instance
-            
+
         Raises:
             ModuleNotFoundError: If the module file cannot be found
             Various parsing/semantic errors: If the module has syntax or semantic errors
@@ -233,16 +239,16 @@ class Interpreter(NodeVisitor):
 
         # Load and parse the module
         try:
-            with open(file_path, 'r') as file:
+            with open(file_path, "r") as file:
                 text = file.read()
 
             # Create lexer and parser for the module
             lexer = Lexer(text)
             parser = Parser(lexer, self.module_registry)
-            
+
             # Parse the unit (assuming it's a unit file)
             unit_ast = self._parse_unit_file(parser)
-            
+
             # Create or get the unit from registry
             unit = self.module_registry.load_module(module_name, file_path)
             if not isinstance(unit, Unit):
@@ -253,7 +259,7 @@ class Interpreter(NodeVisitor):
             # Store the parsed AST
             unit.interface_ast = unit_ast.interface_block
             unit.implementation_ast = unit_ast.implementation_block
-            
+
             # Add dependencies to the registry
             if unit_ast.uses_clause:
                 for dep in unit_ast.uses_clause:
@@ -267,14 +273,16 @@ class Interpreter(NodeVisitor):
             except Exception as analysis_error:
                 # Log analysis error but continue - some modules might have issues
                 # that don't prevent basic loading
-                self.log(f"Warning: Semantic analysis failed for module '{module_name}': {analysis_error}")
+                self.log(
+                    f"Warning: Semantic analysis failed for module '{module_name}': {analysis_error}"
+                )
                 # For now, continue without full analysis
-            
+
             # Mark as loaded
             unit.is_loaded = True
-            
+
             return unit
-            
+
         except FileNotFoundError:
             raise ModuleNotFoundError(module_name, self.module_registry.search_paths)
         except Exception as e:
@@ -284,25 +292,27 @@ class Interpreter(NodeVisitor):
     def _analyze_module(self, unit: Unit) -> None:
         """
         Run semantic analysis on a loaded module.
-        
+
         Args:
             unit: The unit to analyze
         """
         # Create a semantic analyzer for the module
         analyzer = SemanticAnalyzer()
-        
+
         # Set up module-aware symbol table
         unit.interface_symbols.set_current_section_visibility(VisibilityLevel.INTERFACE)
         analyzer.current_scope = unit.interface_symbols
-        
+
         # Analyze interface section
         if unit.interface_ast:
             analyzer.visit(unit.interface_ast)
-        
+
         # Switch to implementation section
-        unit.implementation_symbols.set_current_section_visibility(VisibilityLevel.IMPLEMENTATION)
+        unit.implementation_symbols.set_current_section_visibility(
+            VisibilityLevel.IMPLEMENTATION
+        )
         analyzer.current_scope = unit.implementation_symbols
-        
+
         # Analyze implementation section
         if unit.implementation_ast:
             analyzer.visit(unit.implementation_ast)
@@ -310,27 +320,27 @@ class Interpreter(NodeVisitor):
     def _import_module_symbols(self, module: Unit, ar: ActivationRecord) -> None:
         """
         Import interface symbols from a module into the current activation record.
-        
+
         Args:
             module: The module to import symbols from
             ar: The activation record to populate with symbols
         """
         # Get interface symbols from the module
         interface_symbols = module.interface_symbols.get_interface_symbols()
-        
+
         for symbol_name, symbol in interface_symbols.items():
             # Convert symbols to appropriate runtime objects and store in activation record
-            if hasattr(symbol, 'symbol_type'):
-                if symbol.symbol_type.name == 'INTEGER':
+            if hasattr(symbol, "symbol_type"):
+                if symbol.symbol_type.name == "INTEGER":
                     ar[symbol_name] = IntegerObject(0)
                     ar.set_meta(symbol_name, ElementType.INTEGER)
-                elif symbol.symbol_type.name == 'REAL':
+                elif symbol.symbol_type.name == "REAL":
                     ar[symbol_name] = RealObject(0.0)
                     ar.set_meta(symbol_name, ElementType.REAL)
-                elif symbol.symbol_type.name == 'BOOLEAN':
+                elif symbol.symbol_type.name == "BOOLEAN":
                     ar[symbol_name] = BooleanObject(False)
                     ar.set_meta(symbol_name, ElementType.BOOL)
-                elif symbol.symbol_type.name == 'STRING':
+                elif symbol.symbol_type.name == "STRING":
                     ar[symbol_name] = StringObject("")
                     ar.set_meta(symbol_name, ElementType.STRING)
                 # For procedures and functions, store the symbol directly
@@ -341,10 +351,10 @@ class Interpreter(NodeVisitor):
     def _parse_unit_file(self, parser: Parser) -> Unit:
         """
         Parse a unit file using the proper unit parsing functionality.
-        
+
         Args:
             parser: The parser instance
-            
+
         Returns:
             A Unit AST node with interface and implementation sections
         """
@@ -357,7 +367,7 @@ class Interpreter(NodeVisitor):
             raise ParserError(
                 error_code=ErrorCode.UNEXPECTED_TOKEN,
                 token=parser.current_token,
-                message=f"Failed to parse unit file: {str(e)}"
+                message=f"Failed to parse unit file: {str(e)}",
             )
 
     def visit_Program(self, node: Program) -> None:
@@ -436,6 +446,52 @@ class Interpreter(NodeVisitor):
             ar.set_meta(node.var_node.value, ElementType.INSTANCE)
             ar.set_is_instance(node.var_node.value, True)
             ar.set_ref_class_name(node.var_node.value, class_decl.class_name)
+        elif isinstance(node.type_node, UnresolvedType):
+            # Resolve the type during interpretation
+            resolved_type = self.visit_UnresolvedType(node.type_node)
+
+            # Handle the resolved type appropriately
+            if isinstance(resolved_type, PrimitiveType):
+                if resolved_type.token.type == TokenType.BOOLEAN:
+                    ar[node.var_node.value] = BooleanObject(False)
+                    ar.set_meta(key=node.var_node.value, type=ElementType.BOOL)
+                elif resolved_type.token.type == TokenType.INTEGER:
+                    ar[node.var_node.value] = IntegerObject(0)
+                    ar.set_meta(key=node.var_node.value, type=ElementType.INTEGER)
+                elif resolved_type.token.type == TokenType.REAL:
+                    ar[node.var_node.value] = RealObject(0.0)
+                    ar.set_meta(key=node.var_node.value, type=ElementType.REAL)
+            elif isinstance(resolved_type, StringType):
+                ar[node.var_node.value] = StringObject("")
+                limit: int = 255
+                if resolved_type.limit is not None:
+                    limit = self.visit(resolved_type.limit)
+                ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
+                ar.set_limit(key=node.var_node.value, limit=limit)
+            elif isinstance(resolved_type, ClassType):
+                class_decl: ClassDecl = ar.get(
+                    SpiUtil.toClassName(resolved_type.token.value)
+                )
+                fields = class_decl.fields.copy()
+                ar[node.var_node.value] = InstanceObject(class_decl.class_name, fields)
+                ar.set_meta(node.var_node.value, ElementType.INSTANCE)
+                ar.set_is_instance(node.var_node.value, True)
+                ar.set_ref_class_name(node.var_node.value, class_decl.class_name)
+            elif isinstance(resolved_type, RecordType):
+                record_class: RecordClassObject = ar.get(resolved_type.token.value)
+                fields: dict[str, Any] = record_class.fields.copy()
+                ar[node.var_node.value] = RecordInstanceObject(
+                    record_name=record_class.record_name, fields=fields
+                )
+                ar.set_meta(node.var_node.value, ElementType.RECORD_CLASS)
+                ar.set_is_record_instance(node.var_node.value)
+                ar.set_ref_record_name(node.var_node.value, record_class.record_name)
+            elif isinstance(resolved_type, EnumType):
+                # Handle enum type variables
+                enum_decl: EnumDecl = ar.get(resolved_type.token.value)
+                ar[node.var_node.value] = enum_decl
+                ar.set_meta(node.var_node.value, ElementType.ENUM)
+                ar.set_is_enum(node.var_node.value)
         pass
 
     def __set_member_type(self, node: VarDecl, ar: ActivationRecord):
@@ -487,6 +543,43 @@ class Interpreter(NodeVisitor):
                             node.element_type
                         )
                         elements[i] = ArrayObject(sub_elements, sub_element_type)
+            elif isinstance(node.element_type, UnresolvedType):
+                # Resolve the element type during array initialization
+                resolved_element_type = self.visit_UnresolvedType(node.element_type)
+
+                # Handle the resolved element type
+                if isinstance(resolved_element_type, PrimitiveType):
+                    if resolved_element_type.token.type == TokenType.BOOLEAN:
+                        element_type = ElementType.BOOL
+                        if node.dynamic is False:
+                            for i in range(lower_bound.value, upper_bound.value + 1):
+                                elements[i] = BooleanObject(False)
+                    elif resolved_element_type.token.type == TokenType.INTEGER:
+                        element_type = ElementType.INTEGER
+                        if node.dynamic is False:
+                            for i in range(lower_bound.value, upper_bound.value + 1):
+                                elements[i] = IntegerObject(0)
+                    elif resolved_element_type.token.type == TokenType.REAL:
+                        element_type = ElementType.REAL
+                        if node.dynamic is False:
+                            for i in range(lower_bound.value, upper_bound.value + 1):
+                                elements[i] = RealObject(0.0)
+                elif isinstance(resolved_element_type, StringType):
+                    element_type = ElementType.STRING
+                    if node.dynamic is False:
+                        for i in range(lower_bound.value, upper_bound.value + 1):
+                            elements[i] = StringObject("")
+                elif isinstance(resolved_element_type, ArrayType):
+                    element_type = ElementType.ARRAY
+                    if node.dynamic is False:
+                        for i in range(lower_bound.value, upper_bound.value + 1):
+                            sub_elements, sub_element_type = self.__initArray(
+                                resolved_element_type
+                            )
+                            elements[i] = ArrayObject(sub_elements, sub_element_type)
+                else:
+                    # For complex types (classes, records, enums), use default element type
+                    element_type = ElementType.INTEGER  # Default fallback
             return elements, element_type
         raise UnknownTypeError()
 
@@ -517,6 +610,74 @@ class Interpreter(NodeVisitor):
     def visit_RecordType(self, node: RecordType) -> None:
         # Do nothing
         pass
+
+    def visit_UnresolvedType(self, node: UnresolvedType) -> Type:
+        """
+        Resolve unresolved types during interpretation.
+
+        Args:
+            node: The UnresolvedType node to resolve
+
+        Returns:
+            The resolved Type node
+
+        Raises:
+            TypeResolutionError: If type cannot be resolved
+        """
+        # Check if already resolved (caching mechanism)
+        if node.resolved_type is not None:
+            return node.resolved_type
+
+        # Build resolution context from current activation record
+        ar = self.call_stack.peek()
+        context = self._build_type_resolution_context(ar)
+
+        # Resolve the type using TypeResolver
+        resolved_type = self.type_resolver.resolve_type(node, context)
+
+        # Cache the resolved type to avoid repeated resolution
+        node.resolved_type = resolved_type
+
+        return resolved_type
+
+    def _build_type_resolution_context(
+        self, ar: ActivationRecord
+    ) -> TypeResolutionContext:
+        """
+        Build type resolution context from current activation record.
+
+        Args:
+            ar: Current activation record
+
+        Returns:
+            TypeResolutionContext with available types and modules
+        """
+        local_classes = []
+        local_enums = []
+        local_records = []
+        imported_modules = []
+
+        # Extract type information from activation record
+        for name, meta in ar.members_meta.items():
+            if meta.is_class:
+                local_classes.append(name)
+            elif meta.is_enum:
+                local_enums.append(name)
+            elif meta.is_record:
+                local_records.append(name)
+
+        # Get imported modules from the program's uses clause
+        if hasattr(self.tree, "uses_clause") and self.tree.uses_clause:
+            imported_modules = self.tree.uses_clause.copy()
+
+        return TypeResolutionContext(
+            current_module=None,  # We're in the main program
+            imported_modules=imported_modules,
+            local_classes=local_classes,
+            local_enums=local_enums,
+            local_records=local_records,
+            module_registry=self.module_registry,
+        )
 
     def visit_Decl(self, node: Decl) -> None:
         pass

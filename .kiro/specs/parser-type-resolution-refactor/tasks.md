@@ -48,7 +48,12 @@
   - Write unit tests for type resolution scenarios and error cases
   - _Requirements: 2.1, 2.2, 3.1, 3.2, 4.4_
 
-- [ ] 5. Add UnresolvedType visitor method to interpreter
+- [x] 5. Add UnresolvedType visitor method to interpreter
+
+
+
+
+
   - Implement visit_UnresolvedType() method in interpreter
   - Integrate TypeResolver to resolve types during interpretation
   - Add caching mechanism to avoid repeated resolution of same types
