@@ -143,7 +143,12 @@
   - Write unit tests for circular dependency detection
   - _Requirements: 6.2_
 
-- [ ] 12. Create module-specific error classes
+- [x] 12. Create module-specific error classes
+
+
+
+
+
   - Implement ModuleNotFoundError with module name and search paths
   - Implement CircularDependencyError with dependency chain display
   - Implement SymbolNotFoundInModuleError with symbol suggestions
