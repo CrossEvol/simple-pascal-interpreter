@@ -11,10 +11,11 @@ from src.lexer import Lexer
 from src.spi_ast import *
 from src.spi_token import TokenType
 from src.util import SpiUtil
+from src.module import ModuleRegistry
 
 
 class Parser:
-    def __init__(self, lexer: Lexer) -> None:
+    def __init__(self, lexer: Lexer, module_registry=None) -> None:
         self.lexer = lexer
         # set current token to the first token taken from the input
         self.current_token = self.get_next_token()
@@ -22,6 +23,8 @@ class Parser:
         self.classes: list[str] = []
         self.enums: list[str] = []
         self.records: list[str] = []
+        self.module_registry = module_registry
+        self.imported_modules: list[str] = []
 
     def newZeroNum(self, lineno: int = -1, column: int = -1) -> Num:
         return Num(
@@ -37,6 +40,136 @@ class Parser:
                 column=column,
             )
         )
+
+    def _is_type_in_imported_modules(self, type_name: str) -> tuple[bool, str | None]:
+        """
+        Check if a type exists in any imported module's interface.
+        
+        Returns:
+            tuple: (exists, type_category) where type_category is 'class', 'enum', 'record', or None
+        """
+        if not self.module_registry or not self.imported_modules:
+            return False, None
+            
+        # Import here to avoid circular imports
+        try:
+            from src.symbol import ClassSymbol, EnumSymbol, RecordSymbol
+        except ImportError:
+            return False, None
+            
+        for module_name in self.imported_modules:
+            try:
+                module = self.module_registry.get_module(module_name)
+                
+                # If module is not loaded, we need to load and analyze it
+                if not module or not module.is_loaded:
+                    # Try to load the module by parsing it
+                    module = self._load_and_analyze_module(module_name)
+                    if not module:
+                        continue
+                
+                # Check interface symbols for the type
+                symbol = module.interface_symbols.lookup(type_name, current_scope_only=True)
+                if symbol:
+                    if isinstance(symbol, ClassSymbol):
+                        return True, 'class'
+                    elif isinstance(symbol, EnumSymbol):
+                        return True, 'enum'
+                    elif isinstance(symbol, RecordSymbol):
+                        return True, 'record'
+            except Exception:
+                # If there's any error accessing the module, continue to next
+                continue
+                
+        return False, None
+
+    def _load_and_analyze_module(self, module_name: str):
+        """
+        Load and analyze a module for type resolution during parsing.
+        
+        This is a simplified version of module loading that focuses on 
+        getting type information for the parser.
+        """
+        try:
+            # Find the module file
+            file_path = self.module_registry.find_module_file(module_name)
+            
+            # Read and parse the module
+            with open(file_path, 'r') as file:
+                text = file.read()
+            
+            from src.lexer import Lexer
+            lexer = Lexer(text)
+            # Create a new parser without module registry to avoid recursion
+            parser = Parser(lexer = lexer, module_registry=self.module_registry)
+            
+            # Parse the unit
+            unit_ast = parser.unit_file()
+            
+            # Import Unit class
+            from src.module import Unit
+            
+            # Create or get the unit from registry
+            unit = self.module_registry.load_module(module_name, file_path)
+            if not isinstance(unit, Unit):
+                unit = Unit(unit.name, unit.file_path)
+                self.module_registry.loaded_modules[module_name] = unit
+            
+            # Store the parsed AST
+            unit.interface_ast = unit_ast.interface_block
+            unit.implementation_ast = unit_ast.implementation_block
+            
+            # Manually create type symbols for the interface
+            # This is a simplified approach that just creates the basic type symbols
+            # without full semantic analysis
+            if unit.interface_ast:
+                from src.symbol import ClassSymbol, RecordSymbol, EnumSymbol, FieldSymbol
+                from src.spi_ast import ClassDecl, RecordDecl, EnumDecl
+                
+                for declaration in unit.interface_ast.declarations:
+                    try:
+                        if isinstance(declaration, RecordDecl):
+                            # Create record symbol
+                            fields = {}
+                            for field in declaration.fields:
+                                field_symbol = FieldSymbol(field.var_node.value, None)
+                                fields[field.var_node.value] = field_symbol
+                            record_symbol = RecordSymbol(declaration.record_name, fields)
+                            unit.interface_symbols.insert(record_symbol)
+                            
+                        elif isinstance(declaration, ClassDecl):
+                            # Create class symbol
+                            fields = {}
+                            methods = {}
+                            for field in declaration.fields:
+                                field_symbol = FieldSymbol(field.var_node.value, None)
+                                fields[field.var_node.value] = field_symbol
+                            
+                            # Extract the actual class name without any prefix
+                            actual_class_name = declaration.class_name
+                            if actual_class_name.startswith("Class[") and actual_class_name.endswith("]"):
+                                actual_class_name = actual_class_name[6:-1]  # Remove "Class[" and "]"
+                            
+                            class_symbol = ClassSymbol(actual_class_name, fields, methods)
+                            unit.interface_symbols.insert(class_symbol)
+                            
+                        elif isinstance(declaration, EnumDecl):
+                            # Create enum symbol
+                            enum_symbol = EnumSymbol(declaration.enum_name, declaration.entries)
+                            unit.interface_symbols.insert(enum_symbol)
+                            
+                    except Exception:
+                        # Continue with other declarations if one fails
+                        continue
+            
+            # Mark as loaded
+            unit.is_loaded = True
+            
+            return unit
+            
+        except Exception:
+            # If loading fails, return None and let the parser handle the error
+            return None
 
     def get_next_token(self):
         return self.lexer.get_next_token()
@@ -111,7 +244,109 @@ class Parser:
             self.eat(TokenType.ID)
         
         self.eat(TokenType.SEMI)
+        
+        # Track imported modules for type resolution
+        self.imported_modules.extend(module_names)
+        for module_name in self.imported_modules:
+            self.module_registry.load_module(module_name)
         return module_names
+
+    def unit_file(self) -> Unit:
+        """unit_file : unit_declaration (uses_clause)? interface_section implementation_section END DOT"""
+        unit_name = self.unit_declaration()
+        
+        # Parse optional uses clause
+        uses_list = []
+        if self.current_token.type == TokenType.USES:
+            uses_list = self.uses_clause()
+        
+        interface_block = self.interface_section()
+        implementation_block = self.implementation_section()
+        
+        # Units end with "end."
+        self.eat(TokenType.END)
+        self.eat(TokenType.DOT)
+        
+        unit_node = Unit(unit_name, interface_block, implementation_block, uses_list)
+        return unit_node
+
+    def unit_declaration(self) -> str:
+        """unit_declaration : UNIT ID SEMI"""
+        self.eat(TokenType.UNIT)
+        
+        if self.current_token.type != TokenType.ID:
+            self.error(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                token=self.current_token,
+            )
+        
+        unit_name = self.current_token.value
+        self.eat(TokenType.ID)
+        self.eat(TokenType.SEMI)
+        
+        return unit_name
+
+    def interface_section(self) -> Block:
+        """interface_section : INTERFACE interface_declarations"""
+        self.eat(TokenType.INTERFACE)
+        
+        # Parse declarations in the interface section (signatures only)
+        declaration_nodes = self.interface_declarations()
+        
+        # Create an empty compound statement for interface (no executable code)
+        empty_compound = Compound()
+        
+        interface_block = Block(declaration_nodes, empty_compound)
+        return interface_block
+
+    def implementation_section(self) -> Block:
+        """implementation_section : IMPLEMENTATION declarations"""
+        self.eat(TokenType.IMPLEMENTATION)
+        
+        # Parse declarations in the implementation section
+        declaration_nodes = self.declarations()
+        
+        # Create an empty compound statement for implementation (no main executable code)
+        empty_compound = Compound()
+        
+        implementation_block = Block(declaration_nodes, empty_compound)
+        return implementation_block
+
+    def interface_declarations(self) -> list[Decl]:
+        """
+        interface_declarations : (const_declaration)?
+                               (type_declaration)?
+                               (VAR (variable_declaration SEMI)+)?
+                               (procedure_definition SEMI)*
+                               (function_definition SEMI)*
+        """
+        declarations: list[Decl] = []
+
+        if self.current_token.type == TokenType.CONST:
+            const_list = self.const_declaration()
+            declarations.extend(const_list)
+
+        if self.current_token.type == TokenType.TYPE:
+            type_decl_list = self.type_declaration()
+            declarations.extend(type_decl_list)
+
+        if self.current_token.type == TokenType.VAR:
+            self.eat(TokenType.VAR)
+            while self.current_token.type == TokenType.ID:
+                var_decl = self.variable_declaration()
+                declarations.extend(var_decl)
+                self.eat(TokenType.SEMI)
+
+        # Parse procedure and function signatures (definitions without bodies)
+        while self.current_token.type in [TokenType.PROCEDURE, TokenType.FUNCTION]:
+            if self.current_token.type == TokenType.PROCEDURE:
+                proc_def = self.procedure_definition()
+                declarations.append(proc_def)
+            elif self.current_token.type == TokenType.FUNCTION:
+                func_def = self.function_definition()
+                declarations.append(func_def)
+
+        return declarations
 
     def block(self) -> Block:
         """block : declarations compound_statement"""
@@ -702,15 +937,32 @@ class Parser:
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
         elif self.current_token.type == TokenType.ID:
-            if self.current_token.value in self.classes:
+            type_name = self.current_token.value
+            
+            # Check local types first
+            if type_name in self.classes:
                 return self.class_type_spec()
-            elif self.current_token.value in self.enums:
+            elif type_name in self.enums:
                 return self.enum_type_spec()
-            elif self.current_token.value in self.records:
+            elif type_name in self.records:
                 return self.record_type_spec()
             else:
+                # Check imported modules for the type
+                exists, type_category = self._is_type_in_imported_modules(type_name)
+                if exists:
+                    if type_category == 'class':
+                        return self.class_type_spec()
+                    elif type_category == 'enum':
+                        return self.enum_type_spec()
+                    elif type_category == 'record':
+                        return self.record_type_spec()
+                
+                # Type not found in local scope or imported modules
+                print("\033[38;2;0;0;139m111******************************************************************\033[0m")
+                print(type_name)
                 raise UnknownTypeError()
         else:
+            print("\033[38;2;0;0;139m222******************************************************************\033[0m")
             raise UnknownTypeError()
 
     def primitive_type_spec(self) -> Type:
@@ -1360,18 +1612,37 @@ class Parser:
             return node
 
         if token.type == TokenType.ID and self.peek_next_token().type == TokenType.DOT:
-            if token.value in self.classes:
+            type_name = token.value
+            
+            # Check local types first
+            if type_name in self.classes:
                 # call method
                 node = self.method_call_expr()
                 return node
-            elif token.value in self.enums:
+            elif type_name in self.enums:
                 # call enum variable
                 node = self.variable()
                 return node
-            elif token.value in self.records:
+            elif type_name in self.records:
                 # call enum variable
                 node = self.expr_get()
                 return node
+            else:
+                # Check imported modules for the type
+                exists, type_category = self._is_type_in_imported_modules(type_name)
+                if exists:
+                    if type_category == 'class':
+                        # call method
+                        node = self.method_call_expr()
+                        return node
+                    elif type_category == 'enum':
+                        # call enum variable
+                        node = self.variable()
+                        return node
+                    elif type_category == 'record':
+                        # call record property
+                        node = self.expr_get()
+                        return node
 
         # call procedure
         if (
@@ -1419,7 +1690,15 @@ class Parser:
 
     def parse(self):
         """
-        program : PROGRAM variable SEMI block DOT
+        program : PROGRAM variable SEMI (uses_clause)? block DOT
+        
+        unit_file : unit_declaration (uses_clause)? interface_section implementation_section END DOT
+        
+        unit_declaration : UNIT ID SEMI
+        
+        interface_section : INTERFACE declarations
+        
+        implementation_section : IMPLEMENTATION declarations
 
         block : declarations compound_statement
 
@@ -1562,7 +1841,17 @@ class Parser:
 
         id_expr : ID ( DOT  ID )*
         """
-        node = self.program()
+        # Determine if this is a program or unit file based on the first token
+        if self.current_token.type == TokenType.PROGRAM:
+            node = self.program()
+        elif self.current_token.type == TokenType.UNIT:
+            node = self.unit_file()
+        else:
+            self.error(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                token=self.current_token,
+            )
+        
         if self.current_token.type != TokenType.EOF:
             self.error(
                 error_code=ErrorCode.UNEXPECTED_TOKEN,

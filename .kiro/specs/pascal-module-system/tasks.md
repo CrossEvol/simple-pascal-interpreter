@@ -204,31 +204,56 @@
   - Write unit tests for ArrayUtils functionality
   - _Requirements: 5.4_
 
-- [ ] 17. Add comprehensive error handling and reporting
+- [x] 17. Implement proper unit file parsing in parser
+
+
+  - Add unit_declaration() method to parse "unit UnitName;" syntax
+  - Add interface_section() method to parse interface declarations between INTERFACE and IMPLEMENTATION
+  - Add implementation_section() method to parse implementation code between IMPLEMENTATION and END
+  - Add unit_file() method as main entry point for parsing unit files
+  - Update parser to distinguish between program files and unit files
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+
+- [x] 18. Fix type resolution from imported modules in parser
+
+
+
+
+
+
+  - Enhance parser's type_spec() method to resolve types from imported modules
+  - Add module_registry parameter to Parser constructor for module-aware type resolution
+  - Implement lookup mechanism for types in imported module interfaces
+  - Update parser to check imported modules when encountering unknown type IDs
+  - Add proper error handling for type resolution failures with module context
+  - Write unit tests for cross-module type resolution in parser
+  - _Requirements: 3.1, 3.2, 3.3, 6.1_
+
+- [ ] 19. Fix unit file loading in interpreter
+
+
+
+  - Replace the temporary _parse_unit_file() implementation with proper unit parsing
+  - Use the new parser methods to correctly parse interface and implementation sections
+  - Ensure proper AST structure is created for unit files
+  - Handle unit-specific error cases (missing interface/implementation sections)
+  - _Requirements: 2.2, 2.3, 6.1_
+
+- [ ] 20. Add comprehensive error handling and reporting
   - Enhance error messages with line numbers and file names for module errors
   - Add symbol suggestion system for undefined symbols in modules
   - Implement helpful error recovery for common module mistakes
   - Write integration tests for error handling scenarios
   - _Requirements: 6.1, 6.3, 6.4, 6.5_
 
-- [x] 18. Create end-to-end integration tests
-
-
-
-
-
+- [ ] 21. Create end-to-end integration tests
   - Write test programs that use multiple modules with dependencies
   - Test transitive dependencies (A uses B, B uses C)
   - Verify correct symbol resolution across module boundaries
   - Test standard library module usage in real programs
   - _Requirements: 2.4, 3.4, 5.1_
 
-- [x] 19. Add module system documentation and examples
-
-
-
-
-
+- [ ] 22. Add module system documentation and examples
   - Create example Pascal programs demonstrating module usage
   - Write documentation for unit syntax and module system features
   - Provide examples of using Map, Math, and ArrayUtils modules

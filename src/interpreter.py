@@ -238,7 +238,7 @@ class Interpreter(NodeVisitor):
 
             # Create lexer and parser for the module
             lexer = Lexer(text)
-            parser = Parser(lexer)
+            parser = Parser(lexer, self.module_registry)
             
             # Parse the unit (assuming it's a unit file)
             unit_ast = self._parse_unit_file(parser)
@@ -251,11 +251,11 @@ class Interpreter(NodeVisitor):
                 self.module_registry.loaded_modules[module_name] = unit
 
             # Store the parsed AST
-            unit.interface_ast = unit_ast.interface_ast
-            unit.implementation_ast = unit_ast.implementation_ast
+            unit.interface_ast = unit_ast.interface_block
+            unit.implementation_ast = unit_ast.implementation_block
             
             # Add dependencies to the registry
-            if hasattr(unit_ast, 'uses_clause') and unit_ast.uses_clause:
+            if unit_ast.uses_clause:
                 for dep in unit_ast.uses_clause:
                     self.module_registry.add_dependency(module_name, dep)
                     # Recursively load dependencies
@@ -338,39 +338,27 @@ class Interpreter(NodeVisitor):
                 else:
                     ar[symbol_name] = symbol
 
-    def _parse_unit_file(self, parser: Parser) -> 'UnitAST':
+    def _parse_unit_file(self, parser: Parser) -> Unit:
         """
-        Basic unit file parser. This is a simplified version until full unit parsing is implemented.
+        Parse a unit file using the proper unit parsing functionality.
         
         Args:
             parser: The parser instance
             
         Returns:
-            A basic unit AST structure
+            A Unit AST node with interface and implementation sections
         """
-        # For now, create a simple structure to hold unit information
-        # This will be replaced when full unit parsing is implemented in earlier tasks
-        
-        class UnitAST:
-            def __init__(self):
-                self.interface_ast = None
-                self.implementation_ast = None
-                self.uses_clause = []
-        
-        unit_ast = UnitAST()
-        
-        # Try to parse as a regular program for now
-        # This is a temporary solution until unit parsing is fully implemented
         try:
-            program_ast = parser.program()
-            # For now, treat the program block as the implementation
-            unit_ast.implementation_ast = program_ast.block
-            unit_ast.uses_clause = program_ast.uses_clause
-        except Exception:
-            # If parsing as program fails, create empty AST
-            pass
-            
-        return unit_ast
+            # Use the new unit parsing functionality
+            unit_ast = parser.unit_file()
+            return unit_ast
+        except Exception as e:
+            # Handle parsing errors with more specific error messages
+            raise ParserError(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                token=parser.current_token,
+                message=f"Failed to parse unit file: {str(e)}"
+            )
 
     def visit_Program(self, node: Program) -> None:
         program_name = node.name

@@ -19,6 +19,20 @@ class Type(AST):
         self.value = token.value
 
 
+class UnresolvedType(Type):
+    """
+    Represents a type that needs to be resolved during semantic analysis.
+    Used when parser encounters an ID that could be a type name.
+    """
+    def __init__(self, token: Token, type_name: str) -> None:
+        super().__init__(token)
+        self.type_name = type_name
+        self.resolved_type: Type | None = None  # Will be set during semantic analysis
+    
+    def __str__(self) -> str:
+        return f"UnresolvedType[{self.type_name}]"
+
+
 class Decl(AST):
     def __init__(self):
         super().__init__()
@@ -205,6 +219,14 @@ class Program(AST):
     def __init__(self, name: str, block: Block, uses_clause: list[str] = None) -> None:
         self.name = name
         self.block = block
+        self.uses_clause = uses_clause or []
+
+
+class Unit(AST):
+    def __init__(self, name: str, interface_block: Block, implementation_block: Block, uses_clause: list[str] = None) -> None:
+        self.name = name
+        self.interface_block = interface_block
+        self.implementation_block = implementation_block
         self.uses_clause = uses_clause or []
 
 
