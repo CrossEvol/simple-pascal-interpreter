@@ -364,6 +364,10 @@ class ModuleRegistry:
         """
         Resolve the dependency order for a module using topological sort.
         
+        This method performs a depth-first search to determine the correct loading
+        order for modules, ensuring that dependencies are loaded before the modules
+        that depend on them.
+        
         Args:
             module_name: The module to resolve dependencies for
             
@@ -376,22 +380,27 @@ class ModuleRegistry:
         visited = set()
         temp_visited = set()
         result = []
+        dependency_path = []
         
         def visit(name: str) -> None:
             if name in temp_visited:
-                # Circular dependency detected
+                # Circular dependency detected - build the cycle path
+                cycle_start = dependency_path.index(name)
+                cycle = dependency_path[cycle_start:] + [name]
                 from src.error import CircularDependencyError
-                raise CircularDependencyError([name])
+                raise CircularDependencyError(cycle)
             
             if name in visited:
                 return
             
             temp_visited.add(name)
+            dependency_path.append(name)
             
-            # Visit dependencies first
+            # Visit dependencies first (depth-first traversal)
             for dep in self.dependency_graph.get(name, []):
                 visit(dep)
             
+            dependency_path.pop()
             temp_visited.remove(name)
             visited.add(name)
             result.append(name)
@@ -412,7 +421,7 @@ class ModuleRegistry:
         try:
             self.resolve_dependencies(module_name)
             return False
-        except:
+        except Exception:
             return True
     
     def add_dependency(self, module_name: str, dependency: str) -> None:
@@ -428,6 +437,105 @@ class ModuleRegistry:
         
         if dependency not in self.dependency_graph[module_name]:
             self.dependency_graph[module_name].append(dependency)
+    
+    def get_all_dependencies(self, module_name: str) -> List[str]:
+        """
+        Get all transitive dependencies for a module (not just direct dependencies).
+        
+        Args:
+            module_name: The module to get all dependencies for
+            
+        Returns:
+            List of all module names that this module depends on (transitively)
+        """
+        all_deps = set()
+        visited = set()
+        
+        def collect_deps(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            
+            for dep in self.dependency_graph.get(name, []):
+                all_deps.add(dep)
+                collect_deps(dep)
+        
+        collect_deps(module_name)
+        return list(all_deps)
+    
+    def get_load_order_for_all_modules(self) -> List[str]:
+        """
+        Get the load order for all modules in the registry using topological sort.
+        
+        Returns:
+            List of all module names in dependency order (dependencies first)
+            
+        Raises:
+            CircularDependencyError: If circular dependencies are detected
+        """
+        visited = set()
+        temp_visited = set()
+        result = []
+        dependency_path = []
+        
+        def visit(name: str) -> None:
+            if name in temp_visited:
+                # Circular dependency detected - build the cycle path
+                cycle_start = dependency_path.index(name)
+                cycle = dependency_path[cycle_start:] + [name]
+                from src.error import CircularDependencyError
+                raise CircularDependencyError(cycle)
+            
+            if name in visited:
+                return
+            
+            temp_visited.add(name)
+            dependency_path.append(name)
+            
+            # Visit dependencies first
+            for dep in self.dependency_graph.get(name, []):
+                visit(dep)
+            
+            dependency_path.pop()
+            temp_visited.remove(name)
+            visited.add(name)
+            result.append(name)
+        
+        # Visit all modules in the dependency graph
+        for module_name in self.dependency_graph.keys():
+            if module_name not in visited:
+                visit(module_name)
+        
+        return result
+    
+    def has_dependency(self, module_name: str, dependency: str) -> bool:
+        """
+        Check if a module has a specific dependency (direct or transitive).
+        
+        Args:
+            module_name: The module to check
+            dependency: The dependency to look for
+            
+        Returns:
+            True if the module depends on the specified dependency
+        """
+        return dependency in self.get_all_dependencies(module_name)
+    
+    def get_dependents(self, module_name: str) -> List[str]:
+        """
+        Get all modules that depend on the specified module.
+        
+        Args:
+            module_name: The module to find dependents for
+            
+        Returns:
+            List of module names that depend on the specified module
+        """
+        dependents = []
+        for mod_name, deps in self.dependency_graph.items():
+            if module_name in deps:
+                dependents.append(mod_name)
+        return dependents
     
     def __str__(self) -> str:
         return f"<ModuleRegistry(loaded={len(self.loaded_modules)}, paths={self.search_paths})>"

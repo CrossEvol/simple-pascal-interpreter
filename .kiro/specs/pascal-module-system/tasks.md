@@ -119,7 +119,12 @@
   - Write unit tests for cross-module symbol resolution
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 10. Implement dependency resolution
+- [x] 10. Implement dependency resolution
+
+
+
+
+
   - Add resolve_dependencies() method to determine module load order
   - Create dependency graph tracking for loaded modules
   - Implement topological sort for dependency ordering
