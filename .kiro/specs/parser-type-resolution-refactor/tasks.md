@@ -35,7 +35,12 @@
   - Write unit tests for simplified type_spec parsing behavior
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 4. Create TypeResolver service class
+- [x] 4. Create TypeResolver service class
+
+
+
+
+
   - Implement TypeResolver class with resolve_type() method
   - Add support for resolving types from local scope (classes, enums, records)
   - Implement module-based type resolution using module registry
