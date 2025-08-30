@@ -30,11 +30,11 @@ begin
   result := MUL(a, b);
   writeln('MUL(', a, ', ', b, ') = ', result);
   
-  result := DIV(a, b);
-  writeln('DIV(', a, ', ', b, ') = ', result);
+  result := DIVIDE(a, b);
+  writeln('DIVIDE(', a, ', ', b, ') = ', result);
   
-  result := MOD(a, b);
-  writeln('MOD(', a, ', ', b, ') = ', result);
+  result := MODULO(a, b);
+  writeln('MODULO(', a, ', ', b, ') = ', result);
   
   writeln();
   writeln('Module usage complete!');

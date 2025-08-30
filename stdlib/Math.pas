@@ -4,8 +4,8 @@ interface
   function ADD(a, b: integer): integer;
   function MUL(a, b: integer): integer;
   function SUB(a, b: integer): integer;
-  function DIV(a, b: integer): integer;
-  function MOD(a, b: integer): integer;
+  function DIVIDE(a, b: integer): integer;
+  function MODULO(a, b: integer): integer;
 
 implementation
   function ADD(a, b: integer): integer;
@@ -23,29 +23,29 @@ implementation
     SUB := a - b;
   end;
 
-  function DIV(a, b: integer): integer;
+  function DIVIDE(a, b: integer): integer;
   begin
     if b = 0 then
     begin
       { Division by zero - return 0 as error indicator }
-      DIV := 0;
+      DIVIDE := 0;
     end
     else
     begin
-      DIV := a div b;
+      DIVIDE := a div b;
     end;
   end;
 
-  function MOD(a, b: integer): integer;
+  function MODULO(a, b: integer): integer;
   begin
     if b = 0 then
     begin
       { Modulo by zero - return 0 as error indicator }
-      MOD := 0;
+      MODULO := 0;
     end
     else
     begin
-      MOD := a mod b;
+      MODULO := a mod b;
     end;
   end;
 
