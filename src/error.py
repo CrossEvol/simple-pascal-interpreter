@@ -220,10 +220,16 @@ class ModuleNotFoundError(ModuleError):
 class CircularDependencyError(ModuleError):
     """Raised when circular dependencies are detected between modules."""
     
-    def __init__(self, dependency_chain: list[str]) -> None:
+    def __init__(self, dependency_chain: list[str], suggestions: list[str] = None) -> None:
         self.dependency_chain = dependency_chain
+        self.suggestions = suggestions or []
+        
         chain_str = " -> ".join(dependency_chain)
         message = f"Circular dependency detected: {chain_str}"
+        
+        if self.suggestions:
+            message += "\n\n" + "\n".join(self.suggestions)
+        
         super().__init__(message=message)
 
 

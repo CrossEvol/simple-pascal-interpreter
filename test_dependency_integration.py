@@ -99,6 +99,79 @@ class TestDependencyIntegration(unittest.TestCase):
         error = context.exception
         self.assertIn("ModuleA", error.dependency_chain)
         self.assertIn("ModuleB", error.dependency_chain)
+        
+        # Verify error includes helpful suggestions
+        self.assertIsNotNone(error.suggestions)
+        self.assertGreater(len(error.suggestions), 0)
+        
+        # Check that suggestions contain expected recovery options
+        suggestions_text = "\n".join(error.suggestions)
+        self.assertIn("Extract Common Functionality", suggestions_text)
+        self.assertIn("Merge Modules", suggestions_text)
+    
+    def test_enhanced_circular_dependency_detection_methods(self):
+        """Test the enhanced circular dependency detection methods."""
+        # Create complex circular dependency: A -> B -> C -> A
+        modules = ["A", "B", "C"]
+        for name in modules:
+            unit = Unit(name, f"./{name}.pas")
+            self.registry.loaded_modules[name] = unit
+        
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "C")
+        self.registry.add_dependency("C", "A")
+        
+        # Test check_circular_dependencies method
+        self.assertTrue(self.registry.check_circular_dependencies("A"))
+        
+        # Test find_circular_dependency_chain method
+        chain = self.registry.find_circular_dependency_chain("A")
+        self.assertIsNotNone(chain)
+        self.assertEqual(len(chain), 4)  # A -> B -> C -> A
+        self.assertEqual(chain[0], chain[-1])  # Starts and ends with same module
+        
+        # Test get_circular_dependency_suggestions method
+        suggestions = self.registry.get_circular_dependency_suggestions(chain)
+        self.assertGreater(len(suggestions), 5)
+        
+        suggestions_text = "\n".join(suggestions)
+        self.assertIn("Restructure Dependencies", suggestions_text)
+        self.assertIn("A -> B -> C -> A", suggestions_text)
+    
+    def test_circular_dependency_error_message_quality(self):
+        """Test that circular dependency error messages are clear and helpful."""
+        # Create circular dependency with meaningful module names
+        ui_unit = Unit("UserInterface", "./UserInterface.pas")
+        db_unit = Unit("Database", "./Database.pas")
+        auth_unit = Unit("Authentication", "./Authentication.pas")
+        
+        self.registry.loaded_modules["UserInterface"] = ui_unit
+        self.registry.loaded_modules["Database"] = db_unit
+        self.registry.loaded_modules["Authentication"] = auth_unit
+        
+        # Create cycle: UserInterface -> Database -> Authentication -> UserInterface
+        self.registry.add_dependency("UserInterface", "Database")
+        self.registry.add_dependency("Database", "Authentication")
+        self.registry.add_dependency("Authentication", "UserInterface")
+        
+        # Test error message quality
+        with self.assertRaises(CircularDependencyError) as context:
+            self.registry.resolve_dependencies("UserInterface")
+        
+        error = context.exception
+        error_message = str(error)
+        
+        # Should contain clear dependency chain
+        self.assertIn("UserInterface -> Database -> Authentication -> UserInterface", error_message)
+        
+        # Should contain helpful suggestions
+        self.assertIn("Extract Common Functionality", error_message)
+        self.assertIn("Dependency Inversion", error_message)
+        self.assertIn("Forward Declarations", error_message)
+        
+        # Should provide specific module names in suggestions
+        self.assertIn("UserInterface", error_message)
+        self.assertIn("Authentication", error_message)
     
     def test_complex_dependency_with_standard_library(self):
         """Test dependency resolution with standard library modules."""

@@ -123,6 +123,199 @@ class TestDependencyResolution(unittest.TestCase):
         # Should return True (circular dependency detected)
         self.assertTrue(self.registry.check_circular_dependencies("A"))
     
+    def test_find_circular_dependency_chain_simple(self):
+        """Test finding circular dependency chain for simple cycle."""
+        # Create modules with circular dependency: A -> B -> A
+        self.registry.load_module("A", "./A.pas")
+        self.registry.load_module("B", "./B.pas")
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "A")
+        
+        # Find the circular dependency chain
+        chain = self.registry.find_circular_dependency_chain("A")
+        
+        # Should find the cycle
+        self.assertIsNotNone(chain)
+        self.assertIn("A", chain)
+        self.assertIn("B", chain)
+        # Chain should start and end with the same module
+        self.assertEqual(chain[0], chain[-1])
+    
+    def test_find_circular_dependency_chain_complex(self):
+        """Test finding circular dependency chain for complex cycle."""
+        # Create modules with circular dependency: A -> B -> C -> D -> A
+        for name in ["A", "B", "C", "D"]:
+            self.registry.load_module(name, f"./{name}.pas")
+        
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "C")
+        self.registry.add_dependency("C", "D")
+        self.registry.add_dependency("D", "A")
+        
+        # Find the circular dependency chain
+        chain = self.registry.find_circular_dependency_chain("A")
+        
+        # Should find the complete cycle
+        self.assertIsNotNone(chain)
+        self.assertEqual(len(chain), 5)  # A -> B -> C -> D -> A
+        self.assertEqual(chain[0], chain[-1])  # Starts and ends with same module
+        
+        # Verify all modules are in the chain
+        for module in ["A", "B", "C", "D"]:
+            self.assertIn(module, chain)
+    
+    def test_find_circular_dependency_chain_no_cycle(self):
+        """Test finding circular dependency chain when no cycle exists."""
+        # Create modules without circular dependency: A -> B -> C
+        for name in ["A", "B", "C"]:
+            self.registry.load_module(name, f"./{name}.pas")
+        
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "C")
+        
+        # Should return None (no cycle)
+        chain = self.registry.find_circular_dependency_chain("A")
+        self.assertIsNone(chain)
+    
+    def test_get_circular_dependency_suggestions(self):
+        """Test generation of circular dependency recovery suggestions."""
+        # Test with simple cycle
+        simple_chain = ["ModuleA", "ModuleB", "ModuleA"]
+        suggestions = self.registry.get_circular_dependency_suggestions(simple_chain)
+        
+        # Should contain multiple suggestions
+        self.assertGreater(len(suggestions), 5)
+        
+        # Should contain key suggestion types
+        suggestion_text = "\n".join(suggestions)
+        self.assertIn("Extract Common Functionality", suggestion_text)
+        self.assertIn("Merge Modules", suggestion_text)
+        self.assertIn("Dependency Inversion", suggestion_text)
+        self.assertIn("Forward Declarations", suggestion_text)
+        
+        # Test with complex cycle
+        complex_chain = ["A", "B", "C", "D", "A"]
+        complex_suggestions = self.registry.get_circular_dependency_suggestions(complex_chain)
+        
+        # Should contain restructuring suggestions for complex cycles
+        complex_text = "\n".join(complex_suggestions)
+        self.assertIn("Restructure Dependencies", complex_text)
+        self.assertIn("A -> B -> C -> D -> A", complex_text)
+    
+    def test_circular_dependency_error_with_suggestions(self):
+        """Test that CircularDependencyError includes helpful suggestions."""
+        # Create circular dependency
+        self.registry.load_module("A", "./A.pas")
+        self.registry.load_module("B", "./B.pas")
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "A")
+        
+        # Should raise CircularDependencyError with suggestions
+        with self.assertRaises(CircularDependencyError) as context:
+            self.registry.resolve_dependencies("A")
+        
+        error = context.exception
+        
+        # Should have dependency chain
+        self.assertIsNotNone(error.dependency_chain)
+        self.assertIn("A", error.dependency_chain)
+        self.assertIn("B", error.dependency_chain)
+        
+        # Should have suggestions
+        self.assertIsNotNone(error.suggestions)
+        self.assertGreater(len(error.suggestions), 0)
+        
+        # Error message should include suggestions
+        self.assertIn("Extract Common Functionality", str(error))
+    
+    def test_check_circular_dependencies_performance(self):
+        """Test that circular dependency checking is efficient for large graphs."""
+        # Create a large dependency graph without cycles
+        num_modules = 100
+        for i in range(num_modules):
+            self.registry.load_module(f"Module{i}", f"./Module{i}.pas")
+            if i > 0:
+                self.registry.add_dependency(f"Module{i}", f"Module{i-1}")
+        
+        # Should quickly determine no circular dependencies
+        import time
+        start_time = time.time()
+        has_cycle = self.registry.check_circular_dependencies("Module99")
+        end_time = time.time()
+        
+        self.assertFalse(has_cycle)
+        # Should complete in reasonable time (less than 1 second)
+        self.assertLess(end_time - start_time, 1.0)
+    
+    def test_circular_dependency_detection_with_self_dependency(self):
+        """Test circular dependency detection when a module depends on itself."""
+        self.registry.load_module("SelfDependent", "./SelfDependent.pas")
+        self.registry.add_dependency("SelfDependent", "SelfDependent")
+        
+        # Should detect self-dependency as circular
+        self.assertTrue(self.registry.check_circular_dependencies("SelfDependent"))
+        
+        # Should find the self-dependency chain
+        chain = self.registry.find_circular_dependency_chain("SelfDependent")
+        self.assertIsNotNone(chain)
+        self.assertEqual(chain, ["SelfDependent", "SelfDependent"])
+    
+    def test_circular_dependency_detection_multiple_entry_points(self):
+        """Test circular dependency detection from different entry points in the same cycle."""
+        # Create cycle: A -> B -> C -> A
+        for name in ["A", "B", "C"]:
+            self.registry.load_module(name, f"./{name}.pas")
+        
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "C")
+        self.registry.add_dependency("C", "A")
+        
+        # Should detect cycle from any entry point
+        self.assertTrue(self.registry.check_circular_dependencies("A"))
+        self.assertTrue(self.registry.check_circular_dependencies("B"))
+        self.assertTrue(self.registry.check_circular_dependencies("C"))
+        
+        # Should find chains from any entry point
+        chain_a = self.registry.find_circular_dependency_chain("A")
+        chain_b = self.registry.find_circular_dependency_chain("B")
+        chain_c = self.registry.find_circular_dependency_chain("C")
+        
+        self.assertIsNotNone(chain_a)
+        self.assertIsNotNone(chain_b)
+        self.assertIsNotNone(chain_c)
+    
+    def test_circular_dependency_with_disconnected_components(self):
+        """Test circular dependency detection in graphs with disconnected components."""
+        # Create two separate cycles: A -> B -> A and C -> D -> C
+        for name in ["A", "B", "C", "D"]:
+            self.registry.load_module(name, f"./{name}.pas")
+        
+        # First cycle
+        self.registry.add_dependency("A", "B")
+        self.registry.add_dependency("B", "A")
+        
+        # Second cycle
+        self.registry.add_dependency("C", "D")
+        self.registry.add_dependency("D", "C")
+        
+        # Should detect cycles in both components
+        self.assertTrue(self.registry.check_circular_dependencies("A"))
+        self.assertTrue(self.registry.check_circular_dependencies("C"))
+        
+        # Chains should be separate
+        chain_a = self.registry.find_circular_dependency_chain("A")
+        chain_c = self.registry.find_circular_dependency_chain("C")
+        
+        self.assertIn("A", chain_a)
+        self.assertIn("B", chain_a)
+        self.assertNotIn("C", chain_a)
+        self.assertNotIn("D", chain_a)
+        
+        self.assertIn("C", chain_c)
+        self.assertIn("D", chain_c)
+        self.assertNotIn("A", chain_c)
+        self.assertNotIn("B", chain_c)
+    
     def test_get_all_dependencies(self):
         """Test getting all transitive dependencies for a module."""
         # Create dependency chain: A -> B -> C -> D

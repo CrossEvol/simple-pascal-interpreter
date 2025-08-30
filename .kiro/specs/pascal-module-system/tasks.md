@@ -131,7 +131,12 @@
   - Write unit tests for dependency resolution
   - _Requirements: 3.4_
 
-- [ ] 11. Add circular dependency detection
+- [x] 11. Add circular dependency detection
+
+
+
+
+
   - Implement check_circular_dependencies() method using graph traversal
   - Create clear error messages showing dependency chain
   - Add recovery suggestions for circular dependency errors
