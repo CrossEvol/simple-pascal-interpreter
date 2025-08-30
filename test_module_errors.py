@@ -15,8 +15,10 @@ from src.error import (
     CircularDependencyError,
     SymbolNotFoundInModuleError,
     InterfaceImplementationMismatchError,
-    SymbolVisibilityError
+    SymbolVisibilityError,
+    TypeResolutionError
 )
+from src.spi_token import Token, TokenType
 
 
 class TestModuleError(unittest.TestCase):
@@ -310,6 +312,129 @@ class TestSymbolVisibilityError(unittest.TestCase):
         self.assertIn("private", error_message)
         self.assertIn("External", error_message)
         self.assertIn("Internal", error_message)
+
+
+class TestTypeResolutionError(unittest.TestCase):
+    """Test TypeResolutionError class."""
+    
+    def test_type_resolution_error_basic(self):
+        """Test basic TypeResolutionError functionality."""
+        message = "Unknown type 'MyClass' at line 15"
+        
+        error = TypeResolutionError(message)
+        
+        # Check attributes
+        self.assertEqual(error.suggestions, [])
+        self.assertIsNone(error.token)
+        
+        # Check error message
+        error_message = str(error)
+        self.assertIn("TypeResolutionError", error_message)
+        self.assertIn("Unknown type 'MyClass' at line 15", error_message)
+        # Should not contain suggestions section when no suggestions provided
+        self.assertNotIn("Did you mean:", error_message)
+    
+    def test_type_resolution_error_with_suggestions(self):
+        """Test TypeResolutionError with type suggestions."""
+        message = "Unknown type 'MyClss'"
+        suggestions = ["MyClass", "MyRecord"]
+        
+        error = TypeResolutionError(message, suggestions)
+        
+        # Check attributes
+        self.assertEqual(error.suggestions, suggestions)
+        
+        # Check error message includes suggestions
+        error_message = str(error)
+        self.assertIn("Unknown type 'MyClss'", error_message)
+        self.assertIn("Did you mean: MyClass, MyRecord?", error_message)
+    
+    def test_type_resolution_error_with_token(self):
+        """Test TypeResolutionError with token information."""
+        token = Token(TokenType.ID, "UnknownType", lineno=10, column=5)
+        message = "Type 'UnknownType' not found"
+        
+        error = TypeResolutionError(message, token=token)
+        
+        # Check attributes
+        self.assertEqual(error.token, token)
+        self.assertEqual(error.suggestions, [])
+        
+        # Check error message
+        error_message = str(error)
+        self.assertIn("Type 'UnknownType' not found", error_message)
+    
+    def test_type_resolution_error_with_suggestions_and_token(self):
+        """Test TypeResolutionError with both suggestions and token."""
+        token = Token(TokenType.ID, "Integr", lineno=5, column=12)
+        message = "Unknown type 'Integr' at line 5, column 12"
+        suggestions = ["Integer", "Int"]
+        
+        error = TypeResolutionError(message, suggestions, token)
+        
+        # Check attributes
+        self.assertEqual(error.token, token)
+        self.assertEqual(error.suggestions, suggestions)
+        
+        # Check error message
+        error_message = str(error)
+        self.assertIn("Unknown type 'Integr' at line 5, column 12", error_message)
+        self.assertIn("Did you mean: Integer, Int?", error_message)
+    
+    def test_type_resolution_error_empty_suggestions(self):
+        """Test TypeResolutionError with empty suggestions list."""
+        message = "Type not found"
+        
+        error = TypeResolutionError(message, [])
+        
+        self.assertEqual(error.suggestions, [])
+        error_message = str(error)
+        self.assertIn("Type not found", error_message)
+        self.assertNotIn("Did you mean:", error_message)
+    
+    def test_type_resolution_error_single_suggestion(self):
+        """Test TypeResolutionError with single suggestion."""
+        message = "Unknown type 'Bolean'"
+        suggestions = ["Boolean"]
+        
+        error = TypeResolutionError(message, suggestions)
+        
+        error_message = str(error)
+        self.assertIn("Did you mean: Boolean?", error_message)
+    
+    def test_type_resolution_error_many_suggestions(self):
+        """Test TypeResolutionError with many suggestions."""
+        message = "Unknown type 'T'"
+        suggestions = ["TMap", "TArray", "TRecord", "TClass", "TEnum"]
+        
+        error = TypeResolutionError(message, suggestions)
+        
+        error_message = str(error)
+        self.assertIn("Did you mean: TMap, TArray, TRecord, TClass, TEnum?", error_message)
+    
+    def test_type_resolution_error_inheritance(self):
+        """Test that TypeResolutionError inherits from SemanticError properly."""
+        from src.error import SemanticError
+        
+        error = TypeResolutionError("Test error")
+        
+        # Check inheritance
+        self.assertIsInstance(error, SemanticError)
+        self.assertIn("TypeResolutionError", str(error))
+    
+    def test_type_resolution_error_message_formatting(self):
+        """Test TypeResolutionError message formatting with various inputs."""
+        # Test with special characters in type name
+        error1 = TypeResolutionError("Unknown type 'My_Type$1'", ["MyType1"])
+        self.assertIn("My_Type$1", str(error1))
+        self.assertIn("MyType1", str(error1))
+        
+        # Test with long message
+        long_message = "A very long error message that describes in detail what went wrong with type resolution"
+        error2 = TypeResolutionError(long_message, ["SuggestedType"])
+        error_str = str(error2)
+        self.assertIn(long_message, error_str)
+        self.assertIn("SuggestedType", error_str)
 
 
 if __name__ == "__main__":

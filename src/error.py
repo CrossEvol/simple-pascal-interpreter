@@ -147,6 +147,21 @@ class TooManyParametersError(ParameterCountError):
     pass
 
 
+class TypeResolutionError(SemanticError):
+    """Raised when type resolution fails during semantic analysis or interpretation."""
+    
+    def __init__(self, message: str, suggestions: list[str] = None, token: Token = None) -> None:
+        self.suggestions = suggestions or []
+        self.token = token
+        
+        # Format the error message with suggestions if available
+        formatted_message = message
+        if self.suggestions:
+            formatted_message += f"\n  Did you mean: {', '.join(self.suggestions)}?"
+        
+        super().__init__(message=formatted_message, token=token)
+
+
 ###############################################################################
 #                                                                             #
 #  InterpreterError                                                                      #

@@ -11,7 +11,12 @@
   - Write unit tests for UnresolvedType node creation and properties
   - _Requirements: 1.3, 3.3_
 
-- [ ] 2. Add TypeResolutionError exception class
+- [x] 2. Add TypeResolutionError exception class
+
+
+
+
+
   - Create TypeResolutionError class in error.py with suggestions field
   - Add clear error message formatting with type suggestions
   - Write unit tests for error creation and message formatting
