@@ -168,7 +168,12 @@
   - Write integration tests for interpreter module support
   - _Requirements: 2.3, 2.4, 3.1_
 
-- [ ] 14. Create Map standard library unit
+- [x] 14. Create Map standard library unit
+
+
+
+
+
   - Write Map.pas unit file with TMap class definition
   - Implement Put, Get, Remove, Keys, Values methods in interface
   - Provide complete implementation section with internal data structures
