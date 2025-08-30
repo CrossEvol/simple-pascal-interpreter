@@ -107,7 +107,12 @@
   - Write unit tests for symbol visibility rules
   - _Requirements: 4.2, 4.3_
 
-- [ ] 9. Add cross-module symbol resolution
+- [x] 9. Add cross-module symbol resolution
+
+
+
+
+
   - Implement lookup_with_modules() method for symbol resolution across modules
   - Add support for resolving symbols from imported modules
   - Handle symbol precedence (current scope, then imported modules)

@@ -179,6 +179,34 @@ class SemanticAnalyzer(NodeVisitor):
             token=token,
             message=f"{error_code.value} -> {token}",
         )
+    
+    def lookup_symbol(self, name: str, current_scope_only: bool = False) -> Symbol | None:
+        """
+        Module-aware symbol lookup that uses cross-module resolution when available.
+        
+        Args:
+            name: Symbol name to lookup
+            current_scope_only: If True, only search current scope
+            
+        Returns:
+            Symbol if found, None otherwise
+        """
+        if self.current_scope is None:
+            return None
+        
+        # Import ModuleSymbolTable here to avoid circular imports
+        try:
+            from src.module import ModuleSymbolTable
+            
+            # If current scope is a ModuleSymbolTable, use module-aware lookup
+            if isinstance(self.current_scope, ModuleSymbolTable) and not current_scope_only:
+                return self.current_scope.lookup_with_modules(name)
+        except ImportError:
+            # If module system is not available, fall back to standard lookup
+            pass
+        
+        # Fall back to standard lookup
+        return self.current_scope.lookup(name, current_scope_only)
 
     def visit_Block(self, node: Block) -> None:
         for declaration in node.declarations:
@@ -187,20 +215,44 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_Program(self, node: Program) -> None:
         self.log("ENTER scope: global")
-        global_scope = ScopedSymbolTable(
-            scope_name="global",
-            scope_level=1,
-            enclosing_scope=self.current_scope,  # None
-        )
-        global_scope._init_builtins()
-        self.current_scope = global_scope
+        
+        # Check if we already have a ModuleSymbolTable set up (for module-aware analysis)
+        created_new_scope = False
+        try:
+            from src.module import ModuleSymbolTable
+            if isinstance(self.current_scope, ModuleSymbolTable):
+                # Use the existing module-aware scope
+                global_scope = self.current_scope
+                self.log("Using existing ModuleSymbolTable as global scope")
+            else:
+                # Create new standard scope
+                global_scope = ScopedSymbolTable(
+                    scope_name="global",
+                    scope_level=1,
+                    enclosing_scope=self.current_scope,  # None
+                )
+                global_scope._init_builtins()
+                self.current_scope = global_scope
+                created_new_scope = True
+        except ImportError:
+            # Module system not available, use standard scope
+            global_scope = ScopedSymbolTable(
+                scope_name="global",
+                scope_level=1,
+                enclosing_scope=self.current_scope,  # None
+            )
+            global_scope._init_builtins()
+            self.current_scope = global_scope
+            created_new_scope = True
 
         # visit subtree
         self.visit(node.block)
 
         self.log(global_scope)
 
-        self.current_scope = self.current_scope.enclosing_scope
+        # Only change scope if we created a new one
+        if created_new_scope:
+            self.current_scope = self.current_scope.enclosing_scope
         self.log("LEAVE scope: global")
 
     def visit_Compound(self, node: Compound) -> None:
@@ -309,7 +361,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.current_scope.insert(method_symbol)
 
         class_name = SpiUtil.toClassName(class_name=class_name)
-        symbol = self.current_scope.lookup(class_name)
+        symbol = self.lookup_symbol(class_name)
         if symbol is None:
             raise UnknownSymbolError()
         class_symbol = cast(ClassSymbol, symbol)
@@ -333,14 +385,14 @@ class SemanticAnalyzer(NodeVisitor):
         # pascal support implicit return the value has the same name to the function name
         return_var_name = method_name
         return_var_symbol = VarSymbol(
-            return_var_name, self.current_scope.lookup(return_type.value)
+            return_var_name, self.lookup_symbol(return_type.value)
         )
         self.current_scope.insert(return_var_symbol)
         method_symbol.formal_params.append(return_var_symbol)
 
         # Insert parameters into the function scope
         for param in node.params:
-            param_type = self.current_scope.lookup(param.type_node.value)
+            param_type = self.lookup_symbol(param.type_node.value)
             param_name = param.var_node.value
             var_symbol = VarSymbol(param_name, param_type)
             self.current_scope.insert(var_symbol)
@@ -362,10 +414,10 @@ class SemanticAnalyzer(NodeVisitor):
             raise MissingCurrentScopeError()
 
         class_or_instance_name, method_name = node.method_full_name.split(".")
-        symbol = self.current_scope.lookup(SpiUtil.toClassName(class_or_instance_name))
+        symbol = self.lookup_symbol(SpiUtil.toClassName(class_or_instance_name))
         if symbol is None:
             # use instance.method() to call
-            symbol = self.current_scope.lookup(class_or_instance_name)
+            symbol = self.lookup_symbol(class_or_instance_name)
             if symbol is None:
                 raise UnknownSymbolError()
             else:
@@ -468,11 +520,11 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit_ArrayType(node.element_type)
         if self.current_scope is None:
             raise MissingCurrentScopeError
-        element_type_symbol = self.current_scope.lookup(str(node.element_type))
+        element_type_symbol = self.lookup_symbol(str(node.element_type))
         if element_type_symbol is None:
             raise UnknownArrayElementTypeError()
         type_name = str(node)
-        type_symbol = self.current_scope.lookup(type_name)
+        type_symbol = self.lookup_symbol(type_name)
         if type_symbol is None:
             self.current_scope.insert(
                 ArrayTypeSymbol(name=type_name, element_type=element_type_symbol)
@@ -481,21 +533,21 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_ClassType(self, node: ClassType):
         if self.current_scope is None:
             raise MissingCurrentScopeError()
-        symbol = self.current_scope.lookup(str(node))
+        symbol = self.lookup_symbol(str(node))
         if symbol is None:
             raise UnknownClassTypeError()
 
     def visit_EnumType(self, node: EnumType):
         if self.current_scope is None:
             raise MissingCurrentScopeError()
-        symbol = self.current_scope.lookup(node.value)
+        symbol = self.lookup_symbol(node.value)
         if symbol is None:
             raise UnknownEnumTypeError()
 
     def visit_RecordType(self, node: RecordType):
         if self.current_scope is None:
             raise MissingCurrentScopeError()
-        symbol = self.current_scope.lookup(node.value)
+        symbol = self.lookup_symbol(node.value)
         if symbol is None:
             raise UnknownRecordTypeError()
 
@@ -512,7 +564,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(node.right)
             const_name = node.left.value
             type_name = str(node.type)
-            type_symbol = self.current_scope.lookup(type_name)
+            type_symbol = self.lookup_symbol(type_name)
             const_symbol = ConstSymbol(
                 name=const_name, type=type_symbol, const_type=ConstType.ARRAY
             )
@@ -546,7 +598,7 @@ class SemanticAnalyzer(NodeVisitor):
         elif isinstance(node.type_node, ClassType):
             self.visit(node.type_node)
             type_name = SpiUtil.toClassName(type_name)
-        type_symbol = self.current_scope.lookup(type_name)
+        type_symbol = self.lookup_symbol(type_name)
 
         # We have all the information we need to create a variable symbol.
         # Create the symbol and insert it into the symbol table.
@@ -573,7 +625,7 @@ class SemanticAnalyzer(NodeVisitor):
         if isinstance(node.left, RecordVar):
             self.visit(node.left)
             record_name, record_field = node.left.name, node.left.key
-            symbol = self.current_scope.lookup(record_name)
+            symbol = self.lookup_symbol(record_name)
             if symbol is None:
                 raise UnknownSymbolError()
             record_symbol = cast(RecordSymbol, cast(VarSymbol, symbol).type)
@@ -587,7 +639,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(node.left)
             var_name = node.left.value
             if var_name.find(".") == -1:
-                var_symbol = self.current_scope.lookup(var_name)
+                var_symbol = self.lookup_symbol(var_name)
                 if var_symbol is None:
                     raise UnknownSymbolError()
                 if var_symbol.type is None:
@@ -608,7 +660,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         if var_name.find(".") != -1:
             type_name, type_key = var_name.split(".")
-            symbol = self.current_scope.lookup(type_name)
+            symbol = self.lookup_symbol(type_name)
             if symbol is None:
                 self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
                 return
@@ -621,7 +673,7 @@ class SemanticAnalyzer(NodeVisitor):
                 if type_key not in record_symbol.fields:
                     raise UnknownRecordFieldError()
         else:
-            var_symbol = self.current_scope.lookup(var_name)
+            var_symbol = self.lookup_symbol(var_name)
             if var_symbol is None:
                 self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
                 return
@@ -629,7 +681,7 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_RecordVar(self, node: RecordVar) -> None:
         if self.current_scope is None:
             raise MissingCurrentScopeError()
-        var_symbol = self.current_scope.lookup(node.name)
+        var_symbol = self.lookup_symbol(node.name)
         if var_symbol is None:
             self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
             return
@@ -646,7 +698,7 @@ class SemanticAnalyzer(NodeVisitor):
         if var_name.find(".") != -1:
             self.visit(node.left)
         else:
-            var_symbol = self.current_scope.lookup(var_name)
+            var_symbol = self.lookup_symbol(var_name)
             if var_symbol is None:
                 self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
                 return
@@ -682,7 +734,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         # Insert parameters into the procedure scope
         for param in node.formal_params:
-            param_type = self.current_scope.lookup(param.type_node.value)
+            param_type = self.lookup_symbol(param.type_node.value)
             param_name = param.var_node.value
             var_symbol = VarSymbol(param_name, param_type)
             self.current_scope.insert(var_symbol)
@@ -705,7 +757,7 @@ class SemanticAnalyzer(NodeVisitor):
         if self.current_scope is None:
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return
-        proc_symbol = self.current_scope.lookup(node.proc_name)
+        proc_symbol = self.lookup_symbol(node.proc_name)
         # accessed by the interpreter when executing procedure call
         node.proc_symbol = cast(ProcedureSymbol, proc_symbol)
 
@@ -729,14 +781,14 @@ class SemanticAnalyzer(NodeVisitor):
         # insert return value into the function scope
         # pascal support implicit return the value has the same name to the function name
         return_var_symbol = VarSymbol(
-            func_name, self.current_scope.lookup(return_type.value)
+            func_name, self.lookup_symbol(return_type.value)
         )
         self.current_scope.insert(return_var_symbol)
         func_symbol.formal_params.append(return_var_symbol)
 
         # Insert parameters into the function scope
         for param in node.formal_params:
-            param_type = self.current_scope.lookup(param.type_node.value)
+            param_type = self.lookup_symbol(param.type_node.value)
             param_name = param.var_node.value
             var_symbol = VarSymbol(param_name, param_type)
             self.current_scope.insert(var_symbol)
@@ -759,7 +811,7 @@ class SemanticAnalyzer(NodeVisitor):
         if self.current_scope is None:
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return
-        func_symbol = self.current_scope.lookup(node.func_name)
+        func_symbol = self.lookup_symbol(node.func_name)
         # accessed by the interpreter when executing procedure call
         node.func_symbol = cast(FunctionSymbol, func_symbol)
 

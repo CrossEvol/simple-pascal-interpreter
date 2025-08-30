@@ -2,7 +2,6 @@
 
 import os
 import sys
-import argparse
 from pathlib import Path
 from unittest.mock import patch
 

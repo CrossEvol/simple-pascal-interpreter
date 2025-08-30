@@ -7,10 +7,16 @@ run:
 main:
 	@python main.py
 
+e2e:
+	@echo "---------------> for integration testcases <---------------"
+	python integration_test.py
+
 test:
 	python test_interpreter.py 
-	echo "---------------> for integration testcases <---------------"
-	python integration_test.py
+	@echo "---------------> for symbol visibility testcases <---------------"
+	python test_symbol_visibility.py
+	@echo "---------------> for visibility integration testcases <---------------"
+	python test_visibility_integration.py
 
 dot:
 	@python gen_ast_dot.py ${file} >> temp/ast_$(shell date +%Y-%m-%d_%H-%M-%S).dot
