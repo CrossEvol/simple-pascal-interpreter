@@ -156,7 +156,12 @@
   - Write unit tests for error classes
   - _Requirements: 6.1, 6.2, 6.3, 6.5_
 
-- [ ] 13. Integrate module system with interpreter
+- [x] 13. Integrate module system with interpreter
+
+
+
+
+
   - Modify interpreter to handle module loading during program execution
   - Update visit_Program() to process uses clauses and load modules
   - Ensure proper symbol table setup for modules

@@ -34,6 +34,11 @@ from src.spi_token import ElementType, TokenType
 from src.symbol import *
 from src.util import SpiUtil
 from src.visitor import NodeVisitor
+from src.module import ModuleRegistry, Unit
+from src.lexer import Lexer
+from src.parser import Parser
+from src.sematic_analyzer import SemanticAnalyzer
+from src.visibility import VisibilityLevel
 
 
 class ARType(Enum):
@@ -168,21 +173,221 @@ class Interpreter(NodeVisitor):
     def __init__(self, tree: Program) -> None:
         self.tree = tree
         self.call_stack = CallStack()
+        self.module_registry = ModuleRegistry()
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_STACK:
             print(msg)
 
+    def _load_and_process_modules(self, module_names: list[str], ar: ActivationRecord) -> None:
+        """
+        Load and process modules specified in the uses clause.
+        
+        Args:
+            module_names: List of module names to load
+            ar: Current activation record to populate with module symbols
+        """
+        for module_name in module_names:
+            try:
+                self.log(f"Loading module: {module_name}")
+                
+                # Load the module using the registry
+                module = self._load_module(module_name)
+                
+                # Import interface symbols into the current activation record
+                self._import_module_symbols(module, ar)
+                
+                self.log(f"Successfully loaded module: {module_name}")
+                
+            except ModuleError as e:
+                # Re-raise module errors with context
+                raise e
+            except Exception as e:
+                # Wrap unexpected errors in a module error
+                raise ModuleNotFoundError(module_name, self.module_registry.search_paths) from e
+
+    def _load_module(self, module_name: str) -> Unit:
+        """
+        Load a module by name, parsing it if not already loaded.
+        
+        Args:
+            module_name: Name of the module to load
+            
+        Returns:
+            The loaded Unit instance
+            
+        Raises:
+            ModuleNotFoundError: If the module file cannot be found
+            Various parsing/semantic errors: If the module has syntax or semantic errors
+        """
+        # Check if module is already loaded
+        existing_module = self.module_registry.get_module(module_name)
+        if existing_module and existing_module.is_loaded:
+            return existing_module
+
+        # Find the module file
+        try:
+            file_path = self.module_registry.find_module_file(module_name)
+        except ModuleNotFoundError:
+            raise
+
+        # Load and parse the module
+        try:
+            with open(file_path, 'r') as file:
+                text = file.read()
+
+            # Create lexer and parser for the module
+            lexer = Lexer(text)
+            parser = Parser(lexer)
+            
+            # Parse the unit (assuming it's a unit file)
+            unit_ast = self._parse_unit_file(parser)
+            
+            # Create or get the unit from registry
+            unit = self.module_registry.load_module(module_name, file_path)
+            if not isinstance(unit, Unit):
+                # Convert to Unit if it's a basic Module
+                unit = Unit(unit.name, unit.file_path)
+                self.module_registry.loaded_modules[module_name] = unit
+
+            # Store the parsed AST
+            unit.interface_ast = unit_ast.interface_ast
+            unit.implementation_ast = unit_ast.implementation_ast
+            
+            # Add dependencies to the registry
+            if hasattr(unit_ast, 'uses_clause') and unit_ast.uses_clause:
+                for dep in unit_ast.uses_clause:
+                    self.module_registry.add_dependency(module_name, dep)
+                    # Recursively load dependencies
+                    self._load_module(dep)
+
+            # Run semantic analysis on the module
+            try:
+                self._analyze_module(unit)
+            except Exception as analysis_error:
+                # Log analysis error but continue - some modules might have issues
+                # that don't prevent basic loading
+                self.log(f"Warning: Semantic analysis failed for module '{module_name}': {analysis_error}")
+                # For now, continue without full analysis
+            
+            # Mark as loaded
+            unit.is_loaded = True
+            
+            return unit
+            
+        except FileNotFoundError:
+            raise ModuleNotFoundError(module_name, self.module_registry.search_paths)
+        except Exception as e:
+            # Wrap parsing/analysis errors with module context
+            raise ModuleError(f"Error loading module '{module_name}': {str(e)}") from e
+
+    def _analyze_module(self, unit: Unit) -> None:
+        """
+        Run semantic analysis on a loaded module.
+        
+        Args:
+            unit: The unit to analyze
+        """
+        # Create a semantic analyzer for the module
+        analyzer = SemanticAnalyzer()
+        
+        # Set up module-aware symbol table
+        unit.interface_symbols.set_current_section_visibility(VisibilityLevel.INTERFACE)
+        analyzer.current_scope = unit.interface_symbols
+        
+        # Analyze interface section
+        if unit.interface_ast:
+            analyzer.visit(unit.interface_ast)
+        
+        # Switch to implementation section
+        unit.implementation_symbols.set_current_section_visibility(VisibilityLevel.IMPLEMENTATION)
+        analyzer.current_scope = unit.implementation_symbols
+        
+        # Analyze implementation section
+        if unit.implementation_ast:
+            analyzer.visit(unit.implementation_ast)
+
+    def _import_module_symbols(self, module: Unit, ar: ActivationRecord) -> None:
+        """
+        Import interface symbols from a module into the current activation record.
+        
+        Args:
+            module: The module to import symbols from
+            ar: The activation record to populate with symbols
+        """
+        # Get interface symbols from the module
+        interface_symbols = module.interface_symbols.get_interface_symbols()
+        
+        for symbol_name, symbol in interface_symbols.items():
+            # Convert symbols to appropriate runtime objects and store in activation record
+            if hasattr(symbol, 'symbol_type'):
+                if symbol.symbol_type.name == 'INTEGER':
+                    ar[symbol_name] = IntegerObject(0)
+                    ar.set_meta(symbol_name, ElementType.INTEGER)
+                elif symbol.symbol_type.name == 'REAL':
+                    ar[symbol_name] = RealObject(0.0)
+                    ar.set_meta(symbol_name, ElementType.REAL)
+                elif symbol.symbol_type.name == 'BOOLEAN':
+                    ar[symbol_name] = BooleanObject(False)
+                    ar.set_meta(symbol_name, ElementType.BOOL)
+                elif symbol.symbol_type.name == 'STRING':
+                    ar[symbol_name] = StringObject("")
+                    ar.set_meta(symbol_name, ElementType.STRING)
+                # For procedures and functions, store the symbol directly
+                # They will be resolved during function calls
+                else:
+                    ar[symbol_name] = symbol
+
+    def _parse_unit_file(self, parser: Parser) -> 'UnitAST':
+        """
+        Basic unit file parser. This is a simplified version until full unit parsing is implemented.
+        
+        Args:
+            parser: The parser instance
+            
+        Returns:
+            A basic unit AST structure
+        """
+        # For now, create a simple structure to hold unit information
+        # This will be replaced when full unit parsing is implemented in earlier tasks
+        
+        class UnitAST:
+            def __init__(self):
+                self.interface_ast = None
+                self.implementation_ast = None
+                self.uses_clause = []
+        
+        unit_ast = UnitAST()
+        
+        # Try to parse as a regular program for now
+        # This is a temporary solution until unit parsing is fully implemented
+        try:
+            program_ast = parser.program()
+            # For now, treat the program block as the implementation
+            unit_ast.implementation_ast = program_ast.block
+            unit_ast.uses_clause = program_ast.uses_clause
+        except Exception:
+            # If parsing as program fails, create empty AST
+            pass
+            
+        return unit_ast
+
     def visit_Program(self, node: Program) -> None:
         program_name = node.name
         self.log(f"ENTER: PROGRAM {program_name}")
 
+        # Create program activation record with module-aware symbol table
         ar = ActivationRecord(
             name=program_name,
             type=ARType.PROGRAM,
             nesting_level=1,
         )
         self.call_stack.push(ar)
+
+        # Process uses clause if present
+        if node.uses_clause:
+            self.log(f"Processing uses clause: {node.uses_clause}")
+            self._load_and_process_modules(node.uses_clause, ar)
 
         self.log(str(self.call_stack))
 
