@@ -22,7 +22,12 @@
   - Write unit tests for error creation and message formatting
   - _Requirements: 2.2, 4.2, 4.3_
 
-- [ ] 3. Refactor parser type_spec method to remove module checking
+- [x] 3. Refactor parser type_spec method to remove module checking
+
+
+
+
+
   - Simplify type_spec() method to return UnresolvedType for ID tokens
   - Remove _is_type_in_imported_modules() method and related module checking code
   - Remove module_registry dependency from Parser constructor
