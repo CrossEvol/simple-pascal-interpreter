@@ -53,7 +53,7 @@ begin
     total := ADD(total, scores[i]);
   end;
   
-  average := DIV(total, 5);
+  average := DIVIDE(total, 5);
   
   writeln('Total: ', total);
   writeln('Average: ', average);
