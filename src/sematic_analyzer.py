@@ -179,32 +179,37 @@ class SemanticAnalyzer(NodeVisitor):
             token=token,
             message=f"{error_code.value} -> {token}",
         )
-    
-    def lookup_symbol(self, name: str, current_scope_only: bool = False) -> Symbol | None:
+
+    def lookup_symbol(
+        self, name: str, current_scope_only: bool = False
+    ) -> Symbol | None:
         """
         Module-aware symbol lookup that uses cross-module resolution when available.
-        
+
         Args:
             name: Symbol name to lookup
             current_scope_only: If True, only search current scope
-            
+
         Returns:
             Symbol if found, None otherwise
         """
         if self.current_scope is None:
             return None
-        
+
         # Import ModuleSymbolTable here to avoid circular imports
         try:
             from src.module import ModuleSymbolTable
-            
+
             # If current scope is a ModuleSymbolTable, use module-aware lookup
-            if isinstance(self.current_scope, ModuleSymbolTable) and not current_scope_only:
+            if (
+                isinstance(self.current_scope, ModuleSymbolTable)
+                and not current_scope_only
+            ):
                 return self.current_scope.lookup_with_modules(name)
         except ImportError:
             # If module system is not available, fall back to standard lookup
             pass
-        
+
         # Fall back to standard lookup
         return self.current_scope.lookup(name, current_scope_only)
 
@@ -215,11 +220,12 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_Program(self, node: Program) -> None:
         self.log("ENTER scope: global")
-        
+
         # Check if we already have a ModuleSymbolTable set up (for module-aware analysis)
         created_new_scope = False
         try:
             from src.module import ModuleSymbolTable
+
             if isinstance(self.current_scope, ModuleSymbolTable):
                 # Use the existing module-aware scope
                 global_scope = self.current_scope
@@ -597,7 +603,20 @@ class SemanticAnalyzer(NodeVisitor):
             type_name = node.type_node.value
         elif isinstance(node.type_node, ClassType):
             self.visit(node.type_node)
-            type_name = SpiUtil.toClassName(type_name)
+            type_name = SpiUtil.toClassName(node.type_node.value)
+        else:
+            # Handle UnresolvedType and other types
+            from src.spi_ast import UnresolvedType
+
+            if isinstance(node.type_node, UnresolvedType):
+                # For UnresolvedType, try to resolve it as a class first
+                class_type_name = SpiUtil.toClassName(node.type_node.type_name)
+                class_symbol = self.lookup_symbol(class_type_name)
+                if class_symbol is not None:
+                    type_name = class_type_name
+                else:
+                    # Fall back to the original type name
+                    type_name = node.type_node.type_name
         type_symbol = self.lookup_symbol(type_name)
 
         # We have all the information we need to create a variable symbol.
@@ -780,9 +799,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         # insert return value into the function scope
         # pascal support implicit return the value has the same name to the function name
-        return_var_symbol = VarSymbol(
-            func_name, self.lookup_symbol(return_type.value)
-        )
+        return_var_symbol = VarSymbol(func_name, self.lookup_symbol(return_type.value))
         self.current_scope.insert(return_var_symbol)
         func_symbol.formal_params.append(return_var_symbol)
 
@@ -826,7 +843,7 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_ExprGet(self, node: ExprGet) -> None:
         # Visit the base object
         self.visit(node.object)
-        
+
         # Visit all the property/index accesses
         for get_item in node.gets:
             self.visit(get_item)
@@ -834,10 +851,33 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_ExprSet(self, node: ExprSet) -> None:
         # Visit the left side (ExprGet)
         self.visit(node.expr_get)
-        
+
         # Visit the right side (value being assigned)
         self.visit(node.value)
-        
+
         # We could add additional checks here, like ensuring the types match
         # or checking if the target is a constant or loop variable that
         # shouldn't be modified, similar to visit_Assign
+
+    def visit_UnresolvedType(self, node) -> None:
+        """
+        Handle UnresolvedType nodes during semantic analysis.
+
+        This method attempts to resolve the type by checking if it's a known
+        class, record, enum, or other type in the current scope.
+        """
+
+        if self.current_scope is None:
+            raise MissingCurrentScopeError()
+
+        # Try to resolve as a class type first
+        class_type_name = SpiUtil.toClassName(node.type_name)
+        symbol = self.lookup_symbol(class_type_name)
+
+        if symbol is None:
+            # Try to resolve as other types (record, enum, etc.)
+            symbol = self.lookup_symbol(node.type_name)
+
+        if symbol is None:
+            # Type not found - this will be handled by the caller
+            pass

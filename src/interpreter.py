@@ -1342,6 +1342,81 @@ class Interpreter(NodeVisitor):
             else:
                 ar[var_name] = var_value
 
+    def _handle_instance_method_call(
+        self,
+        instance_obj: InstanceObject,
+        instance_name: str,
+        method_name: str,
+        ar: ActivationRecord,
+    ) -> Any:
+        """Handle method calls on class instances."""
+        class_name = instance_obj.class_name
+        class_obj: ClassObject = ar.get(class_name)
+        if class_obj is None:
+            raise InterpreterError(f"Class declaration not found for {class_name}")
+
+        # Look for the method in the class object
+        method_def = class_obj.methods.get(method_name)
+        if method_def is None:
+            raise InterpreterError(
+                f"Method '{method_name}' not found in class '{class_name}'"
+            )
+
+        # Handle the method call directly
+        method_full_name = f"{instance_name}.{method_name}"
+
+        # Create method activation record
+        method_ar = ActivationRecord(
+            name=method_full_name,
+            type=ARType.METHOD,
+            nesting_level=2,
+        )
+
+        # Copy current AR and instance fields to method AR
+        method_ar.copy_from(ar, False)
+        for k, v in instance_obj.fields.items():
+            method_ar[k] = v
+
+        self.call_stack.push(method_ar)
+        self.log(f"ENTER: METHOD {method_full_name}")
+        self.log(str(self.call_stack))
+
+        # Try to find the method implementation in the activation record
+        raw_class_name = SpiUtil.extraClassName(class_name)
+        method_impl_name = f"{raw_class_name}.{method_name}"
+        method_impl = ar.get(method_impl_name)
+
+        if method_impl is not None and hasattr(method_impl, "block_ast"):
+            # Execute the method implementation
+            self.visit(method_impl.block_ast)
+        else:
+            # Method implementation not found, handle as a simple getter
+            if method_def.method_type == MethodType.FUNCTION:
+                # For getter methods, try to return the corresponding field
+                if method_name.startswith("get") and len(method_name) > 3:
+                    field_name = method_name[3:].lower()  # getName -> name
+                    if field_name in method_ar.members:
+                        method_ar[method_name] = method_ar[field_name]
+                elif method_name.lower() in method_ar.members:
+                    # Direct field access
+                    method_ar[method_name] = method_ar[method_name.lower()]
+
+        self.log(f"LEAVE: METHOD {method_full_name}")
+        self.log(str(self.call_stack))
+
+        # Update instance fields with values from method AR
+        for k in instance_obj.fields.keys():
+            if k in method_ar.members:
+                instance_obj.fields[k] = method_ar[k]
+
+        # Get return value
+        return_value = None
+        if method_def.method_type == MethodType.FUNCTION:
+            return_value = method_ar.get(method_name)
+
+        self.call_stack.pop()
+        return return_value
+
     def visit_Var(self, node: Var) -> Any:
         var_name = node.value
 
@@ -1362,6 +1437,20 @@ class Interpreter(NodeVisitor):
                     return record_obj[type_key]
                 else:
                     raise InterpreterError(f"Expected record instance for {type_name}")
+            elif meta.is_instance:
+                # Handle class instance field access or method call
+                instance_obj = ar.get(type_name)
+                if isinstance(instance_obj, InstanceObject):
+                    # First check if it's a field access
+                    if type_key in instance_obj.fields:
+                        return instance_obj.fields[type_key]
+                    else:
+                        # This is a method call without parentheses
+                        return self._handle_instance_method_call(
+                            instance_obj, type_name, type_key, ar
+                        )
+                else:
+                    raise InterpreterError(f"Expected instance object for {type_name}")
             else:
                 raise InterpreterError(f"Unknown compound variable type: {var_name}")
         else:
