@@ -60,14 +60,24 @@
   - Write unit tests for unresolved type handling in interpreter
   - _Requirements: 2.1, 2.3, 3.3_
 
-- [ ] 6. Update array initialization to handle unresolved element types
+- [x] 6. Update array initialization to handle unresolved element types
+
+
+
+
+
   - Modify __initArray() method to resolve UnresolvedType element types
   - Ensure proper type resolution before array element initialization
   - Add error handling for type resolution failures in array context
   - Write unit tests for array initialization with various element types
   - _Requirements: 2.3, 2.4_
 
-- [ ] 7. Update variable declaration handling for unresolved types
+- [x] 7. Update variable declaration handling for unresolved types
+
+
+
+
+
   - Modify visit_VarDecl() to resolve UnresolvedType nodes
   - Ensure proper type validation during variable declaration processing
   - Add context information for better error messages

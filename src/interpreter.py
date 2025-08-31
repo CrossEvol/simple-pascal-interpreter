@@ -402,97 +402,260 @@ class Interpreter(NodeVisitor):
         self.visit(node.compound_statement)
 
     def visit_VarDecl(self, node: VarDecl) -> None:
+        """
+        Process variable declarations with enhanced type resolution and error handling.
+        
+        This method handles both concrete types and unresolved types, providing
+        comprehensive error messages with context information when type resolution fails.
+        
+        Args:
+            node: VarDecl AST node containing variable name and type information
+            
+        Raises:
+            TypeResolutionError: When type resolution fails with contextual information
+        """
         ar = self.call_stack.peek()
-        if node.type_node.token.type == TokenType.BOOLEAN:
-            ar[node.var_node.value] = BooleanObject(False)
-            ar.set_meta(key=node.var_node.value, type=ElementType.BOOL)
-        elif node.type_node.token.type == TokenType.INTEGER:
-            ar[node.var_node.value] = IntegerObject(0)
-            ar.set_meta(key=node.var_node.value, type=ElementType.INTEGER)
-        elif node.type_node.token.type == TokenType.REAL:
-            ar[node.var_node.value] = RealObject(0.0)
-            ar.set_meta(key=node.var_node.value, type=ElementType.REAL)
-        elif node.type_node.token.type == TokenType.STRING:
-            ar[node.var_node.value] = StringObject("")
-            string_node = cast(StringType, node.type_node)
-            limit: int = 255
-            if string_node.limit is not None:
-                limit = self.visit(string_node.limit)
-            ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
-            ar.set_limit(key=node.var_node.value, limit=limit)
-        elif node.type_node.token.type == TokenType.ARRAY:
-            elements, element_type = self.__initArray(node.type_node)
-            ar[node.var_node.value] = ArrayObject(elements, element_type)
-            ar.set_meta(key=node.var_node.value, type=ElementType.ARRAY)
-            if (cast(ArrayType, node.type_node)).dynamic is True:
-                ar.set_dynamic(node.var_node.value, True)
-        elif node.type_node.token.type == TokenType.RECORD:
-            # TODO: should write this in recursion
+        var_name = node.var_node.value
+        
+        try:
+            # Handle concrete types first
+            if node.type_node.token.type == TokenType.BOOLEAN:
+                ar[var_name] = BooleanObject(False)
+                ar.set_meta(key=var_name, type=ElementType.BOOL)
+            elif node.type_node.token.type == TokenType.INTEGER:
+                ar[var_name] = IntegerObject(0)
+                ar.set_meta(key=var_name, type=ElementType.INTEGER)
+            elif node.type_node.token.type == TokenType.REAL:
+                ar[var_name] = RealObject(0.0)
+                ar.set_meta(key=var_name, type=ElementType.REAL)
+            elif node.type_node.token.type == TokenType.STRING:
+                ar[var_name] = StringObject("")
+                string_node = cast(StringType, node.type_node)
+                limit: int = 255
+                if string_node.limit is not None:
+                    limit = self.visit(string_node.limit)
+                ar.set_meta(key=var_name, type=ElementType.STRING)
+                ar.set_limit(key=var_name, limit=limit)
+            elif node.type_node.token.type == TokenType.ARRAY:
+                elements, element_type = self.__initArray(node.type_node)
+                ar[var_name] = ArrayObject(elements, element_type)
+                ar.set_meta(key=var_name, type=ElementType.ARRAY)
+                if (cast(ArrayType, node.type_node)).dynamic is True:
+                    ar.set_dynamic(var_name, True)
+            elif node.type_node.token.type == TokenType.RECORD:
+                self._handle_record_var_decl(node, ar, var_name)
+            elif node.type_node.token.type == TokenType.CLASS:
+                self._handle_class_var_decl(node, ar, var_name)
+            elif isinstance(node.type_node, UnresolvedType):
+                # Handle unresolved types with enhanced error context
+                self._handle_unresolved_type_var_decl(node, ar, var_name)
+            else:
+                # Unknown type - should not happen with proper parsing
+                raise TypeResolutionError(
+                    f"Unknown type token '{node.type_node.token.type}' for variable '{var_name}' at line {node.type_node.token.lineno}",
+                    token=node.type_node.token
+                )
+                
+        except TypeResolutionError as e:
+            # Re-raise with additional context about the variable declaration
+            context_message = f"Failed to declare variable '{var_name}'"
+            if hasattr(node.var_node, 'token') and node.var_node.token:
+                context_message += f" at line {node.var_node.token.lineno}"
+            
+            # Combine original error with context
+            enhanced_message = f"{context_message}: {str(e)}"
+            
+            raise TypeResolutionError(
+                enhanced_message,
+                suggestions=getattr(e, 'suggestions', []),
+                token=getattr(e, 'token', node.type_node.token)
+            ) from e
+        except Exception as e:
+            # Handle unexpected errors during variable declaration
+            error_message = f"Unexpected error during variable declaration for '{var_name}'"
+            if hasattr(node.var_node, 'token') and node.var_node.token:
+                error_message += f" at line {node.var_node.token.lineno}"
+            error_message += f": {str(e)}"
+            
+            raise InterpreterError(
+                message=error_message,
+                token=getattr(node.var_node, 'token', None)
+            ) from e
+
+    def _handle_record_var_decl(self, node: VarDecl, ar: ActivationRecord, var_name: str) -> None:
+        """Handle variable declaration for record types."""
+        try:
             record_class: RecordClassObject = ar.get(node.type_node.token.value)
+            if record_class is None:
+                raise TypeResolutionError(
+                    f"Record type '{node.type_node.token.value}' not found for variable '{var_name}'",
+                    token=node.type_node.token
+                )
+            
             fields: dict[str, Any] = record_class.fields.copy()
-            ar[node.var_node.value] = RecordInstanceObject(
+            ar[var_name] = RecordInstanceObject(
                 record_name=record_class.record_name, fields=fields
             )
-            ar.set_meta(node.var_node.value, ElementType.RECORD_CLASS)
-            ar.set_is_record_instance(node.var_node.value)
-            ar.set_ref_record_name(node.var_node.value, record_class.record_name)
-        elif node.type_node.token.type == TokenType.CLASS:
-            # TODO: should write this in recursion
+            ar.set_meta(var_name, ElementType.RECORD_CLASS)
+            ar.set_is_record_instance(var_name)
+            ar.set_ref_record_name(var_name, record_class.record_name)
+        except Exception as e:
+            raise TypeResolutionError(
+                f"Failed to initialize record variable '{var_name}' of type '{node.type_node.token.value}': {str(e)}",
+                token=node.type_node.token
+            ) from e
+
+    def _handle_class_var_decl(self, node: VarDecl, ar: ActivationRecord, var_name: str) -> None:
+        """Handle variable declaration for class types."""
+        try:
             class_decl: ClassDecl = ar.get(
                 SpiUtil.toClassName(node.type_node.token.value)
             )
+            if class_decl is None:
+                raise TypeResolutionError(
+                    f"Class type '{node.type_node.token.value}' not found for variable '{var_name}'",
+                    token=node.type_node.token
+                )
+            
             fields = class_decl.fields.copy()
-            ar[node.var_node.value] = InstanceObject(class_decl.class_name, fields)
-            ar.set_meta(node.var_node.value, ElementType.INSTANCE)
-            ar.set_is_instance(node.var_node.value, True)
-            ar.set_ref_class_name(node.var_node.value, class_decl.class_name)
-        elif isinstance(node.type_node, UnresolvedType):
+            ar[var_name] = InstanceObject(class_decl.class_name, fields)
+            ar.set_meta(var_name, ElementType.INSTANCE)
+            ar.set_is_instance(var_name, True)
+            ar.set_ref_class_name(var_name, class_decl.class_name)
+        except Exception as e:
+            raise TypeResolutionError(
+                f"Failed to initialize class variable '{var_name}' of type '{node.type_node.token.value}': {str(e)}",
+                token=node.type_node.token
+            ) from e
+
+    def _handle_unresolved_type_var_decl(self, node: VarDecl, ar: ActivationRecord, var_name: str) -> None:
+        """
+        Handle variable declaration for unresolved types with comprehensive error handling.
+        
+        Args:
+            node: VarDecl AST node
+            ar: Current activation record
+            var_name: Name of the variable being declared
+            
+        Raises:
+            TypeResolutionError: When type resolution fails with enhanced context
+        """
+        try:
             # Resolve the type during interpretation
             resolved_type = self.visit_UnresolvedType(node.type_node)
-
+            
             # Handle the resolved type appropriately
             if isinstance(resolved_type, PrimitiveType):
-                if resolved_type.token.type == TokenType.BOOLEAN:
-                    ar[node.var_node.value] = BooleanObject(False)
-                    ar.set_meta(key=node.var_node.value, type=ElementType.BOOL)
-                elif resolved_type.token.type == TokenType.INTEGER:
-                    ar[node.var_node.value] = IntegerObject(0)
-                    ar.set_meta(key=node.var_node.value, type=ElementType.INTEGER)
-                elif resolved_type.token.type == TokenType.REAL:
-                    ar[node.var_node.value] = RealObject(0.0)
-                    ar.set_meta(key=node.var_node.value, type=ElementType.REAL)
+                self._handle_resolved_primitive_type(resolved_type, ar, var_name)
             elif isinstance(resolved_type, StringType):
-                ar[node.var_node.value] = StringObject("")
-                limit: int = 255
-                if resolved_type.limit is not None:
-                    limit = self.visit(resolved_type.limit)
-                ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
-                ar.set_limit(key=node.var_node.value, limit=limit)
+                self._handle_resolved_string_type(resolved_type, ar, var_name)
+            elif isinstance(resolved_type, ArrayType):
+                self._handle_resolved_array_type(resolved_type, ar, var_name)
             elif isinstance(resolved_type, ClassType):
-                class_decl: ClassDecl = ar.get(
-                    SpiUtil.toClassName(resolved_type.token.value)
-                )
-                fields = class_decl.fields.copy()
-                ar[node.var_node.value] = InstanceObject(class_decl.class_name, fields)
-                ar.set_meta(node.var_node.value, ElementType.INSTANCE)
-                ar.set_is_instance(node.var_node.value, True)
-                ar.set_ref_class_name(node.var_node.value, class_decl.class_name)
+                self._handle_resolved_class_type(resolved_type, ar, var_name)
             elif isinstance(resolved_type, RecordType):
-                record_class: RecordClassObject = ar.get(resolved_type.token.value)
-                fields: dict[str, Any] = record_class.fields.copy()
-                ar[node.var_node.value] = RecordInstanceObject(
-                    record_name=record_class.record_name, fields=fields
-                )
-                ar.set_meta(node.var_node.value, ElementType.RECORD_CLASS)
-                ar.set_is_record_instance(node.var_node.value)
-                ar.set_ref_record_name(node.var_node.value, record_class.record_name)
+                self._handle_resolved_record_type(resolved_type, ar, var_name)
             elif isinstance(resolved_type, EnumType):
-                # Handle enum type variables
-                enum_decl: EnumDecl = ar.get(resolved_type.token.value)
-                ar[node.var_node.value] = enum_decl
-                ar.set_meta(node.var_node.value, ElementType.ENUM)
-                ar.set_is_enum(node.var_node.value)
-        pass
+                self._handle_resolved_enum_type(resolved_type, ar, var_name)
+            else:
+                # Unknown resolved type
+                raise TypeResolutionError(
+                    f"Unsupported resolved type '{type(resolved_type).__name__}' for variable '{var_name}' with type '{node.type_node.type_name}'",
+                    token=node.type_node.token
+                )
+                
+        except TypeResolutionError:
+            # Re-raise type resolution errors as-is (they already have good context)
+            raise
+        except Exception as e:
+            # Handle unexpected errors during unresolved type processing
+            raise TypeResolutionError(
+                f"Unexpected error resolving type '{node.type_node.type_name}' for variable '{var_name}': {str(e)}",
+                token=node.type_node.token
+            ) from e
+
+    def _handle_resolved_primitive_type(self, resolved_type: PrimitiveType, ar: ActivationRecord, var_name: str) -> None:
+        """Handle resolved primitive types for variable declarations."""
+        if resolved_type.token.type == TokenType.BOOLEAN:
+            ar[var_name] = BooleanObject(False)
+            ar.set_meta(key=var_name, type=ElementType.BOOL)
+        elif resolved_type.token.type == TokenType.INTEGER:
+            ar[var_name] = IntegerObject(0)
+            ar.set_meta(key=var_name, type=ElementType.INTEGER)
+        elif resolved_type.token.type == TokenType.REAL:
+            ar[var_name] = RealObject(0.0)
+            ar.set_meta(key=var_name, type=ElementType.REAL)
+        else:
+            raise TypeResolutionError(
+                f"Unsupported primitive type '{resolved_type.token.type}' for variable '{var_name}'",
+                token=resolved_type.token
+            )
+
+    def _handle_resolved_string_type(self, resolved_type: StringType, ar: ActivationRecord, var_name: str) -> None:
+        """Handle resolved string types for variable declarations."""
+        ar[var_name] = StringObject("")
+        limit: int = 255
+        if resolved_type.limit is not None:
+            limit = self.visit(resolved_type.limit)
+        ar.set_meta(key=var_name, type=ElementType.STRING)
+        ar.set_limit(key=var_name, limit=limit)
+
+    def _handle_resolved_array_type(self, resolved_type: ArrayType, ar: ActivationRecord, var_name: str) -> None:
+        """Handle resolved array types for variable declarations."""
+        elements, element_type = self.__initArray(resolved_type)
+        ar[var_name] = ArrayObject(elements, element_type)
+        ar.set_meta(key=var_name, type=ElementType.ARRAY)
+        if resolved_type.dynamic is True:
+            ar.set_dynamic(var_name, True)
+
+    def _handle_resolved_class_type(self, resolved_type: ClassType, ar: ActivationRecord, var_name: str) -> None:
+        """Handle resolved class types for variable declarations."""
+        class_name = SpiUtil.toClassName(resolved_type.token.value)
+        class_decl: ClassDecl = ar.get(class_name)
+        
+        if class_decl is None:
+            raise TypeResolutionError(
+                f"Class '{resolved_type.token.value}' not found in current scope for variable '{var_name}'",
+                token=resolved_type.token
+            )
+        
+        fields = class_decl.fields.copy()
+        ar[var_name] = InstanceObject(class_decl.class_name, fields)
+        ar.set_meta(var_name, ElementType.INSTANCE)
+        ar.set_is_instance(var_name, True)
+        ar.set_ref_class_name(var_name, class_decl.class_name)
+
+    def _handle_resolved_record_type(self, resolved_type: RecordType, ar: ActivationRecord, var_name: str) -> None:
+        """Handle resolved record types for variable declarations."""
+        record_class: RecordClassObject = ar.get(resolved_type.token.value)
+        
+        if record_class is None:
+            raise TypeResolutionError(
+                f"Record '{resolved_type.token.value}' not found in current scope for variable '{var_name}'",
+                token=resolved_type.token
+            )
+        
+        fields: dict[str, Any] = record_class.fields.copy()
+        ar[var_name] = RecordInstanceObject(
+            record_name=record_class.record_name, fields=fields
+        )
+        ar.set_meta(var_name, ElementType.RECORD_CLASS)
+        ar.set_is_record_instance(var_name)
+        ar.set_ref_record_name(var_name, record_class.record_name)
+
+    def _handle_resolved_enum_type(self, resolved_type: EnumType, ar: ActivationRecord, var_name: str) -> None:
+        """Handle resolved enum types for variable declarations."""
+        enum_decl: EnumDecl = ar.get(resolved_type.token.value)
+        
+        if enum_decl is None:
+            raise TypeResolutionError(
+                f"Enum '{resolved_type.token.value}' not found in current scope for variable '{var_name}'",
+                token=resolved_type.token
+            )
+        
+        ar[var_name] = enum_decl
+        ar.set_meta(var_name, ElementType.ENUM)
+        ar.set_is_enum(var_name)
 
     def __set_member_type(self, node: VarDecl, ar: ActivationRecord):
         if isinstance(node.type_node, ArrayType):
@@ -545,7 +708,15 @@ class Interpreter(NodeVisitor):
                         elements[i] = ArrayObject(sub_elements, sub_element_type)
             elif isinstance(node.element_type, UnresolvedType):
                 # Resolve the element type during array initialization
-                resolved_element_type = self.visit_UnresolvedType(node.element_type)
+                try:
+                    resolved_element_type = self.visit_UnresolvedType(node.element_type)
+                except TypeResolutionError as e:
+                    # Add array context to the error message
+                    raise TypeResolutionError(
+                        f"Failed to resolve array element type '{node.element_type.type_name}' at line {node.element_type.token.lineno}: {str(e)}",
+                        suggestions=e.suggestions,
+                        token=node.element_type.token
+                    ) from e
 
                 # Handle the resolved element type
                 if isinstance(resolved_element_type, PrimitiveType):
@@ -577,9 +748,63 @@ class Interpreter(NodeVisitor):
                                 resolved_element_type
                             )
                             elements[i] = ArrayObject(sub_elements, sub_element_type)
+                elif isinstance(resolved_element_type, ClassType):
+                    # Handle class type arrays
+                    element_type = ElementType.INSTANCE
+                    if node.dynamic is False:
+                        ar = self.call_stack.peek()
+                        class_decl: ClassDecl = ar.get(
+                            SpiUtil.toClassName(resolved_element_type.token.value)
+                        )
+                        if class_decl is None:
+                            raise TypeResolutionError(
+                                f"Class '{resolved_element_type.token.value}' not found for array element initialization",
+                                token=resolved_element_type.token
+                            )
+                        for i in range(lower_bound.value, upper_bound.value + 1):
+                            fields = class_decl.fields.copy()
+                            elements[i] = InstanceObject(class_decl.class_name, fields)
+                elif isinstance(resolved_element_type, RecordType):
+                    # Handle record type arrays
+                    element_type = ElementType.RECORD_CLASS
+                    if node.dynamic is False:
+                        ar = self.call_stack.peek()
+                        record_class: RecordClassObject = ar.get(resolved_element_type.token.value)
+                        if record_class is None:
+                            raise TypeResolutionError(
+                                f"Record '{resolved_element_type.token.value}' not found for array element initialization",
+                                token=resolved_element_type.token
+                            )
+                        for i in range(lower_bound.value, upper_bound.value + 1):
+                            fields: dict[str, Any] = record_class.fields.copy()
+                            elements[i] = RecordInstanceObject(
+                                record_name=record_class.record_name, fields=fields
+                            )
+                elif isinstance(resolved_element_type, EnumType):
+                    # Handle enum type arrays
+                    element_type = ElementType.ENUM
+                    if node.dynamic is False:
+                        ar = self.call_stack.peek()
+                        enum_decl: EnumDecl = ar.get(resolved_element_type.token.value)
+                        if enum_decl is None:
+                            raise TypeResolutionError(
+                                f"Enum '{resolved_element_type.token.value}' not found for array element initialization",
+                                token=resolved_element_type.token
+                            )
+                        for i in range(lower_bound.value, upper_bound.value + 1):
+                            # Initialize with the first enum value or a default enum object
+                            if enum_decl.entries:
+                                first_index = list(enum_decl.entries.keys())[0]
+                                first_value = enum_decl.entries[first_index]
+                                elements[i] = EnumObject(first_index, first_value)
+                            else:
+                                elements[i] = EnumObject(0, "")
                 else:
-                    # For complex types (classes, records, enums), use default element type
-                    element_type = ElementType.INTEGER  # Default fallback
+                    # Unknown resolved type
+                    raise TypeResolutionError(
+                        f"Unsupported array element type '{type(resolved_element_type).__name__}' for type '{node.element_type.type_name}'",
+                        token=node.element_type.token
+                    )
             return elements, element_type
         raise UnknownTypeError()
 
