@@ -121,11 +121,17 @@ class TypeResolver:
             unresolved_type.resolved_type = result.resolved_type
             return result.resolved_type
         else:
-            # Resolution failed, raise error with suggestions
+            # Resolution failed, raise enhanced error with comprehensive context
+            available_types = self._collect_available_types(context)
+            error_context = self._build_error_context(context)
+            
             raise TypeResolutionError(
                 message=result.error_message or f"Unknown type '{type_name}'",
                 suggestions=result.suggestions,
                 token=unresolved_type.token,
+                context=error_context,
+                available_types=available_types,
+                error_phase="type resolution"
             )
 
     def _attempt_type_resolution(
@@ -172,14 +178,18 @@ class TypeResolver:
         if primitive_result.success:
             return primitive_result
 
-        # Type not found - generate suggestions and error message
+        # Type not found - generate suggestions and comprehensive error info
         suggestions = self._get_type_suggestions(type_name, context)
+        available_types = self._collect_available_types(context)
+        error_context = self._build_error_context(context)
         error_message = self._format_type_resolution_error(
             type_name, token, context, suggestions
         )
 
         return TypeResolutionResult(
-            success=False, error_message=error_message, suggestions=suggestions
+            success=False, 
+            error_message=error_message, 
+            suggestions=suggestions
         )
 
     def _resolve_from_modules(
@@ -332,39 +342,7 @@ class TypeResolver:
         Returns:
             Formatted error message string
         """
-        message = f"Unknown type '{type_name}'"
-
-        if token and hasattr(token, "lineno"):
-            message += f" at line {token.lineno}"
-            if hasattr(token, "column"):
-                message += f", column {token.column}"
-
-        # Add available types information
-        available_types = []
-        if context.local_classes:
-            available_types.extend([f"Class: {cls}" for cls in context.local_classes])
-        if context.local_enums:
-            available_types.extend([f"Enum: {enum}" for enum in context.local_enums])
-        if context.local_records:
-            available_types.extend([f"Record: {rec}" for rec in context.local_records])
-
-        if available_types:
-            message += f"\n  Available local types: {', '.join(available_types)}"
-
-        # Add imported module types
-        if self.module_registry and context.imported_modules:
-            imported_types = []
-            for module_name in context.imported_modules:
-                module = self.module_registry.get_module(module_name)
-                if module and module.is_loaded:
-                    interface_symbols = module.interface_symbols.get_interface_symbols()
-                    for symbol_name in interface_symbols.keys():
-                        imported_types.append(f"{module_name}.{symbol_name}")
-
-            if imported_types:
-                message += f"\n  Available imported types: {', '.join(imported_types)}"
-
-        return message
+        return f"Unknown type '{type_name}'"
 
     def _create_cache_key(self, type_name: str, context: TypeResolutionContext) -> str:
         """
@@ -413,6 +391,71 @@ class TypeResolver:
             "cached_types": list(self._type_cache.keys()),
         }
 
+    def _collect_available_types(self, context: TypeResolutionContext) -> List[str]:
+        """
+        Collect all available types from the current context.
+
+        Args:
+            context: Resolution context
+
+        Returns:
+            List of all available type names
+        """
+        available_types = []
+
+        # Add primitive types
+        available_types.extend(["Integer", "Real", "Boolean", "String"])
+
+        # Add local types with prefixes for clarity
+        if context.local_classes:
+            available_types.extend([f"Class:{cls}" for cls in context.local_classes])
+        if context.local_enums:
+            available_types.extend([f"Enum:{enum}" for enum in context.local_enums])
+        if context.local_records:
+            available_types.extend([f"Record:{rec}" for rec in context.local_records])
+
+        # Add types from imported modules
+        if self.module_registry and context.imported_modules:
+            for module_name in context.imported_modules:
+                module = self.module_registry.get_module(module_name)
+                if module and module.is_loaded:
+                    interface_symbols = module.interface_symbols.get_interface_symbols()
+                    for symbol_name in interface_symbols.keys():
+                        available_types.append(f"{module_name}.{symbol_name}")
+
+        return sorted(list(set(available_types)))
+
+    def _build_error_context(self, context: TypeResolutionContext) -> str:
+        """
+        Build contextual information string for error messages.
+
+        Args:
+            context: Resolution context
+
+        Returns:
+            Context description string
+        """
+        context_parts = []
+
+        if context.current_module:
+            context_parts.append(f"in module '{context.current_module}'")
+
+        if context.imported_modules:
+            context_parts.append(f"with imports: {', '.join(context.imported_modules)}")
+
+        local_type_counts = []
+        if context.local_classes:
+            local_type_counts.append(f"{len(context.local_classes)} classes")
+        if context.local_enums:
+            local_type_counts.append(f"{len(context.local_enums)} enums")
+        if context.local_records:
+            local_type_counts.append(f"{len(context.local_records)} records")
+
+        if local_type_counts:
+            context_parts.append(f"local types: {', '.join(local_type_counts)}")
+
+        return "; ".join(context_parts) if context_parts else "no additional context"
+
     def resolve_qualified_type(
         self, module_name: str, type_name: str, token: Token
     ) -> Type:
@@ -434,14 +477,24 @@ class TypeResolver:
             raise TypeResolutionError(
                 message=f"Cannot resolve qualified type '{module_name}.{type_name}' - no module registry available",
                 token=token,
+                context="qualified type resolution without module registry",
+                error_phase="qualified type resolution"
             )
 
         module = self.module_registry.get_module(module_name)
         if not module or not module.is_loaded:
+            # Collect available modules for suggestions
+            available_modules = []
+            if self.module_registry:
+                available_modules = list(self.module_registry.loaded_modules.keys())
+            
             raise TypeResolutionError(
                 message=f"Module '{module_name}' not found or not loaded",
                 suggestions=[f"Ensure '{module_name}' is imported and available"],
                 token=token,
+                context=f"qualified type resolution for '{module_name}.{type_name}'",
+                available_types=[f"Module:{mod}" for mod in available_modules],
+                error_phase="module resolution"
             )
 
         # Check if the type exists in the module's interface symbols
@@ -455,12 +508,11 @@ class TypeResolver:
 
             raise TypeResolutionError(
                 message=f"Type '{type_name}' not found in module '{module_name}'",
-                suggestions=suggestions
-                if suggestions
-                else [
-                    f"Available types in {module_name}: {', '.join(available_symbols)}"
-                ],
+                suggestions=suggestions,
                 token=token,
+                context=f"qualified type resolution in module '{module_name}'",
+                available_types=[f"{module_name}.{sym}" for sym in available_symbols],
+                error_phase="qualified type resolution"
             )
 
         symbol = interface_symbols[type_name]

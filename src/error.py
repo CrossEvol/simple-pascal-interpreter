@@ -60,6 +60,48 @@ class ParserError(Error):
     pass
 
 
+class SyntaxError(ParserError):
+    """Raised for pure syntax errors during parsing phase."""
+    
+    def __init__(
+        self, 
+        message: str, 
+        token: Token = None,
+        expected: str = None,
+        got: str = None
+    ) -> None:
+        self.token = token
+        self.expected = expected
+        self.got = got
+        
+        # Format syntax error message with location
+        formatted_message = self._format_syntax_message(message)
+        
+        super().__init__(message=formatted_message, token=token)
+    
+    def _format_syntax_message(self, base_message: str) -> str:
+        """Format a clear syntax error message with location information."""
+        lines = []
+        
+        # Main error message with location if available
+        if self.token and hasattr(self.token, 'lineno') and self.token.lineno > 0:
+            location = f" at line {self.token.lineno}"
+            if hasattr(self.token, 'column') and self.token.column > 0:
+                location += f", column {self.token.column}"
+            lines.append(f"Syntax Error: {base_message}{location}")
+        else:
+            lines.append(f"Syntax Error: {base_message}")
+        
+        # Add expected vs got information if available
+        if self.expected and self.got:
+            lines.append(f"  Expected: {self.expected}")
+            lines.append(f"  Got: {self.got}")
+        elif self.expected:
+            lines.append(f"  Expected: {self.expected}")
+        
+        return '\n'.join(lines)
+
+
 class InvalidCaseStatementError(ParserError):
     pass
 
@@ -150,16 +192,60 @@ class TooManyParametersError(ParameterCountError):
 class TypeResolutionError(SemanticError):
     """Raised when type resolution fails during semantic analysis or interpretation."""
     
-    def __init__(self, message: str, suggestions: list[str] = None, token: Token = None) -> None:
+    def __init__(
+        self, 
+        message: str, 
+        suggestions: list[str] = None, 
+        token: Token = None,
+        context: str = None,
+        available_types: list[str] = None,
+        error_phase: str = "type resolution"
+    ) -> None:
         self.suggestions = suggestions or []
         self.token = token
+        self.context = context
+        self.available_types = available_types or []
+        self.error_phase = error_phase
         
-        # Format the error message with suggestions if available
-        formatted_message = message
-        if self.suggestions:
-            formatted_message += f"\n  Did you mean: {', '.join(self.suggestions)}?"
+        # Format comprehensive error message
+        formatted_message = self._format_comprehensive_message(message)
         
         super().__init__(message=formatted_message, token=token)
+    
+    def _format_comprehensive_message(self, base_message: str) -> str:
+        """Format a comprehensive error message with all available context."""
+        lines = []
+        
+        # Main error message with location if available
+        if self.token and hasattr(self.token, 'lineno') and self.token.lineno > 0:
+            location = f" at line {self.token.lineno}"
+            if hasattr(self.token, 'column') and self.token.column > 0:
+                location += f", column {self.token.column}"
+            lines.append(f"Semantic Error ({self.error_phase}): {base_message}{location}")
+        else:
+            lines.append(f"Semantic Error ({self.error_phase}): {base_message}")
+        
+        # Add context information if available
+        if self.context:
+            lines.append(f"  Context: {self.context}")
+        
+        # Add suggestions if available
+        if self.suggestions:
+            if len(self.suggestions) == 1:
+                lines.append(f"  Did you mean: {self.suggestions[0]}?")
+            else:
+                lines.append(f"  Did you mean: {', '.join(self.suggestions)}?")
+        
+        # Add available types if provided and not too many
+        if self.available_types and len(self.available_types) <= 10:
+            lines.append(f"  Available types: {', '.join(self.available_types)}")
+        elif self.available_types and len(self.available_types) > 10:
+            # Show first 8 and indicate there are more
+            shown_types = self.available_types[:8]
+            remaining_count = len(self.available_types) - 8
+            lines.append(f"  Available types: {', '.join(shown_types)} (and {remaining_count} more)")
+        
+        return '\n'.join(lines)
 
 
 ###############################################################################

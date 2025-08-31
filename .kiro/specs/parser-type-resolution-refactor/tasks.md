@@ -97,7 +97,12 @@
   - Write unit tests to verify parser no longer loads modules
   - _Requirements: 1.2, 1.4, 3.4_
 
-- [ ] 9. Enhance error messages for type resolution failures
+- [x] 9. Enhance error messages for type resolution failures
+
+
+
+
+
   - Implement clear distinction between syntax and semantic errors
   - Add contextual information to type resolution error messages
   - Include line numbers and column information in error reports

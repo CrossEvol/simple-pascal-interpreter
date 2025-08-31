@@ -329,10 +329,10 @@ class TestTypeResolver:
             self.type_resolver.resolve_type(unresolved, context)
         
         error_message = str(exc_info.value)
-        assert "Available local types" in error_message
-        assert "GoodClass" in error_message
-        assert "GoodEnum" in error_message
-        assert "GoodRecord" in error_message
+        assert "Available types:" in error_message
+        assert "Class:GoodClass" in error_message
+        assert "Enum:GoodEnum" in error_message
+        assert "Record:GoodRecord" in error_message
 
     def test_resolution_priority_order(self):
         """Test that type resolution follows correct priority order."""
