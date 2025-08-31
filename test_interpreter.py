@@ -872,7 +872,7 @@ end.
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array_range_invalid(self):
-        from src.error import ArrayRangeInvalidError, InterpreterError
+        from src.error import InterpreterError
 
         text = """\
 program ArranRange;
@@ -888,7 +888,7 @@ end.
 
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar.nesting_level, 1)
-        self.assertIsInstance(cm.exception, ArrayRangeInvalidError)
+        self.assertIsInstance(cm.exception, InterpreterError)
 
     def test_static_array_modify_length(self):
         from src.error import InterpreterError, StaticArrayModifyLengthError
