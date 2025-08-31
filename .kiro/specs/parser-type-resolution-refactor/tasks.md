@@ -122,14 +122,24 @@
   - Write unit tests for interpreter setup with type resolution
   - _Requirements: 2.1, 3.1, 3.2_
 
-- [ ] 11. Add comprehensive integration tests
+- [x] 11. Add comprehensive integration tests
+
+
+
+
+
   - Write end-to-end tests for parsing and type resolution workflow
   - Test programs with various type references (local and imported)
   - Verify error handling for unknown types with helpful messages
   - Test performance improvements from removing parser module loading
   - _Requirements: 1.5, 2.5, 3.4, 4.5_
 
-- [ ] 12. Update existing tests for parser changes
+- [x] 12. Update existing tests for parser changes
+
+
+
+
+
   - Modify existing parser tests to expect UnresolvedType nodes for ID tokens
   - Update interpreter tests to handle new type resolution workflow
   - Fix any broken tests due to parser refactoring changes
