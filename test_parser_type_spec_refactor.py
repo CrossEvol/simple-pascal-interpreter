@@ -142,8 +142,8 @@ class TestParserTypeSpecRefactor(unittest.TestCase):
         # Uses clause should be parsed
         self.assertEqual(program.uses_clause, ["Module1", "Module2"])
         
-        # Parser should track imported modules
-        self.assertEqual(parser.imported_modules, ["Module1", "Module2"])
+        # Parser should no longer track imported modules
+        self.assertFalse(hasattr(parser, 'imported_modules'))
 
     def test_local_types_still_work_in_type_declarations(self):
         """Test that locally declared types still work correctly."""
@@ -182,6 +182,53 @@ class TestParserTypeSpecRefactor(unittest.TestCase):
         
         # Should be a syntax error, not a type resolution error
         self.assertEqual(cm.exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
+
+    def test_parser_no_module_loading_attributes(self):
+        """Test that parser no longer has module loading related attributes."""
+        parser = self.makeParser("program Test; begin end.")
+        
+        # Parser should not have imported_modules attribute
+        self.assertFalse(hasattr(parser, 'imported_modules'))
+        
+        # Parser should not have any module registry
+        self.assertFalse(hasattr(parser, 'module_registry'))
+
+    def test_parser_no_module_loading_methods(self):
+        """Test that parser no longer has module loading methods."""
+        parser = self.makeParser("program Test; begin end.")
+        
+        # Parser should not have _load_and_analyze_module method
+        self.assertFalse(hasattr(parser, '_load_and_analyze_module'))
+        
+        # Parser should not have _is_type_in_imported_modules method
+        self.assertFalse(hasattr(parser, '_is_type_in_imported_modules'))
+
+    def test_parser_focuses_on_syntax_only(self):
+        """Test that parser only handles syntax and defers semantic validation."""
+        # Parser should successfully parse programs with unknown types
+        # without attempting to validate their existence
+        parser = self.makeParser("""
+            program Test;
+            uses NonExistentModule;
+            var 
+                x: UnknownType1;
+                y: UnknownType2;
+                z: ARRAY[1..10] OF UnknownElementType;
+            begin 
+                x := y;
+            end.
+        """)
+        
+        # Should parse successfully without any module loading or type validation
+        program = parser.program()
+        self.assertIsNotNone(program)
+        
+        # All unknown types should be UnresolvedType nodes
+        var_decls = program.block.declarations
+        self.assertIsInstance(var_decls[0].type_node, UnresolvedType)
+        self.assertIsInstance(var_decls[1].type_node, UnresolvedType)
+        self.assertIsInstance(var_decls[2].type_node, ArrayType)
+        self.assertIsInstance(var_decls[2].type_node.element_type, UnresolvedType)
 
 
 if __name__ == "__main__":

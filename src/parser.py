@@ -22,7 +22,6 @@ class Parser:
         self.classes: list[str] = []
         self.enums: list[str] = []
         self.records: list[str] = []
-        self.imported_modules: list[str] = []
 
     def newZeroNum(self, lineno: int = -1, column: int = -1) -> Num:
         return Num(
@@ -39,8 +38,6 @@ class Parser:
             )
         )
 
-
-
     def get_next_token(self):
         return self.lexer.get_next_token()
 
@@ -56,13 +53,13 @@ class Parser:
         Look ahead to determine if the current ID token starts an assignment statement.
         This handles cases like:
         - variable := expr
-        - variable.field := expr  
+        - variable.field := expr
         - variable[index] := expr
         - variable.field[index].subfield := expr
         """
         if self.current_token.type != TokenType.ID:
             return False
-            
+
         # Look ahead through the token stream to find an assignment operator
         tokens = []
         try:
@@ -70,12 +67,12 @@ class Parser:
             tokens = self.lexer.peek_next_token_list(20)  # Reasonable lookahead limit
         except:
             return False
-            
+
         i = 0
         # Skip through dotted identifiers, array indices, and method calls
         while i < len(tokens):
             token = tokens[i]
-            
+
             if token.type == TokenType.ASSIGN:
                 return True
             elif token.type == TokenType.DOT:
@@ -108,7 +105,7 @@ class Parser:
             else:
                 # Any other token means this is not an assignment
                 break
-                
+
         return False
 
     def error(self, error_code: ErrorCode, token: Token):
@@ -137,12 +134,12 @@ class Parser:
         var_node = self.variable()
         prog_name = var_node.value
         self.eat(TokenType.SEMI)
-        
+
         # Parse optional uses clause
         uses_list = []
         if self.current_token.type == TokenType.USES:
             uses_list = self.uses_clause()
-        
+
         block_node = self.block()
         program_node = Program(prog_name, block_node, uses_list)
         self.eat(TokenType.DOT)
@@ -151,17 +148,17 @@ class Parser:
     def uses_clause(self) -> list[str]:
         """uses_clause : USES ID (COMMA ID)* SEMI"""
         self.eat(TokenType.USES)
-        
+
         # Parse first module name
         if self.current_token.type != TokenType.ID:
             self.error(
                 error_code=ErrorCode.UNEXPECTED_TOKEN,
                 token=self.current_token,
             )
-        
+
         module_names = [self.current_token.value]
         self.eat(TokenType.ID)
-        
+
         # Parse additional module names separated by commas
         while self.current_token.type == TokenType.COMMA:
             self.eat(TokenType.COMMA)
@@ -172,71 +169,70 @@ class Parser:
                 )
             module_names.append(self.current_token.value)
             self.eat(TokenType.ID)
-        
+
         self.eat(TokenType.SEMI)
-        
-        # Track imported modules (module loading will be handled by interpreter)
-        self.imported_modules.extend(module_names)
+
+        # Parser no longer tracks imported modules - this is handled by interpreter
         return module_names
 
     def unit_file(self) -> Unit:
         """unit_file : unit_declaration (uses_clause)? interface_section implementation_section END DOT"""
         unit_name = self.unit_declaration()
-        
+
         # Parse optional uses clause
         uses_list = []
         if self.current_token.type == TokenType.USES:
             uses_list = self.uses_clause()
-        
+
         interface_block = self.interface_section()
         implementation_block = self.implementation_section()
-        
+
         # Units end with "end."
         self.eat(TokenType.END)
         self.eat(TokenType.DOT)
-        
+
         unit_node = Unit(unit_name, interface_block, implementation_block, uses_list)
         return unit_node
 
     def unit_declaration(self) -> str:
         """unit_declaration : UNIT ID SEMI"""
         self.eat(TokenType.UNIT)
-        
+
         if self.current_token.type != TokenType.ID:
             self.error(
                 error_code=ErrorCode.UNEXPECTED_TOKEN,
                 token=self.current_token,
             )
-        
+
         unit_name = self.current_token.value
         self.eat(TokenType.ID)
         self.eat(TokenType.SEMI)
-        
+
         return unit_name
 
     def interface_section(self) -> Block:
         """interface_section : INTERFACE interface_declarations"""
         self.eat(TokenType.INTERFACE)
-        
+
         # Parse declarations in the interface section (signatures only)
         declaration_nodes = self.interface_declarations()
-        
+
         # Create an empty compound statement for interface (no executable code)
         empty_compound = Compound()
-        
+
         interface_block = Block(declaration_nodes, empty_compound)
         return interface_block
 
     def implementation_section(self) -> Block:
         """implementation_section : IMPLEMENTATION declarations"""
         self.eat(TokenType.IMPLEMENTATION)
-        
+
         # Parse declarations in the implementation section
         declaration_nodes = self.declarations()
-        
+
         # Create an empty compound statement for implementation (no main executable code)
         empty_compound = Compound()
-        
+
         implementation_block = Block(declaration_nodes, empty_compound)
         return implementation_block
 
@@ -1293,16 +1289,20 @@ class Parser:
                 tokens = self.lexer.peek_next_token_list(10)
             except:
                 pass
-            
+
             # Check if we find ASSIGN in the lookahead
             has_assign = False
             i = 0
             bracket_depth = 0
             paren_depth = 0
-            
+
             while i < len(tokens):
                 token = tokens[i]
-                if token.type == TokenType.ASSIGN and bracket_depth == 0 and paren_depth == 0:
+                if (
+                    token.type == TokenType.ASSIGN
+                    and bracket_depth == 0
+                    and paren_depth == 0
+                ):
                     has_assign = True
                     break
                 elif token.type == TokenType.LBRACKET:
@@ -1317,7 +1317,7 @@ class Parser:
                     # End of statement without finding ASSIGN
                     break
                 i += 1
-            
+
             if has_assign:
                 # This is a complex assignment like obj.prop := value
                 left = self.expr_get()
@@ -1401,7 +1401,7 @@ class Parser:
         # For simple variables, just get the ID, don't use id_expr which handles dots
         var_name = self.current_token.value
         self.eat(TokenType.ID)
-        
+
         node = Var(
             Token(
                 type=token.type,
@@ -1410,7 +1410,7 @@ class Parser:
                 column=token.column,
             )
         )
-        
+
         # Handle simple record access (single dot only)
         if self.current_token.type == TokenType.DOT:
             # Peek to see if this is a simple record access
@@ -1419,14 +1419,20 @@ class Parser:
                 # Check if this looks like a simple record field access
                 # and not a complex expression that should be handled by expr_get
                 peek_after = self.lexer.peek_next_token_list(2)
-                if len(peek_after) >= 2 and peek_after[1].type not in (TokenType.DOT, TokenType.LBRACKET, TokenType.LPAREN):
+                if len(peek_after) >= 2 and peek_after[1].type not in (
+                    TokenType.DOT,
+                    TokenType.LBRACKET,
+                    TokenType.LPAREN,
+                ):
                     # This is a simple record.field access
                     self.eat(TokenType.DOT)
                     field_name = self.current_token.value
                     self.eat(TokenType.ID)
-                    
+
                     if var_name in self.records:
-                        node = RecordVar(token=node.token, name=var_name, key=field_name)
+                        node = RecordVar(
+                            token=node.token, name=var_name, key=field_name
+                        )
                     else:
                         # Create a compound variable name for non-record types
                         node = Var(
@@ -1580,7 +1586,7 @@ class Parser:
 
         if token.type == TokenType.ID and self.peek_next_token().type == TokenType.DOT:
             type_name = token.value
-            
+
             # Check local types first
             if type_name in self.classes:
                 # call method
@@ -1647,13 +1653,13 @@ class Parser:
     def parse(self):
         """
         program : PROGRAM variable SEMI (uses_clause)? block DOT
-        
+
         unit_file : unit_declaration (uses_clause)? interface_section implementation_section END DOT
-        
+
         unit_declaration : UNIT ID SEMI
-        
+
         interface_section : INTERFACE declarations
-        
+
         implementation_section : IMPLEMENTATION declarations
 
         block : declarations compound_statement
@@ -1807,7 +1813,7 @@ class Parser:
                 error_code=ErrorCode.UNEXPECTED_TOKEN,
                 token=self.current_token,
             )
-        
+
         if self.current_token.type != TokenType.EOF:
             self.error(
                 error_code=ErrorCode.UNEXPECTED_TOKEN,
