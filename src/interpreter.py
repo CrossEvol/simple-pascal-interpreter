@@ -1068,10 +1068,14 @@ class Interpreter(NodeVisitor):
                 index = enum_decl.reversed_entries[type_key]
                 return EnumObject(index=index, name=type_key)
             elif meta.is_record_instance:
-                # TODO: it will not dispatch RecordVar to here
-                raise InterpreterError()
+                # Handle record instance field access
+                record_obj = ar.get(type_name)
+                if isinstance(record_obj, RecordInstanceObject):
+                    return record_obj[type_key]
+                else:
+                    raise InterpreterError(f"Expected record instance for {type_name}")
             else:
-                raise InterpreterError()
+                raise InterpreterError(f"Unknown compound variable type: {var_name}")
         else:
             var_value = ar.get(var_name)
             return var_value
@@ -1630,16 +1634,30 @@ class Interpreter(NodeVisitor):
         value = self.visit(node.value)
 
         # Get the base object and all but the last GetItem
-        object_value = self.visit(node.expr_get.object)
         gets = node.expr_get.gets
 
         if not gets:
+            # Check if the base object is a compound variable (like "exampleUser.ID")
+            if isinstance(node.expr_get.object, Var) and "." in node.expr_get.object.value:
+                # Handle compound variable assignment
+                var_name = node.expr_get.object.value
+                type_name, type_key = var_name.split(".", 1)
+                ar = self.call_stack.peek()
+                record_obj = ar.get(type_name)
+                if isinstance(record_obj, RecordInstanceObject):
+                    record_obj[type_key] = value
+                    return
+                else:
+                    raise InterpreterError(f"Expected record instance for {type_name}")
+            
             # No property/index access, just assign to the variable
+            object_value = self.visit(node.expr_get.object)
             ar = self.call_stack.peek()
             ar[object_value] = value
             return
 
         # Navigate to the parent object that will have its property/index modified
+        object_value = self.visit(node.expr_get.object)
         current_obj = object_value
 
         # Process all but the last GetItem to find the parent object

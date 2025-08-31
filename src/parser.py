@@ -51,6 +51,66 @@ class Parser:
         tokens = self.lexer.peek_next_token_list(2)
         return (tokens[0], tokens[1])
 
+    def _is_assignment_statement(self) -> bool:
+        """
+        Look ahead to determine if the current ID token starts an assignment statement.
+        This handles cases like:
+        - variable := expr
+        - variable.field := expr  
+        - variable[index] := expr
+        - variable.field[index].subfield := expr
+        """
+        if self.current_token.type != TokenType.ID:
+            return False
+            
+        # Look ahead through the token stream to find an assignment operator
+        tokens = []
+        try:
+            # Get enough tokens to handle complex expressions like a.b[1].c := value
+            tokens = self.lexer.peek_next_token_list(20)  # Reasonable lookahead limit
+        except:
+            return False
+            
+        i = 0
+        # Skip through dotted identifiers, array indices, and method calls
+        while i < len(tokens):
+            token = tokens[i]
+            
+            if token.type == TokenType.ASSIGN:
+                return True
+            elif token.type == TokenType.DOT:
+                i += 1
+                # Expect ID after DOT
+                if i < len(tokens) and tokens[i].type == TokenType.ID:
+                    i += 1
+                else:
+                    break
+            elif token.type == TokenType.LBRACKET:
+                # Skip through array index expression
+                bracket_count = 1
+                i += 1
+                while i < len(tokens) and bracket_count > 0:
+                    if tokens[i].type == TokenType.LBRACKET:
+                        bracket_count += 1
+                    elif tokens[i].type == TokenType.RBRACKET:
+                        bracket_count -= 1
+                    i += 1
+            elif token.type == TokenType.LPAREN:
+                # This could be a method call - skip through parameters
+                paren_count = 1
+                i += 1
+                while i < len(tokens) and paren_count > 0:
+                    if tokens[i].type == TokenType.LPAREN:
+                        paren_count += 1
+                    elif tokens[i].type == TokenType.RPAREN:
+                        paren_count -= 1
+                    i += 1
+            else:
+                # Any other token means this is not an assignment
+                break
+                
+        return False
+
     def error(self, error_code: ErrorCode, token: Token):
         raise ParserError(
             error_code=error_code,
@@ -967,17 +1027,14 @@ class Parser:
         elif self.current_token.type == TokenType.FOR:
             node = self.for_statement()
         elif self.current_token.type == TokenType.ID:
-            token = self.current_token
-            next_token_type = self.peek_next_token().type
-            if next_token_type == TokenType.LPAREN:
-                node = self.proccall_statement()
-            elif next_token_type == TokenType.DOT:
-                if token.value in self.records:
-                    node = self.assignment_statement()
-                else:
-                    node = self.method_call_statement()
-            else:
+            # Look ahead to determine if this is an assignment or method call
+            if self._is_assignment_statement():
                 node = self.assignment_statement()
+            elif self.peek_next_token().type == TokenType.LPAREN:
+                node = self.proccall_statement()
+            else:
+                # Default to method call for ID.ID patterns without assignment
+                node = self.method_call_statement()
         else:
             node = self.empty()
         return node
@@ -1223,19 +1280,58 @@ class Parser:
         """
         assignment_statement : variable ASSIGN expr | expr_get ASSIGN expr
         """
-        # Check if we have a complex property access
+        # Check if we have a complex property access on the LEFT side of assignment
+        # We need to look ahead to see if there's an ASSIGN after the complex expression
         if self.current_token.type == TokenType.ID and self.peek_next_token().type in (
             TokenType.DOT,
             TokenType.LBRACKET,
         ):
-            left = self.expr_get()
-            token = self.current_token
-            self.eat(TokenType.ASSIGN)
-            right = self.expr()
-            node = ExprSet(left, right, token)
-            return node
+            # Look ahead to see if this complex expression is followed by ASSIGN
+            # If so, it's the left side of an assignment; otherwise it's a method call
+            tokens = []
+            try:
+                tokens = self.lexer.peek_next_token_list(10)
+            except:
+                pass
+            
+            # Check if we find ASSIGN in the lookahead
+            has_assign = False
+            i = 0
+            bracket_depth = 0
+            paren_depth = 0
+            
+            while i < len(tokens):
+                token = tokens[i]
+                if token.type == TokenType.ASSIGN and bracket_depth == 0 and paren_depth == 0:
+                    has_assign = True
+                    break
+                elif token.type == TokenType.LBRACKET:
+                    bracket_depth += 1
+                elif token.type == TokenType.RBRACKET:
+                    bracket_depth -= 1
+                elif token.type == TokenType.LPAREN:
+                    paren_depth += 1
+                elif token.type == TokenType.RPAREN:
+                    paren_depth -= 1
+                elif token.type in (TokenType.SEMI, TokenType.END):
+                    # End of statement without finding ASSIGN
+                    break
+                i += 1
+            
+            if has_assign:
+                # This is a complex assignment like obj.prop := value
+                left = self.expr_get()
+                token = self.current_token
+                self.eat(TokenType.ASSIGN)
+                right = self.expr()
+                node = ExprSet(left, right, token)
+                return node
+            else:
+                # This is a method call statement, not an assignment
+                # This shouldn't happen if our statement() method is working correctly
+                self.error(ErrorCode.UNEXPECTED_TOKEN, self.current_token)
         else:
-            # Original variable assignment
+            # Simple variable assignment
             left = self.variable()
             if not isinstance(left, Var):
                 self.error(ErrorCode.UNEXPECTED_TOKEN, left.token)
@@ -1302,7 +1398,10 @@ class Parser:
         variable: ID
         """
         token = self.current_token
-        var_name = self.id_expr()
+        # For simple variables, just get the ID, don't use id_expr which handles dots
+        var_name = self.current_token.value
+        self.eat(TokenType.ID)
+        
         node = Var(
             Token(
                 type=token.type,
@@ -1311,15 +1410,34 @@ class Parser:
                 column=token.column,
             )
         )
-        if var_name.find(".") != -1:
-            type_name, type_key = var_name.split(".")
-            if type_name in self.records:
-                node = RecordVar(token=node.token, name=type_name, key=type_key)
-            elif type_name in self.enums:
-                # TODO: should use EnumVar instead of Var for enum type ?
-                pass
+        
+        # Handle simple record access (single dot only)
+        if self.current_token.type == TokenType.DOT:
+            # Peek to see if this is a simple record access
+            next_token = self.peek_next_token()
+            if next_token.type == TokenType.ID:
+                # Check if this looks like a simple record field access
+                # and not a complex expression that should be handled by expr_get
+                peek_after = self.lexer.peek_next_token_list(2)
+                if len(peek_after) >= 2 and peek_after[1].type not in (TokenType.DOT, TokenType.LBRACKET, TokenType.LPAREN):
+                    # This is a simple record.field access
+                    self.eat(TokenType.DOT)
+                    field_name = self.current_token.value
+                    self.eat(TokenType.ID)
+                    
+                    if var_name in self.records:
+                        node = RecordVar(token=node.token, name=var_name, key=field_name)
+                    else:
+                        # Create a compound variable name for non-record types
+                        node = Var(
+                            Token(
+                                type=token.type,
+                                value=f"{var_name}.{field_name}",
+                                lineno=token.lineno,
+                                column=token.column,
+                            )
+                        )
 
-        # We no longer handle indexing here as it's part of expr_get now
         return node
 
     def empty(self) -> NoOp:
