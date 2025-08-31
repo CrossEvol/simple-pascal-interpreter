@@ -110,7 +110,12 @@
   - Write unit tests for error message formatting and content
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 10. Update interpreter initialization for type resolution
+- [x] 10. Update interpreter initialization for type resolution
+
+
+
+
+
   - Add TypeResolver instance to interpreter constructor
   - Pass module registry and context information to type resolver
   - Ensure proper initialization of type resolution context

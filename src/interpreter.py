@@ -171,11 +171,53 @@ class ActivationRecord:
 
 
 class Interpreter(NodeVisitor):
-    def __init__(self, tree: Program) -> None:
+    def __init__(self, tree: Program, module_registry: ModuleRegistry = None) -> None:
+        """
+        Initialize the interpreter with type resolution capabilities.
+
+        Args:
+            tree: The Program AST node to interpret
+            module_registry: Optional module registry for type resolution.
+                           If None, a new ModuleRegistry will be created.
+        """
         self.tree = tree
         self.call_stack = CallStack()
-        self.module_registry = ModuleRegistry()
+
+        # Initialize module registry - use provided one or create new
+        if module_registry is not None:
+            self.module_registry = module_registry
+        else:
+            self.module_registry = ModuleRegistry()
+
+        # Initialize type resolver with module registry and context information
         self.type_resolver = TypeResolver(self.module_registry)
+
+        # Initialize type resolution context for better error reporting
+        self._initialize_type_resolution_context()
+
+    def _initialize_type_resolution_context(self) -> None:
+        """
+        Initialize the type resolution context with program-level information.
+
+        This method sets up the initial context for type resolution, including
+        any uses clause modules and prepares the type resolver for operation.
+        """
+        # Pre-populate type resolver with program-level context
+        if hasattr(self.tree, "uses_clause") and self.tree.uses_clause:
+            # Pre-validate that required modules can be found
+            for module_name in self.tree.uses_clause:
+                try:
+                    # Check if module file exists without loading it yet
+                    self.module_registry.find_module_file(module_name)
+                except ModuleNotFoundError as e:
+                    # Log warning but don't fail initialization
+                    # Module loading will be attempted during interpretation
+                    self.log(
+                        f"Warning: Module '{module_name}' not found during initialization: {e}"
+                    )
+
+        # Clear any existing cache to ensure fresh resolution
+        self.type_resolver.clear_cache()
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_STACK:
@@ -244,7 +286,7 @@ class Interpreter(NodeVisitor):
 
             # Create lexer and parser for the module
             lexer = Lexer(text)
-            parser = Parser(lexer, self.module_registry)
+            parser = Parser(lexer)
 
             # Parse the unit (assuming it's a unit file)
             unit_ast = self._parse_unit_file(parser)
@@ -404,19 +446,19 @@ class Interpreter(NodeVisitor):
     def visit_VarDecl(self, node: VarDecl) -> None:
         """
         Process variable declarations with enhanced type resolution and error handling.
-        
+
         This method handles both concrete types and unresolved types, providing
         comprehensive error messages with context information when type resolution fails.
-        
+
         Args:
             node: VarDecl AST node containing variable name and type information
-            
+
         Raises:
             TypeResolutionError: When type resolution fails with contextual information
         """
         ar = self.call_stack.peek()
         var_name = node.var_node.value
-        
+
         try:
             # Handle concrete types first
             if node.type_node.token.type == TokenType.BOOLEAN:
@@ -453,45 +495,48 @@ class Interpreter(NodeVisitor):
                 # Unknown type - should not happen with proper parsing
                 raise TypeResolutionError(
                     f"Unknown type token '{node.type_node.token.type}' for variable '{var_name}' at line {node.type_node.token.lineno}",
-                    token=node.type_node.token
+                    token=node.type_node.token,
                 )
-                
+
         except TypeResolutionError as e:
             # Re-raise with additional context about the variable declaration
             context_message = f"Failed to declare variable '{var_name}'"
-            if hasattr(node.var_node, 'token') and node.var_node.token:
+            if hasattr(node.var_node, "token") and node.var_node.token:
                 context_message += f" at line {node.var_node.token.lineno}"
-            
+
             # Combine original error with context
             enhanced_message = f"{context_message}: {str(e)}"
-            
+
             raise TypeResolutionError(
                 enhanced_message,
-                suggestions=getattr(e, 'suggestions', []),
-                token=getattr(e, 'token', node.type_node.token)
+                suggestions=getattr(e, "suggestions", []),
+                token=getattr(e, "token", node.type_node.token),
             ) from e
         except Exception as e:
             # Handle unexpected errors during variable declaration
-            error_message = f"Unexpected error during variable declaration for '{var_name}'"
-            if hasattr(node.var_node, 'token') and node.var_node.token:
+            error_message = (
+                f"Unexpected error during variable declaration for '{var_name}'"
+            )
+            if hasattr(node.var_node, "token") and node.var_node.token:
                 error_message += f" at line {node.var_node.token.lineno}"
             error_message += f": {str(e)}"
-            
+
             raise InterpreterError(
-                message=error_message,
-                token=getattr(node.var_node, 'token', None)
+                message=error_message, token=getattr(node.var_node, "token", None)
             ) from e
 
-    def _handle_record_var_decl(self, node: VarDecl, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_record_var_decl(
+        self, node: VarDecl, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle variable declaration for record types."""
         try:
             record_class: RecordClassObject = ar.get(node.type_node.token.value)
             if record_class is None:
                 raise TypeResolutionError(
                     f"Record type '{node.type_node.token.value}' not found for variable '{var_name}'",
-                    token=node.type_node.token
+                    token=node.type_node.token,
                 )
-            
+
             fields: dict[str, Any] = record_class.fields.copy()
             ar[var_name] = RecordInstanceObject(
                 record_name=record_class.record_name, fields=fields
@@ -502,10 +547,12 @@ class Interpreter(NodeVisitor):
         except Exception as e:
             raise TypeResolutionError(
                 f"Failed to initialize record variable '{var_name}' of type '{node.type_node.token.value}': {str(e)}",
-                token=node.type_node.token
+                token=node.type_node.token,
             ) from e
 
-    def _handle_class_var_decl(self, node: VarDecl, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_class_var_decl(
+        self, node: VarDecl, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle variable declaration for class types."""
         try:
             class_decl: ClassDecl = ar.get(
@@ -514,9 +561,9 @@ class Interpreter(NodeVisitor):
             if class_decl is None:
                 raise TypeResolutionError(
                     f"Class type '{node.type_node.token.value}' not found for variable '{var_name}'",
-                    token=node.type_node.token
+                    token=node.type_node.token,
                 )
-            
+
             fields = class_decl.fields.copy()
             ar[var_name] = InstanceObject(class_decl.class_name, fields)
             ar.set_meta(var_name, ElementType.INSTANCE)
@@ -525,25 +572,27 @@ class Interpreter(NodeVisitor):
         except Exception as e:
             raise TypeResolutionError(
                 f"Failed to initialize class variable '{var_name}' of type '{node.type_node.token.value}': {str(e)}",
-                token=node.type_node.token
+                token=node.type_node.token,
             ) from e
 
-    def _handle_unresolved_type_var_decl(self, node: VarDecl, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_unresolved_type_var_decl(
+        self, node: VarDecl, ar: ActivationRecord, var_name: str
+    ) -> None:
         """
         Handle variable declaration for unresolved types with comprehensive error handling.
-        
+
         Args:
             node: VarDecl AST node
             ar: Current activation record
             var_name: Name of the variable being declared
-            
+
         Raises:
             TypeResolutionError: When type resolution fails with enhanced context
         """
         try:
             # Resolve the type during interpretation
             resolved_type = self.visit_UnresolvedType(node.type_node)
-            
+
             # Handle the resolved type appropriately
             if isinstance(resolved_type, PrimitiveType):
                 self._handle_resolved_primitive_type(resolved_type, ar, var_name)
@@ -561,9 +610,9 @@ class Interpreter(NodeVisitor):
                 # Unknown resolved type
                 raise TypeResolutionError(
                     f"Unsupported resolved type '{type(resolved_type).__name__}' for variable '{var_name}' with type '{node.type_node.type_name}'",
-                    token=node.type_node.token
+                    token=node.type_node.token,
                 )
-                
+
         except TypeResolutionError:
             # Re-raise type resolution errors as-is (they already have good context)
             raise
@@ -571,10 +620,12 @@ class Interpreter(NodeVisitor):
             # Handle unexpected errors during unresolved type processing
             raise TypeResolutionError(
                 f"Unexpected error resolving type '{node.type_node.type_name}' for variable '{var_name}': {str(e)}",
-                token=node.type_node.token
+                token=node.type_node.token,
             ) from e
 
-    def _handle_resolved_primitive_type(self, resolved_type: PrimitiveType, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_resolved_primitive_type(
+        self, resolved_type: PrimitiveType, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle resolved primitive types for variable declarations."""
         if resolved_type.token.type == TokenType.BOOLEAN:
             ar[var_name] = BooleanObject(False)
@@ -588,10 +639,12 @@ class Interpreter(NodeVisitor):
         else:
             raise TypeResolutionError(
                 f"Unsupported primitive type '{resolved_type.token.type}' for variable '{var_name}'",
-                token=resolved_type.token
+                token=resolved_type.token,
             )
 
-    def _handle_resolved_string_type(self, resolved_type: StringType, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_resolved_string_type(
+        self, resolved_type: StringType, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle resolved string types for variable declarations."""
         ar[var_name] = StringObject("")
         limit: int = 255
@@ -600,7 +653,9 @@ class Interpreter(NodeVisitor):
         ar.set_meta(key=var_name, type=ElementType.STRING)
         ar.set_limit(key=var_name, limit=limit)
 
-    def _handle_resolved_array_type(self, resolved_type: ArrayType, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_resolved_array_type(
+        self, resolved_type: ArrayType, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle resolved array types for variable declarations."""
         elements, element_type = self.__initArray(resolved_type)
         ar[var_name] = ArrayObject(elements, element_type)
@@ -608,33 +663,37 @@ class Interpreter(NodeVisitor):
         if resolved_type.dynamic is True:
             ar.set_dynamic(var_name, True)
 
-    def _handle_resolved_class_type(self, resolved_type: ClassType, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_resolved_class_type(
+        self, resolved_type: ClassType, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle resolved class types for variable declarations."""
         class_name = SpiUtil.toClassName(resolved_type.token.value)
         class_decl: ClassDecl = ar.get(class_name)
-        
+
         if class_decl is None:
             raise TypeResolutionError(
                 f"Class '{resolved_type.token.value}' not found in current scope for variable '{var_name}'",
-                token=resolved_type.token
+                token=resolved_type.token,
             )
-        
+
         fields = class_decl.fields.copy()
         ar[var_name] = InstanceObject(class_decl.class_name, fields)
         ar.set_meta(var_name, ElementType.INSTANCE)
         ar.set_is_instance(var_name, True)
         ar.set_ref_class_name(var_name, class_decl.class_name)
 
-    def _handle_resolved_record_type(self, resolved_type: RecordType, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_resolved_record_type(
+        self, resolved_type: RecordType, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle resolved record types for variable declarations."""
         record_class: RecordClassObject = ar.get(resolved_type.token.value)
-        
+
         if record_class is None:
             raise TypeResolutionError(
                 f"Record '{resolved_type.token.value}' not found in current scope for variable '{var_name}'",
-                token=resolved_type.token
+                token=resolved_type.token,
             )
-        
+
         fields: dict[str, Any] = record_class.fields.copy()
         ar[var_name] = RecordInstanceObject(
             record_name=record_class.record_name, fields=fields
@@ -643,16 +702,18 @@ class Interpreter(NodeVisitor):
         ar.set_is_record_instance(var_name)
         ar.set_ref_record_name(var_name, record_class.record_name)
 
-    def _handle_resolved_enum_type(self, resolved_type: EnumType, ar: ActivationRecord, var_name: str) -> None:
+    def _handle_resolved_enum_type(
+        self, resolved_type: EnumType, ar: ActivationRecord, var_name: str
+    ) -> None:
         """Handle resolved enum types for variable declarations."""
         enum_decl: EnumDecl = ar.get(resolved_type.token.value)
-        
+
         if enum_decl is None:
             raise TypeResolutionError(
                 f"Enum '{resolved_type.token.value}' not found in current scope for variable '{var_name}'",
-                token=resolved_type.token
+                token=resolved_type.token,
             )
-        
+
         ar[var_name] = enum_decl
         ar.set_meta(var_name, ElementType.ENUM)
         ar.set_is_enum(var_name)
@@ -715,7 +776,7 @@ class Interpreter(NodeVisitor):
                     raise TypeResolutionError(
                         f"Failed to resolve array element type '{node.element_type.type_name}' at line {node.element_type.token.lineno}: {str(e)}",
                         suggestions=e.suggestions,
-                        token=node.element_type.token
+                        token=node.element_type.token,
                     ) from e
 
                 # Handle the resolved element type
@@ -759,7 +820,7 @@ class Interpreter(NodeVisitor):
                         if class_decl is None:
                             raise TypeResolutionError(
                                 f"Class '{resolved_element_type.token.value}' not found for array element initialization",
-                                token=resolved_element_type.token
+                                token=resolved_element_type.token,
                             )
                         for i in range(lower_bound.value, upper_bound.value + 1):
                             fields = class_decl.fields.copy()
@@ -769,11 +830,13 @@ class Interpreter(NodeVisitor):
                     element_type = ElementType.RECORD_CLASS
                     if node.dynamic is False:
                         ar = self.call_stack.peek()
-                        record_class: RecordClassObject = ar.get(resolved_element_type.token.value)
+                        record_class: RecordClassObject = ar.get(
+                            resolved_element_type.token.value
+                        )
                         if record_class is None:
                             raise TypeResolutionError(
                                 f"Record '{resolved_element_type.token.value}' not found for array element initialization",
-                                token=resolved_element_type.token
+                                token=resolved_element_type.token,
                             )
                         for i in range(lower_bound.value, upper_bound.value + 1):
                             fields: dict[str, Any] = record_class.fields.copy()
@@ -789,7 +852,7 @@ class Interpreter(NodeVisitor):
                         if enum_decl is None:
                             raise TypeResolutionError(
                                 f"Enum '{resolved_element_type.token.value}' not found for array element initialization",
-                                token=resolved_element_type.token
+                                token=resolved_element_type.token,
                             )
                         for i in range(lower_bound.value, upper_bound.value + 1):
                             # Initialize with the first enum value or a default enum object
@@ -803,7 +866,7 @@ class Interpreter(NodeVisitor):
                     # Unknown resolved type
                     raise TypeResolutionError(
                         f"Unsupported array element type '{type(resolved_element_type).__name__}' for type '{node.element_type.type_name}'",
-                        token=node.element_type.token
+                        token=node.element_type.token,
                     )
             return elements, element_type
         raise UnknownTypeError()
@@ -1863,7 +1926,10 @@ class Interpreter(NodeVisitor):
 
         if not gets:
             # Check if the base object is a compound variable (like "exampleUser.ID")
-            if isinstance(node.expr_get.object, Var) and "." in node.expr_get.object.value:
+            if (
+                isinstance(node.expr_get.object, Var)
+                and "." in node.expr_get.object.value
+            ):
                 # Handle compound variable assignment
                 var_name = node.expr_get.object.value
                 type_name, type_key = var_name.split(".", 1)
@@ -1874,7 +1940,7 @@ class Interpreter(NodeVisitor):
                     return
                 else:
                     raise InterpreterError(f"Expected record instance for {type_name}")
-            
+
             # No property/index access, just assign to the variable
             object_value = self.visit(node.expr_get.object)
             ar = self.call_stack.peek()
