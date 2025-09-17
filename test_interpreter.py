@@ -301,7 +301,7 @@ class InterpreterTestCase(unittest.TestCase):
             )
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
-            self.assertEqual(ar["a"], result)
+            self.assertEqual(ar["a"].value, result)
 
     def test_float_arithmetic_expressions(self):
         for expr, result in (
@@ -321,7 +321,7 @@ class InterpreterTestCase(unittest.TestCase):
             )
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
-            self.assertEqual(ar["a"], result)
+            self.assertEqual(ar["a"].value, result)
 
     def test_boolean_expressions(self):
         for expr, result in (
@@ -355,7 +355,7 @@ class InterpreterTestCase(unittest.TestCase):
             )
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
-            self.assertEqual(ar["flag"], result)
+            self.assertEqual(ar["flag"].value, result)
 
     def test_default_value_for_type(self):
         text = """\
@@ -370,8 +370,8 @@ end. {Main}
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["num"], 0)
-        self.assertEqual(ar["bool"], False)
+        self.assertEqual(ar["num"].value, 0)
+        self.assertEqual(ar["bool"].value, False)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_procedure_call(self):
@@ -394,9 +394,9 @@ end.  { Main }
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["a"], 8)
-        self.assertEqual(ar["b"], 7)
-        self.assertEqual(ar["x"], 30)
+        self.assertEqual(ar["a"].value, 8)
+        self.assertEqual(ar["b"].value, 7)
+        self.assertEqual(ar["x"].value, 30)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_comparison_calculus(self):
@@ -420,14 +420,14 @@ end. {Main}
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["a"], 1)
-        self.assertEqual(ar["b"], 2)
-        self.assertEqual(ar["f1"], True)
-        self.assertEqual(ar["f2"], False)
-        self.assertEqual(ar["f3"], False)
-        self.assertEqual(ar["f4"], True)
-        self.assertEqual(ar["f5"], True)
-        self.assertEqual(ar["f6"], False)
+        self.assertEqual(ar["a"].value, 1)
+        self.assertEqual(ar["b"].value, 2)
+        self.assertEqual(ar["f1"].value, True)
+        self.assertEqual(ar["f2"].value, False)
+        self.assertEqual(ar["f3"].value, False)
+        self.assertEqual(ar["f4"].value, True)
+        self.assertEqual(ar["f5"].value, True)
+        self.assertEqual(ar["f6"].value, False)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_logic_calculus(self):
@@ -448,12 +448,12 @@ end. {Main}
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["a"], True)
-        self.assertEqual(ar["b"], False)
-        self.assertEqual(ar["f1"], False)
-        self.assertEqual(ar["f2"], True)
-        self.assertEqual(ar["f3"], False)
-        self.assertEqual(ar["f4"], True)
+        self.assertEqual(ar["a"].value, True)
+        self.assertEqual(ar["b"].value, False)
+        self.assertEqual(ar["f1"].value, False)
+        self.assertEqual(ar["f2"].value, True)
+        self.assertEqual(ar["f3"].value, False)
+        self.assertEqual(ar["f4"].value, True)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_function_call(self):
@@ -474,7 +474,7 @@ end. {Main}
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["sum"], 8)
+        self.assertEqual(ar["sum"].value, 8)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_inner_ref_outer_var(self):
@@ -498,7 +498,7 @@ end.  { Main }
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["x"], 30)
+        self.assertEqual(ar["x"].value, 30)
         self.assertEqual(ar.nesting_level, 3)
 
     def test_write_and_writeln(self):
@@ -527,8 +527,8 @@ end. {Main}
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["a"], 6)
-        self.assertEqual(ar["flag"], True)
+        self.assertEqual(ar["a"].value, 6)
+        self.assertEqual(ar["flag"].value, True)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_write_and_writeln_inside_function(self):
@@ -552,7 +552,7 @@ end. {Main}
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["a"], 3)
+        self.assertEqual(ar["a"].value, 3)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_set_length_builtin_procedure(self):
@@ -574,11 +574,11 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"], 0)
-        self.assertEqual(ar["j"], 10)
-        self.assertEqual(ar["k"], 10)
+        self.assertEqual(ar["i"].value, 0)
+        self.assertEqual(ar["j"].value, 10)
+        self.assertEqual(ar["k"].value, 10)
         for i in range(0, 5):
-            self.assertEqual(ar["arr"][i], i + 1)
+            self.assertEqual(ar["arr"].value[i].value, i + 1)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_length_builtin_function(self):
@@ -595,7 +595,7 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"], 5)
+        self.assertEqual(ar["i"].value, 5)
         self.assertEqual(ar.nesting_level, 2)
 
     def test_if_then(self):
@@ -618,8 +618,8 @@ end.
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
 
-            self.assertEqual(ar["a"], expr)
-            self.assertEqual(ar["b"], result)
+            self.assertEqual(ar["a"].value, expr)
+            self.assertEqual(ar["b"].value, result)
             self.assertEqual(ar.nesting_level, 1)
 
     def test_if_else(self):
@@ -643,8 +643,8 @@ end.
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
 
-            self.assertEqual(ar["a"], expr)
-            self.assertEqual(ar["b"], result)
+            self.assertEqual(ar["a"].value, expr)
+            self.assertEqual(ar["b"].value, result)
             self.assertEqual(ar.nesting_level, 1)
 
     def test_if_nest(self):
@@ -673,10 +673,10 @@ end.
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["a"], 100)
-        self.assertEqual(ar["b"], 200)
-        self.assertEqual(ar["c"], 300)
-        self.assertEqual(ar["flag"], True)
+        self.assertEqual(ar["a"].value, 100)
+        self.assertEqual(ar["b"].value, 200)
+        self.assertEqual(ar["c"].value, 300)
+        self.assertEqual(ar["flag"].value, True)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_if_block(self):
@@ -707,9 +707,9 @@ end.
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
 
-            self.assertEqual(ar["flag"], flag)
-            self.assertEqual(ar["a"], a)
-            self.assertEqual(ar["b"], b)
+            self.assertEqual(ar["flag"].value, flag)
+            self.assertEqual(ar["a"].value, a)
+            self.assertEqual(ar["b"].value, b)
             self.assertEqual(ar.nesting_level, 1)
 
     def test_while_loop(self):
@@ -731,7 +731,7 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"], 20)
+        self.assertEqual(ar["a"].value, 20)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_for_loop(self):
@@ -757,8 +757,8 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"], 10)
-        self.assertEqual(ar["sum"], 55)
+        self.assertEqual(ar["a"].value, 10)
+        self.assertEqual(ar["sum"].value, 55)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array(self):
@@ -779,11 +779,11 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"], 10)
-        self.assertEqual(ar["j"], 10)
-        self.assertEqual(ar["sum"], 1055)
+        self.assertEqual(ar["i"].value, 10)
+        self.assertEqual(ar["j"].value, 10)
+        self.assertEqual(ar["sum"].value, 1055)
         for i in range(1, 10):
-            self.assertEqual(ar["n"][i], 100 + i)
+            self.assertEqual(ar["n"].value[i].value, 100 + i)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array_initialized(self):
@@ -804,9 +804,9 @@ end.
 
         ar = interpreter.call_stack.peek()
         for i in range(1, 2):
-            self.assertEqual(ar["intArr"][i], 0)
-            self.assertEqual(ar["boolArr"][i], False)
-            self.assertEqual(ar["realArr"][i], 0.0)
+            self.assertEqual(ar["intArr"].value[i].value, 0)
+            self.assertEqual(ar["boolArr"].value[i].value, False)
+            self.assertEqual(ar["realArr"].value[i].value, 0.0)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array_range_invalid(self):
@@ -867,10 +867,10 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"], 0)
-        self.assertEqual(ar["b"], False)
-        self.assertEqual(ar["c"], 0.0)
-        self.assertEqual(ar["d"], {})
+        self.assertEqual(ar["a"].value, 0)
+        self.assertEqual(ar["b"].value, False)
+        self.assertEqual(ar["c"].value, 0.0)
+        self.assertEqual(ar["d"].value, {})
         self.assertEqual(ar.nesting_level, 1)
 
     def test_string(self):
@@ -905,16 +905,16 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["str1"], "abcdefg")
-        self.assertEqual(ar["str2"], "abcdefghijklmnopqrstuvwxyz")
-        self.assertEqual(ar["str3"], "abcdefghijklmn")
-        self.assertEqual(ar["l1"], 7)
-        self.assertEqual(ar["l2"], 26)
-        self.assertEqual(ar["l3"], 14)
-        self.assertEqual(ar["a"], "a")
-        self.assertEqual(ar["b"], "")
-        self.assertEqual(ar["concat1"], "abcdefg123456a")
-        self.assertEqual(ar["concat2"], "abcdefg")
+        self.assertEqual(ar["str1"].value, "abcdefg")
+        self.assertEqual(ar["str2"].value, "abcdefghijklmnopqrstuvwxyz")
+        self.assertEqual(ar["str3"].value, "abcdefghijklmn")
+        self.assertEqual(ar["l1"].value, 7)
+        self.assertEqual(ar["l2"].value, 26)
+        self.assertEqual(ar["l3"].value, 14)
+        self.assertEqual(ar["a"].value, "a")
+        self.assertEqual(ar["b"].value, "")
+        self.assertEqual(ar["concat1"].value, "abcdefg123456a")
+        self.assertEqual(ar["concat2"].value, "abcdefg")
         self.assertEqual(ar.nesting_level, 2)
 
     def test_program(self):
@@ -951,10 +951,10 @@ END.  {Part12}
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(len(ar.members.keys()), 4)
-        self.assertEqual(ar["number"], 2)
-        self.assertEqual(ar["a"], 2)
-        self.assertEqual(ar["b"], 25)
-        self.assertAlmostEqual(ar["y"], float(20) / 7 + 3.14)  # 5.9971...
+        self.assertEqual(ar["number"].value, 2)
+        self.assertEqual(ar["a"].value, 2)
+        self.assertEqual(ar["b"].value, 25)
+        self.assertAlmostEqual(ar["y"].value, float(20) / 7 + 3.14)  # 5.9971...
 
 
 if __name__ == "__main__":

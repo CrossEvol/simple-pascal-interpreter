@@ -28,6 +28,255 @@ class ElementType(Enum):
     ARRAY = "ARRAY"
 
 
+###############################################################################
+#                                                                             #
+#  OBJECT SYSTEM                                                              #
+#                                                                             #
+###############################################################################
+
+
+class Object:
+    """Base class for all Pascal values in the interpreter"""
+    def __init__(self, value=None):
+        self.value = value
+    
+    def __str__(self):
+        return str(self.value)
+    
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.value})"
+    
+    def to_bool(self):
+        """Convert to boolean for conditional expressions"""
+        return bool(self.value)
+
+
+class NumberObject(Object):
+    """Base class for numeric types"""
+    def __add__(self, other):
+        if isinstance(other, NumberObject):
+            return self._create_result(self.value + other.value)
+        return NotImplemented
+    
+    def __sub__(self, other):
+        if isinstance(other, NumberObject):
+            return self._create_result(self.value - other.value)
+        return NotImplemented
+    
+    def __mul__(self, other):
+        if isinstance(other, NumberObject):
+            return self._create_result(self.value * other.value)
+        return NotImplemented
+    
+    def __truediv__(self, other):
+        if isinstance(other, NumberObject):
+            return RealObject(float(self.value) / float(other.value))
+        return NotImplemented
+    
+    def __floordiv__(self, other):
+        if isinstance(other, NumberObject):
+            return self._create_result(self.value // other.value)
+        return NotImplemented
+    
+    def __pos__(self):
+        return self._create_result(+self.value)
+    
+    def __neg__(self):
+        return self._create_result(-self.value)
+    
+    def __lt__(self, other):
+        if isinstance(other, NumberObject):
+            return BooleanObject(self.value < other.value)
+        return NotImplemented
+    
+    def __le__(self, other):
+        if isinstance(other, NumberObject):
+            return BooleanObject(self.value <= other.value)
+        return NotImplemented
+    
+    def __gt__(self, other):
+        if isinstance(other, NumberObject):
+            return BooleanObject(self.value > other.value)
+        return NotImplemented
+    
+    def __ge__(self, other):
+        if isinstance(other, NumberObject):
+            return BooleanObject(self.value >= other.value)
+        return NotImplemented
+    
+    def __eq__(self, other):
+        if isinstance(other, NumberObject):
+            return BooleanObject(self.value == other.value)
+        return NotImplemented
+    
+    def __ne__(self, other):
+        if isinstance(other, NumberObject):
+            return BooleanObject(self.value != other.value)
+        return NotImplemented
+    
+    def _create_result(self, value):
+        """Create appropriate result type based on value"""
+        if isinstance(value, int):
+            return IntegerObject(value)
+        else:
+            return RealObject(value)
+
+
+class IntegerObject(NumberObject):
+    """Integer value object"""
+    def __init__(self, value: int = 0):
+        super().__init__(int(value))
+    
+    def _create_result(self, value):
+        if isinstance(value, int):
+            return IntegerObject(value)
+        else:
+            return RealObject(value)
+
+
+class RealObject(NumberObject):
+    """Real/Float value object"""
+    def __init__(self, value: float = 0.0):
+        super().__init__(float(value))
+    
+    def _create_result(self, value):
+        return RealObject(float(value))
+
+
+class BooleanObject(Object):
+    """Boolean value object"""
+    def __init__(self, value: bool = False):
+        super().__init__(bool(value))
+    
+    def __and__(self, other):
+        if isinstance(other, BooleanObject):
+            return BooleanObject(self.value and other.value)
+        return NotImplemented
+    
+    def __or__(self, other):
+        if isinstance(other, BooleanObject):
+            return BooleanObject(self.value or other.value)
+        return NotImplemented
+    
+    def __invert__(self):
+        return BooleanObject(not self.value)
+    
+    def __eq__(self, other):
+        if isinstance(other, BooleanObject):
+            return BooleanObject(self.value == other.value)
+        return NotImplemented
+    
+    def __ne__(self, other):
+        if isinstance(other, BooleanObject):
+            return BooleanObject(self.value != other.value)
+        return NotImplemented
+
+
+class StringObject(Object):
+    """String value object"""
+    def __init__(self, value: str = "", limit: int = -1):
+        if limit > 0 and len(value) > limit:
+            value = value[:limit]
+        super().__init__(str(value))
+        self.limit = limit
+    
+    def __add__(self, other):
+        if isinstance(other, StringObject):
+            result_value = self.value + other.value
+            # Don't apply limits during concatenation operations
+            return StringObject(result_value, -1)
+        return NotImplemented
+    
+    def __getitem__(self, index):
+        """Get character at index (1-based indexing for Pascal)"""
+        if 1 <= index <= len(self.value):
+            return CharObject(self.value[index - 1])
+        return CharObject("")
+    
+    def __len__(self):
+        return len(self.value)
+    
+    def set_length(self, new_length: int):
+        """Set new length for string"""
+        if new_length < len(self.value):
+            self.value = self.value[:new_length]
+        # Note: Pascal strings don't automatically extend with spaces
+
+
+class CharObject(Object):
+    """Character value object"""
+    def __init__(self, value: str = ""):
+        super().__init__(str(value)[:1] if value else "")
+
+
+class ArrayObject(Object):
+    """Array value object"""
+    def __init__(self, element_type: ElementType, lower_bound: int = 0, upper_bound: int = 0, dynamic: bool = False):
+        super().__init__({})
+        self.element_type = element_type
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.dynamic = dynamic
+        
+        # Initialize static arrays
+        if not dynamic and lower_bound <= upper_bound:
+            for i in range(lower_bound, upper_bound + 1):
+                self.value[i] = self._create_default_element()
+    
+    def _create_default_element(self):
+        """Create default element based on element type"""
+        if self.element_type == ElementType.INTEGER:
+            return IntegerObject(0)
+        elif self.element_type == ElementType.REAL:
+            return RealObject(0.0)
+        elif self.element_type == ElementType.BOOL:
+            return BooleanObject(False)
+        elif self.element_type == ElementType.STRING:
+            return StringObject("")
+        elif self.element_type == ElementType.ARRAY:
+            return ArrayObject(ElementType.INTEGER, 0, 0, True)  # Default nested array
+        else:
+            return Object()
+    
+    def __getitem__(self, index):
+        """Get element at index"""
+        if index in self.value:
+            return self.value[index]
+        else:
+            # Return default value for out-of-bounds access
+            return self._create_default_element()
+    
+    def __setitem__(self, index, value):
+        """Set element at index"""
+        self.value[index] = value
+    
+    def __len__(self):
+        """Return length of array"""
+        if self.dynamic:
+            return len(self.value)
+        else:
+            return self.upper_bound - self.lower_bound + 1
+    
+    def set_length(self, new_length: int):
+        """Set new length for dynamic array"""
+        if not self.dynamic:
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH,
+                token=None,
+                message="Cannot modify length of static array"
+            )
+        
+        # Add new elements if extending
+        for i in range(len(self.value), new_length):
+            self.value[i] = self._create_default_element()
+        
+        # Remove elements if shrinking
+        if new_length < len(self.value):
+            keys_to_remove = [k for k in self.value.keys() if k >= new_length]
+            for k in keys_to_remove:
+                del self.value[k]
+
+
 class ErrorCode(Enum):
     # Common errors
     UNEXPECTED_TOKEN = "Unexpected token"
@@ -1708,6 +1957,7 @@ class ScopedSymbolTable:
         self.insert(BuiltinTypeSymbol("INTEGER"))
         self.insert(BuiltinTypeSymbol("REAL"))
         self.insert(BuiltinTypeSymbol("BOOLEAN"))
+        self.insert(BuiltinTypeSymbol("STRING"))
         self.insert(
             BuiltinProcedureSymbol(name=NativeMethod.WRITE.name, output_params=[])
         )
@@ -2147,57 +2397,26 @@ class CallStack:
         return self.__str__()
 
 
-class MemberMeta:
-    def __init__(self, type: ElementType, dynamic: bool = False, limit: int = -1):
-        self.type = type
-        self.dynamic = dynamic
-        self.limit = limit
-
-
 class ActivationRecord:
     def __init__(self, name: str, type: ARType, nesting_level: int) -> None:
         self.name = name
         self.type = type
         self.nesting_level = nesting_level
-        self.members: dict[str | int, Any] = {}
-        self.members_meta: dict[str, MemberMeta] = {}
+        self.members: dict[str | int, Object] = {}
 
-    def __setitem__(self, key: str | int, value) -> None:
+    def __setitem__(self, key: str | int, value: Object) -> None:
         self.members[key] = value
 
-    def __getitem__(self, key: str | int):
+    def __getitem__(self, key: str | int) -> Object:
         return self.members[key]
 
     def copy_from(self, other: "ActivationRecord", override: bool):
         for name, val in other.members.items():
             if override or name not in self.members:
                 self.members[name] = val
-        for name, val in other.members_meta.items():
-            if override or name not in self.members_meta:
-                self.members_meta[name] = val
 
-    def get(self, key: str):
+    def get(self, key: str) -> Object | None:
         return self.members.get(key)
-
-    def set_meta(self, key: str, type: ElementType):
-        self.members_meta[key] = MemberMeta(type=type)
-
-    def set_dynamic(self, key: str, dynamic: bool):
-        self.members_meta[key].dynamic = dynamic
-
-    def set_limit(self, key: str, limit: int):
-        self.members_meta[key].limit = limit
-
-    def get_meta(self, key: str):
-        meta = self.members_meta.get(key)
-        if meta is None:
-            raise InterpreterError(
-                error_code=ErrorCode.NULL_POINTER,
-                token=None,
-                message=f"{ErrorCode.NULL_POINTER.value}",
-            )
-        else:
-            return meta
 
     def __str__(self) -> str:
         lines = [
@@ -2254,73 +2473,52 @@ class Interpreter(NodeVisitor):
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
         if node.type_node.token.type == TokenType.BOOLEAN:
-            ar[node.var_node.value] = False
+            ar[node.var_node.value] = BooleanObject(False)
         elif node.type_node.token.type == TokenType.INTEGER:
-            ar[node.var_node.value] = 0
+            ar[node.var_node.value] = IntegerObject(0)
         elif node.type_node.token.type == TokenType.REAL:
-            ar[node.var_node.value] = 0.0
+            ar[node.var_node.value] = RealObject(0.0)
         elif node.type_node.token.type == TokenType.STRING:
-            ar[node.var_node.value] = ""
             string_node = cast(StringType, node.type_node)
             limit: int = 255
             if string_node.limit is not None:
-                limit = self.visit(string_node.limit)
-            ar.set_meta(key=node.var_node.value, type=ElementType.STRING)
-            ar.set_limit(key=node.var_node.value, limit=limit)
+                limit = self.visit(string_node.limit).value
+            ar[node.var_node.value] = StringObject("", limit)
         elif node.type_node.token.type == TokenType.ARRAY:
-            ar[node.var_node.value] = self.__initArray(node.type_node, ar)
-            self.__set_member_type(node, ar)
-            if (cast(ArrayType, node.type_node)).dynamic is True:
-                ar.set_dynamic(node.var_node.value, True)
+            ar[node.var_node.value] = self.__initArray(node.type_node)
         pass
 
-    def __set_member_type(self, node: VarDecl, ar: ActivationRecord):
-        if isinstance(node.type_node, ArrayType):
-            if node.type_node.element_type.token.type == TokenType.BOOLEAN:
-                ar.set_meta(node.var_node.value, ElementType.BOOL)
-            elif node.type_node.element_type.token.type == TokenType.INTEGER:
-                ar.set_meta(node.var_node.value, ElementType.INTEGER)
-            elif node.type_node.element_type.token.type == TokenType.REAL:
-                ar.set_meta(node.var_node.value, ElementType.REAL)
-            elif node.type_node.element_type.token.type == TokenType.ARRAY:
-                ar.set_meta(node.var_node.value, ElementType.ARRAY)
-        else:
-            pass
-
-    def __initArray(self, node: Type, ar: ActivationRecord) -> dict[Any, Any]:
+    def __initArray(self, node: Type) -> ArrayObject:
         if isinstance(node, ArrayType):
-            lower_bound: int = self.visit(node.lower)
-            upper_bound: int = self.visit(node.upper)
+            lower_bound: int = self.visit(node.lower).value
+            upper_bound: int = self.visit(node.upper).value
             if lower_bound > upper_bound:
                 raise InterpreterError(
                     error_code=ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID,
                     token=node.token,
                     message=f"{ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID.value} -> {node.token}",
                 )
+            
+            # Determine element type
+            element_type = ElementType.INTEGER  # default
             if node.element_type.token.type == TokenType.BOOLEAN:
-                bool_arr: dict[int, bool] = {}
-                if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        bool_arr[i] = False
-                return bool_arr
+                element_type = ElementType.BOOL
             elif node.element_type.token.type == TokenType.INTEGER:
-                int_arr: dict[int, int] = {}
-                if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        int_arr[i] = 0
-                return int_arr
+                element_type = ElementType.INTEGER
             elif node.element_type.token.type == TokenType.REAL:
-                real_arr: dict[int, float] = {}
-                if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        real_arr[i] = 0.0
-                return real_arr
+                element_type = ElementType.REAL
+            elif node.element_type.token.type == TokenType.STRING:
+                element_type = ElementType.STRING
             elif node.element_type.token.type == TokenType.ARRAY:
-                arr_arr: dict[int, dict] = {}
-                if node.dynamic is False:
-                    for i in range(lower_bound, upper_bound + 1):
-                        arr_arr[i] = self.__initArray(node.element_type, ar)
-                return arr_arr
+                element_type = ElementType.ARRAY
+            
+            return ArrayObject(
+                element_type=element_type,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                dynamic=node.dynamic
+            )
+        
         raise SemanticError(
             error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
             token=node.token,
@@ -2343,74 +2541,119 @@ class Interpreter(NodeVisitor):
         # Do nothing
         pass
 
-    def visit_BinOp(self, node: BinOp) -> Number | bool | str:
+    def visit_BinOp(self, node: BinOp) -> Object:
+        left_obj = self.visit(node.left)
+        right_obj = self.visit(node.right)
+        
         # logic operator
         if node.op.type == TokenType.AND:
-            return bool(self.visit(node.left)) and bool(self.visit(node.right))
+            if isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+                return left_obj & right_obj
         elif node.op.type == TokenType.OR:
-            return bool(self.visit(node.left)) or bool(self.visit(node.right))
+            if isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+                return left_obj | right_obj
 
         # arithmetic operator
         if node.op.type == TokenType.PLUS:
-            return cast(Number | str, self.visit(node.left) + self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj + right_obj
+            elif isinstance(left_obj, StringObject) and isinstance(right_obj, StringObject):
+                # For string concatenation, don't apply limits during intermediate operations
+                return StringObject(left_obj.value + right_obj.value, -1)
+            # Handle string + other types conversion
+            elif isinstance(left_obj, StringObject):
+                if hasattr(right_obj, 'value'):
+                    return StringObject(left_obj.value + str(right_obj.value), -1)
+                else:
+                    return StringObject(left_obj.value + str(right_obj), -1)
+            elif isinstance(right_obj, StringObject):
+                if hasattr(left_obj, 'value'):
+                    return StringObject(str(left_obj.value) + right_obj.value, -1)
+                else:
+                    return StringObject(str(left_obj) + right_obj.value, -1)
         elif node.op.type == TokenType.MINUS:
-            return cast(Number, self.visit(node.left) - self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj - right_obj
         elif node.op.type == TokenType.MUL:
-            return cast(Number, self.visit(node.left) * self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj * right_obj
         elif node.op.type == TokenType.INTEGER_DIV:
-            return cast(Number, self.visit(node.left) // self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj // right_obj
         elif node.op.type == TokenType.FLOAT_DIV:
-            return float(self.visit(node.left)) / float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj / right_obj
 
         # comparison operator
         if node.op.type == TokenType.LT:
-            return float(self.visit(node.left)) < float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj < right_obj
         elif node.op.type == TokenType.GT:
-            return float(self.visit(node.left)) > float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj > right_obj
         elif node.op.type == TokenType.EQ:
-            return float(self.visit(node.left)) == float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj == right_obj
+            elif isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+                return left_obj == right_obj
         elif node.op.type == TokenType.NE:
-            return float(self.visit(node.left)) != float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj != right_obj
+            elif isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+                return left_obj != right_obj
         elif node.op.type == TokenType.LE:
-            return float(self.visit(node.left)) <= float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj <= right_obj
         elif node.op.type == TokenType.GE:
-            return float(self.visit(node.left)) >= float(self.visit(node.right))
+            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+                return left_obj >= right_obj
 
-        # !!
+        # !! 
         raise InterpreterError(
             error_code=ErrorCode.INTERPRETER_UNKNOWN_OPERATOR,
             token=node.token,
             message=f"{ErrorCode.INTERPRETER_UNKNOWN_OPERATOR.value} -> {node.token}",
         )
 
-    def visit_Num(self, node: Num):
-        return node.value
+    def visit_Num(self, node: Num) -> NumberObject:
+        if isinstance(node.value, int):
+            return IntegerObject(node.value)
+        else:
+            return RealObject(node.value)
 
-    def visit_String(self, node: String):
-        return node.value
+    def visit_String(self, node: String) -> StringObject:
+        return StringObject(node.value)
 
-    def visit_Bool(self, node: Bool):
+    def visit_Bool(self, node: Bool) -> BooleanObject:
         if node.token.type == TokenType.TRUE:
-            return True
+            return BooleanObject(True)
         elif node.token.type == TokenType.FALSE:
-            return False
+            return BooleanObject(False)
         raise InterpreterError(
             error_code=ErrorCode.INTERPRETER_UNKNOWN_BOOLEAN,
             token=node.token,
             message=f"{ErrorCode.INTERPRETER_UNKNOWN_BOOLEAN.value} -> {node.token}",
         )
 
-    def visit_UnaryOp(self, node: UnaryOp) -> Number | bool:
+    def visit_UnaryOp(self, node: UnaryOp) -> Object:
+        expr_obj = self.visit(node.expr)
         op = node.op.type
+        
         # negative bang
         if op == TokenType.NOT:
-            return not self.visit(node.expr)
+            if isinstance(expr_obj, BooleanObject):
+                return ~expr_obj
+            else:
+                return BooleanObject(not expr_obj.to_bool())
 
         # signal bang
         if op == TokenType.PLUS:
-            return cast(Number, +self.visit(node.expr))
+            if isinstance(expr_obj, NumberObject):
+                return +expr_obj
         elif op == TokenType.MINUS:
-            return cast(Number, -self.visit(node.expr))
+            if isinstance(expr_obj, NumberObject):
+                return -expr_obj
+        
         raise InterpreterError(
             error_code=ErrorCode.INTERPRETER_UNKNOWN_OPERATOR,
             token=node.token,
@@ -2428,77 +2671,69 @@ class Interpreter(NodeVisitor):
 
         if isinstance(node.left, IndexVar):
             # array [index] = value
-            index: int = self.visit(node.left.index)
-            ar[var_name][index] = var_value
+            index_obj = self.visit(node.left.index)
+            index = index_obj.value if isinstance(index_obj, NumberObject) else 0
+            array_obj = ar[var_name]
+            if isinstance(array_obj, ArrayObject):
+                array_obj[index] = var_value
         else:
             # identifier = value
-            if var_name in ar.members_meta:
-                limit = ar.get_meta(var_name).limit
-                if limit > 0:
-                    if len(var_value) > limit:
-                        message = f"Warning: String literal has more characters[{len(var_value)}] than short string length[{limit}]"
-                        SpiUtil.print_w(message=message)
-                    ar[var_name] = cast(str, var_value)[0:limit]
+            existing_var = ar.get(var_name)
+            if isinstance(existing_var, StringObject) and isinstance(var_value, StringObject):
+                # Handle string assignment with limit checking
+                if existing_var.limit > 0 and len(var_value.value) > existing_var.limit:
+                    message = f"Warning: String literal has more characters[{len(var_value.value)}] than short string length[{existing_var.limit}]"
+                    SpiUtil.print_w(message=message)
+                    ar[var_name] = StringObject(var_value.value[:existing_var.limit], existing_var.limit)
                 else:
-                    ar[var_name] = var_value
+                    ar[var_name] = StringObject(var_value.value, existing_var.limit)
             else:
                 ar[var_name] = var_value
 
-    def visit_Var(self, node: Var) -> Any:
+    def visit_Var(self, node: Var) -> Object:
         var_name = node.value
-
         ar = self.call_stack.peek()
         var_value = ar.get(var_name)
+        return var_value if var_value is not None else Object()
 
-        return var_value
-
-    def visit_IndexVar(self, node: IndexVar) -> Any:
+    def visit_IndexVar(self, node: IndexVar) -> Object:
         var_name = node.value
-        index: int = self.visit(node.index)
+        index_obj = self.visit(node.index)
+        index = index_obj.value if isinstance(index_obj, NumberObject) else 0
 
         ar = self.call_stack.peek()
-        if ar.get_meta(var_name).type == ElementType.STRING:
-            string_const = ar.get(var_name)
-            if len(string_const) >= index:
-                return string_const[index - 1]
-            else:
-                return ""
+        var_obj = ar.get(var_name)
+        
+        if isinstance(var_obj, StringObject):
+            return var_obj[index]
+        elif isinstance(var_obj, ArrayObject):
+            return var_obj[index]
         else:
-            array = ar.get(var_name)
-
-            if index in array:
-                return array[index]
-            else:
-                message = f"Warning: range check error while evaluating constants {var_name}[{index}]"
-                SpiUtil.print_w(message=message)
-                element_type = ar.get_meta(var_name).type
-                if element_type == ElementType.BOOL:
-                    return False
-                if element_type == ElementType.INTEGER:
-                    return 0
-                if element_type == ElementType.REAL:
-                    return 0.0
-                if element_type == ElementType.ARRAY:
-                    return {}
+            # Return default object for unknown types
+            return Object()
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
 
     def visit_WhileStatement(self, node: WhileStatement) -> None:
-        while self.visit(node.condition) is True:
+        while self.visit(node.condition).to_bool():
             self.visit(node.block)
 
     def visit_ForStatement(self, node: ForStatement) -> None:
         ar = self.call_stack.peek()
         var_name = node.initialization.left.value
         self.visit(node.initialization)
-        bound_value = cast(Number, self.visit(node.bound))
-        var_value = ar[var_name]
+        bound_obj = self.visit(node.bound)
+        bound_value = bound_obj.value if isinstance(bound_obj, NumberObject) else 0
+        
+        var_obj = ar[var_name]
+        var_value = var_obj.value if isinstance(var_obj, NumberObject) else 0
+        
         while var_value <= bound_value:
             self.visit(node.block)
             var_value += 1
             if var_value <= bound_value:
-                ar[var_name] = var_value
+                ar[var_name] = IntegerObject(var_value)
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         pass
@@ -2539,7 +2774,8 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node), end=" ")
+                    obj = self.visit(argument_node)
+                    print(obj.value if hasattr(obj, 'value') else obj, end=" ")
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -2559,7 +2795,8 @@ class Interpreter(NodeVisitor):
 
                 # output actual params
                 for argument_node in actual_params:
-                    print(self.visit(argument_node))
+                    obj = self.visit(argument_node)
+                    print(obj.value if hasattr(obj, 'value') else obj)
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -2579,30 +2816,16 @@ class Interpreter(NodeVisitor):
 
                 # core
                 arr_name = actual_params[0].value
-                new_length = actual_params[1].value
-                element_type = ar.get_meta(arr_name).type
-                if element_type == ElementType.STRING:
-                    if len(ar[arr_name]) > new_length:
-                        ar[arr_name] = ar[arr_name][0:new_length]
-                else:
-                    if ar.get_meta(arr_name).dynamic is False:
-                        raise InterpreterError(
-                            error_code=ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH,
-                            token=node.token,
-                            message=f"{ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH.value} -> {node.token}",
-                        )
-
-                    for i in range(0, new_length):
-                        if i in ar[arr_name]:
-                            continue
-                        if element_type == ElementType.BOOL:
-                            ar[arr_name][i] = False
-                        if element_type == ElementType.INTEGER:
-                            ar[arr_name][i] = 0
-                        if element_type == ElementType.REAL:
-                            ar[arr_name][i] = 0.0
-                        if element_type == ElementType.ARRAY:
-                            ar[arr_name][i] = {}
+                new_length_obj = self.visit(actual_params[1])
+                new_length = new_length_obj.value if isinstance(new_length_obj, NumberObject) else 0
+                
+                pre_ar = self.call_stack._records[-2] if len(self.call_stack._records) >= 2 else ar
+                var_obj = pre_ar.get(arr_name)
+                
+                if isinstance(var_obj, StringObject):
+                    var_obj.set_length(new_length)
+                elif isinstance(var_obj, ArrayObject):
+                    var_obj.set_length(new_length)
 
                 self.log(f"LEAVE: PROCEDURE {proc_name}")
                 self.log(str(self.call_stack))
@@ -2646,14 +2869,14 @@ class Interpreter(NodeVisitor):
         pass
 
     def visit_IfStatement(self, node: IfStatement) -> None:
-        flag: bool = self.visit(node.condition)
+        flag = self.visit(node.condition).to_bool()
 
         if flag:
             self.visit(node.then_branch)
             return
         else:
             for branch in node.else_if_branches:
-                sub_flag: bool = self.visit(branch)
+                sub_flag = self.visit(branch.condition).to_bool()
                 if sub_flag:
                     self.visit(branch.then_branch)
                     return
@@ -2661,7 +2884,7 @@ class Interpreter(NodeVisitor):
         if node.else_branch is not None:
             self.visit(node.else_branch)
 
-    def visit_FunctionCall(self, node: FunctionCall) -> Any:
+    def visit_FunctionCall(self, node: FunctionCall) -> Object:
         func_name = node.func_name
         func_symbol = node.func_symbol
 
@@ -2696,13 +2919,21 @@ class Interpreter(NodeVisitor):
                 self.log(f"ENTER: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
-                ar[RETURN_NUM_FOR_LENGTH] = len(self.visit(actual_params[i]))
+                # Get the array/string object and return its length
+                param_obj = self.visit(actual_params[1])  # Skip the function name param
+                if isinstance(param_obj, (ArrayObject, StringObject)):
+                    length_value = len(param_obj)
+                else:
+                    length_value = 0
+                
+                result = IntegerObject(length_value)
+                ar[RETURN_NUM_FOR_LENGTH] = result
 
                 self.log(f"LEAVE: FUNCTION {func_name}")
                 self.log(str(self.call_stack))
 
                 self.call_stack.pop()
-                return ar[RETURN_NUM_FOR_LENGTH]
+                return result
             else:
                 raise InterpreterError(
                     error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION,
@@ -2733,9 +2964,10 @@ class Interpreter(NodeVisitor):
             self.log(f"LEAVE: FUNCTION {func_name}")
             self.log(str(self.call_stack))
 
+            result = ar.get(func_name)
             self.call_stack.pop()
 
-            return ar[func_name]
+            return result if result is not None else Object()
 
     def interpret(self):
         tree = self.tree
