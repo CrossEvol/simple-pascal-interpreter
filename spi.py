@@ -217,6 +217,22 @@ class StringObject(Object):
             return CharObject(self.value[index - 1])
         return CharObject("")
 
+    def __setitem__(self, index: int, value: Object) -> None:
+        """Set character at index (1-based indexing for Pascal)"""
+        if 1 <= index <= len(self.value):
+            # Convert value to string character
+            if isinstance(value, CharObject):
+                char_value = value.value
+            elif isinstance(value, StringObject):
+                char_value = value.value[:1] if value.value else ""
+            else:
+                char_value = str(value)[:1] if hasattr(value, "value") else ""
+
+            # Modify the string at the specified index
+            value_list = list(self.value)
+            value_list[index - 1] = char_value
+            self.value = "".join(value_list)
+
     def __len__(self):
         return len(self.value)
 
@@ -1018,7 +1034,7 @@ class ForStatement(Statement):
 
 
 class Assign(Statement):
-    def __init__(self, left: Var, op: Token, right) -> None:
+    def __init__(self, left: Expression, op: Token, right) -> None:
         self.left = left
         self.token = self.op = op
         self.right = right
@@ -1032,12 +1048,35 @@ class Var(Expression):
         self.value = token.value
 
 
-class IndexVar(Var):
-    """The IndexVar is for ID[index]"""
+class AccessExpression(Expression):
+    """Represents variable access with optional suffixes: ID[expr] or ID.field"""
 
-    def __init__(self, token, index: AST):
-        super().__init__(token)
+    def __init__(self, base: Expression, suffixes: list[AccessSuffix]):
+        self.base = base
+        self.suffixes = suffixes
+        # Set token from the base expression
+        self.token = getattr(base, "token", None)
+
+
+class AccessSuffix(Expression):
+    """Base class for access suffixes"""
+
+    pass
+
+
+class IndexSuffix(AccessSuffix):
+    """Represents array index access [expr]"""
+
+    def __init__(self, index: Expression):
         self.index = index
+
+
+class MemberSuffix(AccessSuffix):
+    """Represents member access .field"""
+
+    def __init__(self, member: Token):
+        self.member = member
+        self.token = member
 
 
 class NoOp(Statement):
@@ -1606,27 +1645,43 @@ class Parser:
         assignment_statement : variable ASSIGN expr
         """
         left = self.variable()
-        if not isinstance(left, Var):
-            self.error(ErrorCode.UNEXPECTED_TOKEN, left.token)
         token = self.current_token
         self.eat(TokenType.ASSIGN)
         right = self.expr()
-        assert isinstance(left, Var)
         node = Assign(left, token, right)
         return node
 
-    def variable(self) -> Var:
+    def variable(self) -> Expression:
         """
-        variable: ID (LBRACKET summation_expr RBRACKET)?
+        variable : ID variable_suffix*
+        variable_suffix : LBRACKET expr RBRACKET | DOT ID
         """
-        node = Var(self.current_token)
+        # Parse the base identifier
+        base = Var(self.current_token)
         self.eat(TokenType.ID)
-        if self.current_token.type == TokenType.LBRACKET:
-            self.eat(TokenType.LBRACKET)
-            index = self.summation_expr()
-            self.eat(TokenType.RBRACKET)
-            return IndexVar(token=node.token, index=index)
-        return node
+
+        # Parse variable suffixes
+        suffixes: list[AccessSuffix] = []
+
+        while self.current_token.type in (TokenType.LBRACKET, TokenType.DOT):
+            if self.current_token.type == TokenType.LBRACKET:
+                # Index access: [expr]
+                self.eat(TokenType.LBRACKET)
+                index = self.expr()
+                self.eat(TokenType.RBRACKET)
+                suffixes.append(IndexSuffix(index))
+            elif self.current_token.type == TokenType.DOT:
+                # Member access: .field
+                self.eat(TokenType.DOT)
+                member_token = self.current_token
+                self.eat(TokenType.ID)
+                suffixes.append(MemberSuffix(member_token))
+
+        # Return AccessExpression if there are suffixes, otherwise return base Var
+        if suffixes:
+            return AccessExpression(base, suffixes)
+        else:
+            return base
 
     def empty(self) -> NoOp:
         """An empty production"""
@@ -1877,7 +1932,9 @@ class Parser:
                | func_call_expr
                | variable
 
-        variable: ID (LBRACKET summation_expr RBRACKET)?
+        variable : ID variable_suffix*
+
+        variable_suffix : LBRACKET expr RBRACKET | DOT ID
         """
         node = self.program()
         if self.current_token.type != TokenType.EOF:
@@ -2345,46 +2402,63 @@ class SemanticAnalyzer(NodeVisitor):
         # right-hand side
         self.visit(node.right)
         # left-hand side
-        if node.left.value in self.unmodified_vars:
-            self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
-        self.visit(node.left)
-        if self.current_scope is None:
-            raise SemanticError(
-                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
-                token=node.left.token,
-                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.left.token}",
-            )
-        var_symbol = self.current_scope.lookup(node.left.value)
-        if var_symbol is None:
-            raise SemanticError(
-                error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
-                token=node.left.token,
-                message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
-            )
-        if var_symbol.type is None:
-            raise SemanticError(
-                error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
-                token=node.left.token,
-                message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
-            )
-        if isinstance(var_symbol.type, StringTypeSymbol):
-            # string_size = var_symbol.type.limit
-            # if isinstance(node.right, String):
-            #     string_value = node.right.value
-            #     if len(string_value) > string_size:
-            #         message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
-            #         SpiUtil.print_w(message=message)
-            pass
-        elif var_symbol.type and var_symbol.type.name == "CHAR":
-            # Validate character assignment
-            if isinstance(node.right, String):
-                string_value = node.right.value
-                if len(string_value) > 1:
-                    raise SemanticError(
-                        error_code=ErrorCode.SEMANTIC_CHAR_TOO_MANY_CHARS,
-                        token=node.right.token,
-                        message=f"String literal has too many characters for CHAR variable: '{string_value}'",
-                    )
+        if isinstance(node.left, Var):
+            if node.left.value in self.unmodified_vars:
+                self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
+            self.visit(node.left)
+            if self.current_scope is None:
+                raise SemanticError(
+                    error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                    token=node.left.token,
+                    message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.left.token}",
+                )
+            var_symbol = self.current_scope.lookup(node.left.value)
+            if var_symbol is None:
+                raise SemanticError(
+                    error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
+                    token=node.left.token,
+                    message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
+                )
+            if var_symbol.type is None:
+                raise SemanticError(
+                    error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
+                    token=node.left.token,
+                    message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
+                )
+        elif isinstance(node.left, AccessExpression):
+            # Handle access expressions (array/member access)
+            self.visit(node.left)
+        else:
+            self.visit(node.left)
+
+        # Additional validation for specific cases
+        if isinstance(node.left, Var):
+            if self.current_scope is None:
+                raise SemanticError(
+                    error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                    token=node.left.token,
+                    message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.left.token}",
+                )
+            var_symbol = self.current_scope.lookup(node.left.value)
+            if var_symbol and var_symbol.type:
+                if isinstance(var_symbol.type, StringTypeSymbol):
+                    # string_size = var_symbol.type.limit
+                    # if isinstance(node.right, String):
+                    #     string_value = node.right.value
+                    #     if len(string_value) > string_size:
+                    #         message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
+                    #         SpiUtil.print_w(message=message)
+                    pass
+                elif var_symbol.type.name == "CHAR":
+                    # Validate character assignment
+                    if isinstance(node.right, String):
+                        string_value = node.right.value
+                        if len(string_value) > 1:
+                            raise SemanticError(
+                                error_code=ErrorCode.SEMANTIC_CHAR_TOO_MANY_CHARS,
+                                token=node.right.token,
+                                message=f"String literal has too many characters for CHAR variable: '{string_value}'",
+                            )
 
     def visit_Var(self, node: Var) -> None:
         var_name = node.value
@@ -2397,17 +2471,47 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
             return
 
-    def visit_IndexVar(self, node: IndexVar) -> None:
-        var_name = node.value
-        if self.current_scope is None:
-            self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
-            return
+    def visit_AccessExpression(self, node: AccessExpression) -> None:
+        # Visit the base expression
+        self.visit(node.base)
 
-        var_symbol = self.current_scope.lookup(var_name)
-        if var_symbol is None:
-            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
-            return
+        # Validate each suffix
+        for suffix in node.suffixes:
+            if isinstance(suffix, IndexSuffix):
+                # Check if base supports indexing (arrays, strings)
+                if isinstance(node.base, Var):
+                    var_name = node.base.value
+                    if self.current_scope is None:
+                        self.error(
+                            error_code=ErrorCode.NULL_POINTER, token=node.base.token
+                        )
+                        return
+
+                    var_symbol = self.current_scope.lookup(var_name)
+                    if var_symbol is None:
+                        self.error(
+                            error_code=ErrorCode.ID_NOT_FOUND, token=node.base.token
+                        )
+                        return
+
+                    # TODO: Add type checking to ensure variable supports indexing
+
+                # Visit the index expression
+                self.visit(suffix.index)
+
+            elif isinstance(suffix, MemberSuffix):
+                # Member access - check if base supports member access (records, enums)
+                # For now, we'll just report an error since we don't have records/enums yet
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL, token=suffix.member
+                )
+
+    def visit_IndexSuffix(self, node: IndexSuffix) -> None:
         self.visit(node.index)
+
+    def visit_MemberSuffix(self, node: MemberSuffix) -> None:
+        # Nothing to validate for the member token itself
+        pass
 
     def visit_Num(self, node: Num) -> None:
         pass
@@ -3150,38 +3254,65 @@ class Interpreter(NodeVisitor):
             self.visit(child)
 
     def visit_Assign(self, node: Assign) -> None:
-        var_name = node.left.value
         var_value = self.visit(node.right)
         ar = self.call_stack.peek()
 
-        if isinstance(node.left, IndexVar):
-            # array [index] = value
-            index_obj = self.visit(node.left.index)
-            index = index_obj.value if isinstance(index_obj, NumberObject) else 0
-            array_obj = ar[var_name]
-            if isinstance(array_obj, ArrayObject):
-                array_obj[index] = var_value
-        else:
-            # identifier = value
-            existing_var = ar.get(var_name)
-            if isinstance(existing_var, StringObject) and isinstance(
-                var_value, StringObject
-            ):
-                # Handle string assignment with limit checking
-                if existing_var.limit > 0 and len(var_value.value) > existing_var.limit:
-                    message = f"Warning: String literal has more characters[{len(var_value.value)}] than short string length[{existing_var.limit}]"
-                    SpiUtil.print_w(message=message)
-                    ar[var_name] = StringObject(
-                        var_value.value[: existing_var.limit], existing_var.limit
+        if isinstance(node.left, AccessExpression):
+            # Handle access expression assignments (e.g., arr[i] := value)
+            if isinstance(node.left.base, Var):
+                base_name = node.left.base.value
+                base_obj = ar.get(base_name)
+
+                if len(node.left.suffixes) == 1 and isinstance(
+                    node.left.suffixes[0], IndexSuffix
+                ):
+                    # Single index assignment: arr[i] := value
+                    index_obj = self.visit(node.left.suffixes[0].index)
+                    index = (
+                        index_obj.value if isinstance(index_obj, NumberObject) else 0
                     )
-                else:
-                    ar[var_name] = StringObject(var_value.value, existing_var.limit)
-            elif isinstance(existing_var, CharObject) and isinstance(
-                var_value, StringObject
-            ):
-                ar[var_name] = CharObject(value=var_value.value)
+
+                    if isinstance(base_obj, ArrayObject):
+                        base_obj[index] = var_value
+                    elif isinstance(base_obj, StringObject):
+                        # Handle string character assignment
+                        if (
+                            isinstance(var_value, StringObject)
+                            and len(var_value.value) == 1
+                        ):
+                            base_obj[index] = CharObject(var_value.value)
+                        elif isinstance(var_value, CharObject):
+                            base_obj[index] = var_value
+                # TODO: Handle member assignments and multi-level access
+            return
+        elif isinstance(node.left, Var):
+            var_name = node.left.value
+        else:
+            # Fallback: treat as variable assignment if it has a value attribute
+            var_name = getattr(node.left, "value", None)
+            if var_name is None:
+                return
+
+        # Handle regular variable assignment
+        existing_var = ar.get(var_name)
+        if isinstance(existing_var, StringObject) and isinstance(
+            var_value, StringObject
+        ):
+            # Handle string assignment with limit checking
+            if existing_var.limit > 0 and len(var_value.value) > existing_var.limit:
+                message = f"Warning: String literal has more characters[{len(var_value.value)}] than short string length[{existing_var.limit}]"
+                SpiUtil.print_w(message=message)
+                ar[var_name] = StringObject(
+                    var_value.value[: existing_var.limit], existing_var.limit
+                )
             else:
-                ar[var_name] = var_value
+                ar[var_name] = StringObject(var_value.value, existing_var.limit)
+        elif isinstance(existing_var, CharObject) and isinstance(
+            var_value, StringObject
+        ):
+            ar[var_name] = CharObject(value=var_value.value)
+        else:
+            ar[var_name] = var_value
 
     def visit_Var(self, node: Var) -> Object:
         var_name = node.value
@@ -3189,21 +3320,40 @@ class Interpreter(NodeVisitor):
         var_value = ar.get(var_name)
         return var_value if var_value is not None else NullObject()
 
-    def visit_IndexVar(self, node: IndexVar) -> Object:
-        var_name = node.value
-        index_obj = self.visit(node.index)
-        index = index_obj.value if isinstance(index_obj, NumberObject) else 0
+    def visit_AccessExpression(self, node: AccessExpression) -> Object:
+        # Start with the base value
+        base_obj = self.visit(node.base)
+        current_obj = base_obj
 
-        ar = self.call_stack.peek()
-        var_obj = ar.get(var_name)
+        # Apply each suffix in sequence
+        for suffix in node.suffixes:
+            if isinstance(suffix, IndexSuffix):
+                # Array/string index access
+                index_obj = self.visit(suffix.index)
+                index = index_obj.value if isinstance(index_obj, NumberObject) else 0
 
-        if isinstance(var_obj, StringObject):
-            return var_obj[index]
-        elif isinstance(var_obj, ArrayObject):
-            return cast(Object, var_obj[index])
-        else:
-            # Return default null object for unknown types
-            return NullObject()
+                if isinstance(current_obj, StringObject):
+                    current_obj = current_obj[index]
+                elif isinstance(current_obj, ArrayObject):
+                    current_obj = cast(Object, current_obj[index])
+                else:
+                    # Return null object for unsupported indexing
+                    return NullObject()
+
+            elif isinstance(suffix, MemberSuffix):
+                # Member access for records/enums (not implemented yet)
+                # For now, return null object
+                return NullObject()
+
+        return current_obj if current_obj is not None else NullObject()
+
+    def visit_IndexSuffix(self, node: IndexSuffix) -> Object:
+        result = self.visit(node.index)
+        return result if isinstance(result, Object) else NullObject()
+
+    def visit_MemberSuffix(self, node: MemberSuffix) -> Object:
+        # Member access not implemented yet
+        return NullObject()
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
