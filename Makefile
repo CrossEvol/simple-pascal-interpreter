@@ -1,18 +1,85 @@
-runs:
-	@python spi.py ${file} --stack --scope
+# Simple Pascal Interpreter Makefile
 
+# 默认目标
+.PHONY: help
+help:
+	@echo "Simple Pascal Interpreter - Available targets:"
+	@echo "  run FILE=<file>     - Run Pascal interpreter with stack and scope logging"
+	@echo "  interpret FILE=<file> - Run Pascal interpreter normally"
+	@echo "  main                - Run main entry point"
+	@echo "  test                - Run interpreter tests"
+	@echo "  dot FILE=<file>     - Generate AST visualization"
+	@echo "  type FILE=<file>    - Run auto type annotation"
+	@echo "  clean               - Clean generated files"
+	@echo "  help                - Show this help message"
+
+# 变量定义
+PYTHON := python
+DOT := dot
+
+# 运行解释器，带堆栈和作用域日志
+.PHONY: run
 run:
-	@python spi.py ${file} 
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: Please specify a Pascal file with FILE=<filename>"; \
+		exit 1; \
+	fi
+	@$(PYTHON) spi.py $(FILE) --stack --scope
 
+# 运行解释器
+.PHONY: interpret
+interpret:
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: Please specify a Pascal file with FILE=<filename>"; \
+		exit 1; \
+	fi
+	@$(PYTHON) spi.py $(FILE)
+
+# 运行主程序
+.PHONY: main
 main:
-	@python main.py
+	@$(PYTHON) main.py
 
+# 运行测试
+.PHONY: test
 test:
-	python test_interpreter.py
+	@$(PYTHON) test_interpreter.py
 
+# 生成AST可视化
+.PHONY: dot
 dot:
-	@python gen_ast_dot.py ${file} >> ast.dot
-	@dot -Tpng -o ast.png ast.dot
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: Please specify a Pascal file with FILE=<filename>"; \
+		exit 1; \
+	fi
+	@$(PYTHON) gen_ast_dot.py $(FILE) >> ast.dot
+	@$(DOT) -Tpng -o ast.png ast.dot
+	@echo "AST visualization generated: ast.png"
 
+# 自动类型注解
+.PHONY: type
 type:
-	@python auto_type.py ${file}
+	@if [ -z "$(FILE)" ]; then \
+		echo "Error: Please specify a Python file with FILE=<filename>"; \
+		exit 1; \
+	fi
+	@$(PYTHON) auto_type.py $(FILE)
+
+# 清理生成的文件
+.PHONY: clean
+clean:
+	@rm -f ast.dot ast.png
+	@echo "Cleaned generated files"
+
+# 示例运行目标（使用项目中的示例文件）
+.PHONY: example-basic
+example-basic:
+	@$(PYTHON) spi.py pas/basic_data_types.pas
+
+.PHONY: example-function
+example-function:
+	@$(PYTHON) spi.py pas/function.pas
+
+.PHONY: example-procedure
+example-procedure:
+	@$(PYTHON) spi.py pas/procedure.pas
