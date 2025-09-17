@@ -52,71 +52,88 @@ class Object:
         return bool(self.value)
 
 
+class NullObject(Object):
+    """Default null/empty type object"""
+
+    def __init__(self):
+        super().__init__(None)
+
+    def __str__(self):
+        return "null"
+
+    def __repr__(self):
+        return "NullObject()"
+
+    def to_bool(self):
+        """Convert to boolean for conditional expressions"""
+        return False
+
+
 class NumberObject(Object):
     """Base class for numeric types"""
 
-    def __add__(self, other):
+    def __add__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return self._create_result(self.value + other.value)
         return NotImplemented
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return self._create_result(self.value - other.value)
         return NotImplemented
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return self._create_result(self.value * other.value)
         return NotImplemented
 
-    def __truediv__(self, other):
+    def __truediv__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return RealObject(float(self.value) / float(other.value))
         return NotImplemented
 
-    def __floordiv__(self, other):
+    def __floordiv__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return self._create_result(self.value // other.value)
         return NotImplemented
 
-    def __pos__(self):
+    def __pos__(self) -> Object:
         return self._create_result(+self.value)
 
-    def __neg__(self):
+    def __neg__(self) -> Object:
         return self._create_result(-self.value)
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return BooleanObject(self.value < other.value)
         return NotImplemented
 
-    def __le__(self, other):
+    def __le__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return BooleanObject(self.value <= other.value)
         return NotImplemented
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return BooleanObject(self.value > other.value)
         return NotImplemented
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> Object:
         if isinstance(other, NumberObject):
             return BooleanObject(self.value >= other.value)
         return NotImplemented
 
     def __eq__(self, other):
         if isinstance(other, NumberObject):
-            return BooleanObject(self.value == other.value)
+            return self.value == other.value
         return NotImplemented
 
     def __ne__(self, other):
         if isinstance(other, NumberObject):
-            return BooleanObject(self.value != other.value)
+            return self.value != other.value
         return NotImplemented
 
-    def _create_result(self, value):
+    def _create_result(self, value) -> Object:
         """Create appropriate result type based on value"""
         if isinstance(value, int):
             return IntegerObject(value)
@@ -130,7 +147,7 @@ class IntegerObject(NumberObject):
     def __init__(self, value: int = 0):
         super().__init__(int(value))
 
-    def _create_result(self, value):
+    def _create_result(self, value) -> Object:
         if isinstance(value, int):
             return IntegerObject(value)
         else:
@@ -143,7 +160,7 @@ class RealObject(NumberObject):
     def __init__(self, value: float = 0.0):
         super().__init__(float(value))
 
-    def _create_result(self, value):
+    def _create_result(self, value) -> Object:
         return RealObject(float(value))
 
 
@@ -153,17 +170,17 @@ class BooleanObject(Object):
     def __init__(self, value: bool = False):
         super().__init__(bool(value))
 
-    def __and__(self, other):
+    def __and__(self, other) -> Object:
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value and other.value)
         return NotImplemented
 
-    def __or__(self, other):
+    def __or__(self, other) -> Object:
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value or other.value)
         return NotImplemented
 
-    def __invert__(self):
+    def __invert__(self) -> Object:
         return BooleanObject(not self.value)
 
     def __eq__(self, other):
@@ -186,14 +203,14 @@ class StringObject(Object):
         super().__init__(str(value))
         self.limit = limit
 
-    def __add__(self, other):
+    def __add__(self, other) -> Object:
         if isinstance(other, StringObject):
             result_value = self.value + other.value
             # Don't apply limits during concatenation operations
             return StringObject(result_value, -1)
         return NotImplemented
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Object:
         """Get character at index (1-based indexing for Pascal)"""
         if 1 <= index <= len(self.value):
             return CharObject(self.value[index - 1])
@@ -2541,7 +2558,7 @@ class ActivationRecord:
                 self.members[name] = val
 
     def get(self, key: str) -> Object:
-        return self.members.get(key)
+        return cast(Object, self.members.get(key))
 
     def __str__(self) -> str:
         lines = [
@@ -2746,20 +2763,20 @@ class Interpreter(NodeVisitor):
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
-                return left_obj == right_obj
+                return BooleanObject(value=left_obj == right_obj)
             elif isinstance(left_obj, BooleanObject) and isinstance(
                 right_obj, BooleanObject
             ):
-                return left_obj == right_obj
+                return BooleanObject(value=left_obj == right_obj)
         elif node.op.type == TokenType.NE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
-                return left_obj != right_obj
+                return BooleanObject(value=left_obj != right_obj)
             elif isinstance(left_obj, BooleanObject) and isinstance(
                 right_obj, BooleanObject
             ):
-                return left_obj != right_obj
+                return BooleanObject(value=left_obj != right_obj)
         elif node.op.type == TokenType.LE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
@@ -2861,7 +2878,7 @@ class Interpreter(NodeVisitor):
         var_name = node.value
         ar = self.call_stack.peek()
         var_value = ar.get(var_name)
-        return var_value if var_value is not None else Object()
+        return var_value if var_value is not None else NullObject()
 
     def visit_IndexVar(self, node: IndexVar) -> Object:
         var_name = node.value
@@ -2874,10 +2891,10 @@ class Interpreter(NodeVisitor):
         if isinstance(var_obj, StringObject):
             return var_obj[index]
         elif isinstance(var_obj, ArrayObject):
-            return var_obj[index]
+            return cast(Object, var_obj[index])
         else:
-            # Return default object for unknown types
-            return Object()
+            # Return default null object for unknown types
+            return NullObject()
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
@@ -3066,7 +3083,7 @@ class Interpreter(NodeVisitor):
             result = ar.get(func_name)
             self.call_stack.pop()
 
-            return result if result is not None else Object()
+            return result if result is not None else NullObject()
 
     def interpret(self):
         tree = self.tree

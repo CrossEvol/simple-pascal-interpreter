@@ -956,6 +956,38 @@ END.  {Part12}
         self.assertEqual(ar["b"].value, 25)
         self.assertAlmostEqual(ar["y"].value, float(20) / 7 + 3.14)  # 5.9971...
 
+    def test_null_object(self):
+        text = """\
+program NullObjectTest;
+var
+  a: integer;
+  b: boolean;
+begin
+  a := 10;
+  b := true;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        # Test that accessing undefined variables returns NullObject
+        undefined_var = ar.get("undefined_var")
+        self.assertIsNone(undefined_var)
+
+        # Test that visiting undefined variables returns NullObject
+        # We'll simulate this by directly calling the interpreter method
+        from spi import Token, TokenType, Var
+
+        undefined_node = Var(Token(TokenType.ID, "undefined_var"))
+        result = interpreter.visit_Var(undefined_node)
+        from spi import NullObject
+
+        self.assertIsInstance(result, NullObject)
+
+        # Test that NullObject converts to False in boolean context
+        self.assertFalse(result.to_bool())
+
 
 if __name__ == "__main__":
     unittest.main()
