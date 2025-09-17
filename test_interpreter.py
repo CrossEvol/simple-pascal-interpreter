@@ -61,6 +61,7 @@ class LexerTestCase(unittest.TestCase):
             ("FOR", TokenType.FOR, "FOR"),
             ("ARRAY", TokenType.ARRAY, "ARRAY"),
             ("OF", TokenType.OF, "OF"),
+            ("CASE", TokenType.CASE, "CASE"),
             ("..", TokenType.RANGE, ".."),
             ("STRING", TokenType.STRING, "STRING"),
             ("CHAR", TokenType.CHAR, "CHAR"),
@@ -1218,6 +1219,74 @@ end.
         self.assertEqual(ar["f4"].value, False)
         self.assertEqual(ar["f5"].value, True)
         self.assertEqual(ar["f6"].value, False)
+
+    def test_case_integer_statement(self):
+        text = """\
+program TestCaseInteger;
+var
+  i, result: integer;
+begin
+  i := 2;
+  case i of
+    1: result := 10;
+    2: result := 20;
+    3: result := 30;
+  else
+    result := 0;
+  end;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 2)
+        self.assertEqual(ar["result"].value, 20)
+
+    def test_case_char_statement(self):
+        text = """\
+program TestCaseChar;
+var
+  c: char;
+  result: integer;
+begin
+  c := 'B';
+  case c of
+    'A': result := 1;
+    'B': result := 2;
+    'C': result := 3;
+  else
+    result := 0;
+  end;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["c"].value, "B")
+        self.assertEqual(ar["result"].value, 2)
+
+    def test_case_boolean_statement(self):
+        text = """\
+program TestCaseBoolean;
+var
+  b: boolean;
+  result: integer;
+begin
+  b := false;
+  case b of
+    true: result := 1;
+    false: result := 2;
+  end;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["b"].value, False)
+        self.assertEqual(ar["result"].value, 2)
 
 
 if __name__ == "__main__":

@@ -506,6 +506,7 @@ class TokenType(Enum):
     TO = "TO"
     ARRAY = "ARRAY"
     OF = "OF"
+    CASE = "CASE"
     PROCEDURE = "PROCEDURE"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
@@ -1033,6 +1034,32 @@ class ForStatement(Statement):
         self.block = block
 
 
+class CaseStatement(Statement):
+    """Represents a 'CASE variable OF case_list (ELSE statement)? END' block"""
+
+    def __init__(
+        self, case_expr: AST, case_items: list[CaseItem], else_stmt: AST | None = None
+    ) -> None:
+        self.case_expr = case_expr  # 被判断的表达式
+        self.case_items = case_items  # case项目列表
+        self.else_stmt = else_stmt  # else语句（可选）
+
+
+class CaseItem(AST):
+    """Represents a case item with labels and a statement"""
+
+    def __init__(self, labels: list[CaseLabel], statement: AST) -> None:
+        self.labels = labels  # case标签列表
+        self.statement = statement  # 对应的语句
+
+
+class CaseLabel(AST):
+    """Represents a case label value"""
+
+    def __init__(self, value) -> None:
+        self.value = value  # 标签值
+
+
 class Assign(Statement):
     def __init__(self, left: Expression, op: Token, right) -> None:
         self.left = left
@@ -1494,6 +1521,7 @@ class Parser:
                   | proccall_statement
                   | assignment_statement
                   | if_statement
+                  | case_statement
                   | empty
         """
         node: Statement
@@ -1501,11 +1529,16 @@ class Parser:
             node = self.compound_statement()
         elif self.current_token.type == TokenType.IF:
             node = self.if_statement()
+        elif self.current_token.type == TokenType.CASE:
+            node = self.case_statement()
         elif self.current_token.type == TokenType.WHILE:
             node = self.while_statement()
         elif self.current_token.type == TokenType.FOR:
             node = self.for_statement()
-        elif self.current_token.type == TokenType.ID and self.lexer.current_char == "(":
+        elif (
+            self.current_token.type == TokenType.ID
+            and self.lexer.peek_next_token().type == TokenType.LPAREN
+        ):
             node = self.proccall_statement()
         elif self.current_token.type == TokenType.ID:
             node = self.assignment_statement()
@@ -1582,6 +1615,93 @@ class Parser:
             block = self.statement()
         node = ForStatement(initialization, bound, block)
         return node
+
+    def case_statement(self) -> CaseStatement:
+        """case_statement : CASE variable OF case_list (ELSE (statement | compound_statement) SEMI)? END SEMI"""
+        self.eat(TokenType.CASE)
+        case_expr = self.variable()
+        self.eat(TokenType.OF)
+        case_items = self.case_list()
+        else_stmt: Statement | None = None
+        if self.current_token.type == TokenType.ELSE:
+            self.eat(TokenType.ELSE)
+            if self.current_token.type == TokenType.BEGIN:
+                else_stmt = self.compound_statement()
+            else:
+                else_stmt = self.statement()
+            self.eat(TokenType.SEMI)
+        self.eat(TokenType.END)
+        self.eat(TokenType.SEMI)
+        node = CaseStatement(case_expr, case_items, else_stmt)
+        return node
+
+    def case_list(self) -> list[CaseItem]:
+        """case_list : case_item SEMI (case_item SEMI)*"""
+        case_items = [self.case_item()]
+        self.eat(TokenType.SEMI)
+
+        while self.current_token.type not in (TokenType.ELSE, TokenType.END):
+            # Parse next case item if we have case labels
+            if self.current_token.type in (
+                TokenType.INTEGER_CONST,
+                TokenType.CHAR_CONST,
+                TokenType.STRING_CONST,
+                TokenType.TRUE,
+                TokenType.FALSE,
+            ):
+                case_items.append(self.case_item())
+                self.eat(TokenType.SEMI)
+            else:
+                break
+
+        return case_items
+
+    def case_item(self) -> CaseItem:
+        """case_item : case_label_list COLON (statement | compound_statement)"""
+        labels = self.case_label_list()
+        self.eat(TokenType.COLON)
+        statement: Statement | None = None
+        if self.current_token.type == TokenType.BEGIN:
+            statement = self.compound_statement()
+        else:
+            statement = self.statement()
+        node = CaseItem(labels, statement)
+        return node
+
+    def case_label_list(self) -> list[CaseLabel]:
+        """case_label_list : case_label (COMMA case_label)*"""
+        labels = [self.case_label()]
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            labels.append(self.case_label())
+        return labels
+
+    def case_label(self) -> CaseLabel:
+        """case_label : INTEGER | CHAR | boolean_literal"""
+        token = self.current_token
+        if token.type == TokenType.INTEGER_CONST:
+            self.eat(TokenType.INTEGER_CONST)
+            return CaseLabel(token.value)
+        elif token.type == TokenType.CHAR_CONST:
+            self.eat(TokenType.CHAR_CONST)
+            return CaseLabel(token.value)
+        elif token.type == TokenType.STRING_CONST and len(token.value) == 1:
+            # 处理单字符字符串常量，如'A'，在case标签中作为字符处理
+            self.eat(TokenType.STRING_CONST)
+            return CaseLabel(token.value)
+        elif token.type in (TokenType.TRUE, TokenType.FALSE):
+            if token.type == TokenType.TRUE:
+                self.eat(TokenType.TRUE)
+                return CaseLabel(True)
+            else:
+                self.eat(TokenType.FALSE)
+                return CaseLabel(False)
+        else:
+            self.error(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                token=token,
+            )
+            raise
 
     def proccall_statement(self) -> ProcedureCall:
         """proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN"""
@@ -1889,6 +2009,7 @@ class Parser:
                   | proccall_statement
                   | assignment_statement
                   | if_statement
+                  | case_statement
                   | for_statement
                   | while_statement
                   | empty
@@ -1900,6 +2021,16 @@ class Parser:
         while_statement:  WHILE logic_expr DO compound_statement SEMI
 
         for_statement:  FOR assignment_statement TO summation_expr DO (statement | compound_statement) SEMI
+
+        case_statement : CASE variable OF case_list (ELSE (statement | compound_statement) SEMI)? END SEMI
+
+        case_list : case_item SEMI (case_item SEMI)*
+
+        case_item : case_label_list COLON (statement | compound_statement)
+
+        case_label_list : case_label (COMMA case_label)*
+
+        case_label : INTEGER_CONST | CHAR_CONST | TRUE | FALSE
 
         proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN
 
@@ -2316,6 +2447,93 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(branch)
         if node.else_branch is not None:
             self.visit(node.else_branch)
+
+    def visit_CaseStatement(self, node: CaseStatement) -> None:
+        # 访问case表达式
+        self.visit(node.case_expr)
+
+        # 获取case表达式的符号和类型
+        case_type_name = None
+        if isinstance(node.case_expr, Var):
+            var_name = node.case_expr.value
+            if self.current_scope is None:
+                raise SemanticError(
+                    error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                    token=node.case_expr.token,
+                    message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.case_expr.token}",
+                )
+            var_symbol = self.current_scope.lookup(var_name)
+            if var_symbol is None:
+                raise SemanticError(
+                    error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
+                    token=node.case_expr.token,
+                    message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.case_expr.token}",
+                )
+            if var_symbol.type is None:
+                raise SemanticError(
+                    error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
+                    token=node.case_expr.token,
+                    message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.case_expr.token}",
+                )
+
+            # 检查case表达式类型是否支持
+            case_type_name = var_symbol.type.name
+            if case_type_name not in ["INTEGER", "CHAR", "BOOLEAN"]:
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                    token=node.case_expr.token,
+                )
+
+        # 收集所有case标签，检查重复
+        used_labels = set()
+
+        for case_item in node.case_items:
+            for label in case_item.labels:
+                label_value = label.value
+
+                # 检查标签类型是否与case表达式匹配（仅当我们有case_type_name时）
+                if case_type_name:
+                    label_type = self._get_literal_type(label_value)
+                    if label_type and not self._types_compatible(
+                        case_type_name, label_type
+                    ):
+                        self.error(
+                            error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                            token=node.value.token,  # Use the case expression token for error reporting
+                        )
+
+                # 检查重复标签
+                if label_value in used_labels:
+                    self.error(
+                        error_code=ErrorCode.DUPLICATE_ID,
+                        token=node.value.token,  # Use the case expression token for error reporting
+                    )
+                used_labels.add(label_value)
+
+            # 访问语句
+            self.visit(case_item.statement)
+
+        # 访问else语句（如果存在）
+        if node.else_stmt:
+            self.visit(node.else_stmt)
+
+    def _get_literal_type(self, value):
+        """Get the type name for a literal value"""
+        # Check bool first since bool is a subclass of int in Python
+        if isinstance(value, bool):
+            return "BOOLEAN"
+        elif isinstance(value, int):
+            return "INTEGER"
+        elif isinstance(value, str) and len(value) == 1:
+            return "CHAR"
+        else:
+            return None
+
+    def _types_compatible(self, case_type, label_type):
+        """Check if case expression type and label type are compatible"""
+        if case_type is None or label_type is None:
+            return False
+        return case_type == label_type
 
     def visit_BinOp(self, node: BinOp) -> None:
         self.visit(node.left)
@@ -3470,6 +3688,31 @@ class Interpreter(NodeVisitor):
 
         if node.else_branch is not None:
             self.visit(node.else_branch)
+
+    def visit_CaseStatement(self, node: CaseStatement) -> None:
+        # 计算case表达式的值
+        case_value_obj = self.visit(node.case_expr)
+        case_value = (
+            case_value_obj.value if hasattr(case_value_obj, "value") else case_value_obj
+        )
+
+        # 查找匹配的case项
+        matched = False
+        for case_item in node.case_items:
+            for label in case_item.labels:
+                label_value = label.value
+                # 检查是否匹配
+                if case_value == label_value:
+                    # 执行匹配的语句
+                    self.visit(case_item.statement)
+                    matched = True
+                    break
+            if matched:
+                break
+
+        # 如果没有匹配项且有else语句，则执行else语句
+        if not matched and node.else_stmt:
+            self.visit(node.else_stmt)
 
     def visit_FunctionCall(self, node: FunctionCall) -> Object:
         func_name = node.func_name

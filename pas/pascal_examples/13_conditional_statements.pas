@@ -11,17 +11,17 @@ var
 begin
   number := 15;
   
-  // 简单if语句
+  { 简单if语句 }
   if number > 10 then
     writeln(number, ' is greater than 10');
     
-  // if-else语句
-  if number mod 2 = 0 then
+  { if-else语句 }
+  if (number - (number div 2) * 2) = 0 then
     writeln(number, ' is even')
   else
     writeln(number, ' is odd');
     
-  // 复合语句
+  { 复合语句 }
   if number > 0 then
   begin
     writeln(number, ' is positive');
@@ -35,7 +35,7 @@ begin
   else
     writeln(number, ' is zero');
     
-  // case语句
+  { case语句 }
   grade := 'B';
   case grade of
     'A': writeln('Excellent!');
