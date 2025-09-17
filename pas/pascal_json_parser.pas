@@ -1,4 +1,4 @@
-program JSONParser;
+program JSONParserNoPointers;
 
 const
   MAX_JSON_DEPTH = 100;
@@ -6,6 +6,9 @@ const
   MAX_ARRAY_SIZE = 1000;
   MAX_OBJECT_KEYS = 1000;
   HASH_TABLE_SIZE = 1009;
+  MAX_VALUES = 5000; // 最大JSON值数量
+  MAX_HASH_NODES = 5000; // 最大哈希节点数量
+  MAX_INPUT_LEN = 10000; // 最大输入长度
 
 type
   // JSON值类型枚举
@@ -13,14 +16,11 @@ type
   
   // 字符串类型
   TJSONString = array[1..MAX_STRING_LEN] of Char;
-  
-  // 前向声明
-  PJSONValue = ^TJSONValue;
-  PHashNode = ^THashNode;
+  TInputBuffer = array[1..MAX_INPUT_LEN] of Char; // 输入缓冲区
   
   // JSON数组
   TJSONArray = record
-    Items: array[1..MAX_ARRAY_SIZE] of PJSONValue;
+    Items: array[1..MAX_ARRAY_SIZE] of Integer; // 存储值的索引，而不是指针
     Count: Integer;
   end;
   
@@ -28,13 +28,13 @@ type
   THashNode = record
     Key: TJSONString;
     KeyLen: Integer;
-    Value: PJSONValue;
-    Next: PHashNode;
+    ValueIndex: Integer; // 存储值的索引，而不是指针
+    Next: Integer; // 存储下一个节点的索引，而不是指针
   end;
   
   // JSON对象 (使用hash表实现)
   TJSONObject = record
-    HashTable: array[0..HASH_TABLE_SIZE-1] of PHashNode;
+    HashTable: array[0..HASH_TABLE_SIZE-1] of Integer; // 存储节点索引，而不是指针
     Count: Integer;
   end;
   
@@ -52,17 +52,48 @@ type
   
   // 词法分析器状态
   TLexer = record
-    Input: PChar;
+    Input: TInputBuffer; // 改为字符数组
     Position: Integer;
     Length: Integer;
     CurrentChar: Char;
     CurrentDepth: Integer; // 添加深度跟踪
   end;
 
-// 全局变量用于错误处理
+// 全局变量
 var
   ParseError: Boolean;
   ErrorMessage: String;
+  JSONValues: array[1..MAX_VALUES] of TJSONValue; // 静态分配的JSON值存储
+  HashNodes: array[1..MAX_HASH_NODES] of THashNode; // 静态分配的哈希节点存储
+  ValueCount: Integer; // 当前使用的JSON值数量
+  HashNodeCount: Integer; // 当前使用的哈希节点数量
+  FreeValueIndices: array[1..MAX_VALUES] of Integer; // 可用的JSON值索引
+  FreeHashNodeIndices: array[1..MAX_HASH_NODES] of Integer; // 可用的哈希节点索引
+  FreeValueCount: Integer; // 可用的JSON值索引数量
+  FreeHashNodeCount: Integer; // 可用的哈希节点索引数量
+
+// 初始化内存管理
+procedure InitMemoryManager;
+var
+  i: Integer;
+begin
+  ValueCount := 0;
+  HashNodeCount := 0;
+  FreeValueCount := 0;
+  FreeHashNodeCount := 0;
+  
+  // 初始化所有值为未使用状态
+  for i := 1 to MAX_VALUES do
+  begin
+    JSONValues[i].JSONType := jtNull; // 标记为未使用
+  end;
+  
+  // 初始化所有哈希节点为未使用状态
+  for i := 1 to MAX_HASH_NODES do
+  begin
+    HashNodes[i].KeyLen := -1; // 标记为未使用
+  end;
+end;
 
 // 设置错误信息
 procedure SetError(const Msg: String);
@@ -125,22 +156,22 @@ begin
   HashString := Hash;
 end;
 
-// 释放JSON值的内存
-procedure FreeJSONValue(Value: PJSONValue);
+// 释放JSON值
+procedure FreeJSONValue(ValueIndex: Integer);
 var
   i: Integer;
-  Node, NextNode: PHashNode;
+  NodeIndex, NextNodeIndex: Integer;
 begin
-  if Value = nil then
+  if (ValueIndex < 1) or (ValueIndex > MAX_VALUES) then
     Exit;
     
-  case Value^.JSONType of
+  case JSONValues[ValueIndex].JSONType of
     jtArray:
     begin
-      for i := 1 to Value^.ArrayValue.Count do
+      for i := 1 to JSONValues[ValueIndex].ArrayValue.Count do
       begin
-        if (i <= MAX_ARRAY_SIZE) and (Value^.ArrayValue.Items[i] <> nil) then
-          FreeJSONValue(Value^.ArrayValue.Items[i]);
+        if (i <= MAX_ARRAY_SIZE) and (JSONValues[ValueIndex].ArrayValue.Items[i] > 0) then
+          FreeJSONValue(JSONValues[ValueIndex].ArrayValue.Items[i]);
       end;
     end;
     
@@ -148,67 +179,141 @@ begin
     begin
       for i := 0 to HASH_TABLE_SIZE - 1 do
       begin
-        Node := Value^.ObjectValue.HashTable[i];
-        while Node <> nil do
+        NodeIndex := JSONValues[ValueIndex].ObjectValue.HashTable[i];
+        while NodeIndex > 0 do
         begin
-          NextNode := Node^.Next;
-          if Node^.Value <> nil then
-            FreeJSONValue(Node^.Value);
-          Dispose(Node);
-          Node := NextNode;
+          NextNodeIndex := HashNodes[NodeIndex].Next;
+          if HashNodes[NodeIndex].ValueIndex > 0 then
+            FreeJSONValue(HashNodes[NodeIndex].ValueIndex);
+          
+          // 将哈希节点标记为未使用
+          HashNodes[NodeIndex].KeyLen := -1;
+          
+          // 添加到空闲列表
+          Inc(FreeHashNodeCount);
+          if FreeHashNodeCount <= MAX_HASH_NODES then
+            FreeHashNodeIndices[FreeHashNodeCount] := NodeIndex;
+            
+          NodeIndex := NextNodeIndex;
         end;
+        JSONValues[ValueIndex].ObjectValue.HashTable[i] := 0;
       end;
+      JSONValues[ValueIndex].ObjectValue.Count := 0;
     end;
   end;
   
-  Dispose(Value);
+  // 将值标记为未使用
+  JSONValues[ValueIndex].JSONType := jtNull;
+  
+  // 添加到空闲列表
+  Inc(FreeValueCount);
+  if FreeValueCount <= MAX_VALUES then
+    FreeValueIndices[FreeValueCount] := ValueIndex;
 end;
 
 // 创建新的JSON值
-function NewJSONValue(JSONType: TJSONType): PJSONValue;
+function NewJSONValue(JSONType: TJSONType): Integer;
 var
-  Value: PJSONValue;
+  ValueIndex: Integer;
   i: Integer;
 begin
-  New(Value);
-  Value^.JSONType := JSONType;
+  // 首先检查是否有可用的空闲索引
+  if FreeValueCount > 0 then
+  begin
+    ValueIndex := FreeValueIndices[FreeValueCount];
+    Dec(FreeValueCount);
+  end
+  else
+  begin
+    // 没有空闲索引，分配新的
+    Inc(ValueCount);
+    if ValueCount > MAX_VALUES then
+    begin
+      SetError('Out of memory for JSON values');
+      NewJSONValue := -1;
+      Exit;
+    end;
+    ValueIndex := ValueCount;
+  end;
+  
+  JSONValues[ValueIndex].JSONType := JSONType;
   
   case JSONType of
     jtNull: ;
-    jtBoolean: Value^.BoolValue := False;
-    jtNumber: Value^.NumValue := 0.0;
+    jtBoolean: JSONValues[ValueIndex].BoolValue := False;
+    jtNumber: JSONValues[ValueIndex].NumValue := 0.0;
     jtString: 
     begin
-      Value^.StrLen := 0;
+      JSONValues[ValueIndex].StrLen := 0;
       for i := 1 to MAX_STRING_LEN do
-        Value^.StrValue[i] := #0;
+        JSONValues[ValueIndex].StrValue[i] := #0;
     end;
     jtArray: 
     begin
-      Value^.ArrayValue.Count := 0;
+      JSONValues[ValueIndex].ArrayValue.Count := 0;
       for i := 1 to MAX_ARRAY_SIZE do
-        Value^.ArrayValue.Items[i] := nil;
+        JSONValues[ValueIndex].ArrayValue.Items[i] := 0;
     end;
     jtObject: 
     begin
-      Value^.ObjectValue.Count := 0;
+      JSONValues[ValueIndex].ObjectValue.Count := 0;
       for i := 0 to HASH_TABLE_SIZE-1 do
-        Value^.ObjectValue.HashTable[i] := nil;
+        JSONValues[ValueIndex].ObjectValue.HashTable[i] := 0;
     end;
   end;
   
-  NewJSONValue := Value;
+  NewJSONValue := ValueIndex;
+end;
+
+// 创建新的哈希节点
+function NewHashNode: Integer;
+var
+  NodeIndex: Integer;
+begin
+  // 首先检查是否有可用的空闲索引
+  if FreeHashNodeCount > 0 then
+  begin
+    NodeIndex := FreeHashNodeIndices[FreeHashNodeCount];
+    Dec(FreeHashNodeCount);
+  end
+  else
+  begin
+    // 没有空闲索引，分配新的
+    Inc(HashNodeCount);
+    if HashNodeCount > MAX_HASH_NODES then
+    begin
+      SetError('Out of memory for hash nodes');
+      NewHashNode := -1;
+      Exit;
+    end;
+    NodeIndex := HashNodeCount;
+  end;
+  
+  NewHashNode := NodeIndex;
 end;
 
 // 初始化词法分析器
-procedure InitLexer(var Lexer: TLexer; Input: PChar; Len: Integer);
+procedure InitLexer(var Lexer: TLexer; const Input: String; Len: Integer);
+var
+  i: Integer;
 begin
-  Lexer.Input := Input;
   Lexer.Position := 0;
   Lexer.Length := Len;
   Lexer.CurrentDepth := 0;
+  
+  // 将字符串复制到字符数组
+  if Len > MAX_INPUT_LEN then
+    Lexer.Length := MAX_INPUT_LEN;
+    
+  for i := 1 to Lexer.Length do
+    Lexer.Input[i] := Input[i];
+    
+  // 填充剩余部分为空字符
+  for i := Lexer.Length + 1 to MAX_INPUT_LEN do
+    Lexer.Input[i] := #0;
+    
   if Len > 0 then
-    Lexer.CurrentChar := Input^
+    Lexer.CurrentChar := Lexer.Input[1]
   else
     Lexer.CurrentChar := #0;
 end;
@@ -220,17 +325,14 @@ begin
   if Lexer.Position >= Lexer.Length then
     Lexer.CurrentChar := #0
   else
-  begin
-    Inc(Lexer.Input);
-    Lexer.CurrentChar := Lexer.Input^;
-  end;
+    Lexer.CurrentChar := Lexer.Input[Lexer.Position + 1]; // 数组索引从1开始
 end;
 
 // 检查剩余字符串是否匹配
 function CheckString(var Lexer: TLexer; const Str: string): Boolean;
 var
   i: Integer;
-  TempInput: PChar;
+  TempPos: Integer;
 begin
   if Lexer.Position + Length(Str) > Lexer.Length then
   begin
@@ -238,15 +340,15 @@ begin
     Exit;
   end;
   
-  TempInput := Lexer.Input;
+  TempPos := Lexer.Position;
   for i := 1 to Length(Str) do
   begin
-    if TempInput^ <> Str[i] then
+    if Lexer.Input[TempPos + 1] <> Str[i] then // 数组索引从1开始
     begin
       CheckString := False;
       Exit;
     end;
-    Inc(TempInput);
+    Inc(TempPos);
   end;
   
   CheckString := True;
@@ -508,30 +610,36 @@ begin
 end;
 
 // 前向声明
-function ParseValue(var Lexer: TLexer): PJSONValue; forward;
+function ParseValue(var Lexer: TLexer): Integer; forward;
 
 // 解析数组
-function ParseArray(var Lexer: TLexer): PJSONValue;
+function ParseArray(var Lexer: TLexer): Integer;
 var
-  ArrayValue: PJSONValue;
-  Item: PJSONValue;
+  ArrayValueIndex: Integer;
+  ItemIndex: Integer;
 begin
   // 检查嵌套深度
   Inc(Lexer.CurrentDepth);
   if Lexer.CurrentDepth > MAX_JSON_DEPTH then
   begin
     SetError('JSON nesting too deep');
-    ParseArray := nil;
+    ParseArray := -1;
     Exit;
   end;
   
-  ArrayValue := NewJSONValue(jtArray);
+  ArrayValueIndex := NewJSONValue(jtArray);
+  if ArrayValueIndex < 0 then
+  begin
+    Dec(Lexer.CurrentDepth);
+    ParseArray := -1;
+    Exit;
+  end;
   
   if Lexer.CurrentChar <> '[' then
   begin
     SetError('Expected [');
     Dec(Lexer.CurrentDepth);
-    ParseArray := nil;
+    ParseArray := -1;
     Exit;
   end;
   
@@ -542,34 +650,34 @@ begin
   begin
     NextChar(Lexer);
     Dec(Lexer.CurrentDepth);
-    ParseArray := ArrayValue;
+    ParseArray := ArrayValueIndex;
     Exit;
   end;
   
   while True do
   begin
-    Item := ParseValue(Lexer);
-    if (Item = nil) or ParseError then
+    ItemIndex := ParseValue(Lexer);
+    if (ItemIndex < 0) or ParseError then
     begin
-      if ArrayValue <> nil then
-        FreeJSONValue(ArrayValue);
+      if ArrayValueIndex > 0 then
+        FreeJSONValue(ArrayValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseArray := nil;
+      ParseArray := -1;
       Exit;
     end;
     
-    if ArrayValue^.ArrayValue.Count >= MAX_ARRAY_SIZE then
+    if JSONValues[ArrayValueIndex].ArrayValue.Count >= MAX_ARRAY_SIZE then
     begin
       SetError('Array too large');
-      FreeJSONValue(Item);
-      FreeJSONValue(ArrayValue);
+      FreeJSONValue(ItemIndex);
+      FreeJSONValue(ArrayValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseArray := nil;
+      ParseArray := -1;
       Exit;
     end;
     
-    Inc(ArrayValue^.ArrayValue.Count);
-    ArrayValue^.ArrayValue.Items[ArrayValue^.ArrayValue.Count] := Item;
+    Inc(JSONValues[ArrayValueIndex].ArrayValue.Count);
+    JSONValues[ArrayValueIndex].ArrayValue.Items[JSONValues[ArrayValueIndex].ArrayValue.Count] := ItemIndex;
     
     SkipWhitespace(Lexer);
     
@@ -586,85 +694,94 @@ begin
       if Lexer.CurrentChar = ']' then
       begin
         SetError('Trailing comma in array');
-        FreeJSONValue(ArrayValue);
+        FreeJSONValue(ArrayValueIndex);
         Dec(Lexer.CurrentDepth);
-        ParseArray := nil;
+        ParseArray := -1;
         Exit;
       end;
     end
     else
     begin
       SetError('Expected , or ]');
-      FreeJSONValue(ArrayValue);
+      FreeJSONValue(ArrayValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseArray := nil;
+      ParseArray := -1;
       Exit;
     end;
   end;
   
   Dec(Lexer.CurrentDepth);
-  ParseArray := ArrayValue;
+  ParseArray := ArrayValueIndex;
 end;
 
 // 向对象中添加键值对
-procedure AddToObject(var Obj: TJSONObject; const Key: TJSONString; KeyLen: Integer; Value: PJSONValue);
+procedure AddToObject(var Obj: TJSONObject; const Key: TJSONString; KeyLen: Integer; ValueIndex: Integer);
 var
   Hash: Integer;
-  Node, NewNode: PHashNode;
+  NodeIndex, NewNodeIndex: Integer;
 begin
-  if (KeyLen <= 0) or (KeyLen > MAX_STRING_LEN) then
+  if (KeyLen <= 0) or (KeyLen > MAX_STRING_LEN) or (ValueIndex < 0) then
     Exit;
     
   Hash := HashString(Key, KeyLen);
-  Node := Obj.HashTable[Hash];
+  NodeIndex := Obj.HashTable[Hash];
   
   // 检查键是否已存在
-  while Node <> nil do
+  while NodeIndex > 0 do
   begin
-    if StrEqual(Node^.Key, Node^.KeyLen, Key, KeyLen) then
+    if StrEqual(HashNodes[NodeIndex].Key, HashNodes[NodeIndex].KeyLen, Key, KeyLen) then
     begin
       // 释放旧值并更新
-      if Node^.Value <> nil then
-        FreeJSONValue(Node^.Value);
-      Node^.Value := Value;
+      if HashNodes[NodeIndex].ValueIndex > 0 then
+        FreeJSONValue(HashNodes[NodeIndex].ValueIndex);
+      HashNodes[NodeIndex].ValueIndex := ValueIndex;
       Exit;
     end;
-    Node := Node^.Next;
+    NodeIndex := HashNodes[NodeIndex].Next;
   end;
   
   // 添加新节点
-  New(NewNode);
-  NewNode^.KeyLen := StrCopy(Key, KeyLen, NewNode^.Key);
-  NewNode^.Value := Value;
-  NewNode^.Next := Obj.HashTable[Hash];
-  Obj.HashTable[Hash] := NewNode;
+  NewNodeIndex := NewHashNode;
+  if NewNodeIndex < 0 then
+    Exit;
+    
+  HashNodes[NewNodeIndex].KeyLen := StrCopy(Key, KeyLen, HashNodes[NewNodeIndex].Key);
+  HashNodes[NewNodeIndex].ValueIndex := ValueIndex;
+  HashNodes[NewNodeIndex].Next := Obj.HashTable[Hash];
+  Obj.HashTable[Hash] := NewNodeIndex;
   Inc(Obj.Count);
 end;
 
 // 解析对象
-function ParseObject(var Lexer: TLexer): PJSONValue;
+function ParseObject(var Lexer: TLexer): Integer;
 var
-  ObjectValue: PJSONValue;
+  ObjectValueIndex: Integer;
   Key: TJSONString;
   KeyLen: Integer;
-  Value: PJSONValue;
+  ValueIndex: Integer;
 begin
   // 检查嵌套深度
   Inc(Lexer.CurrentDepth);
   if Lexer.CurrentDepth > MAX_JSON_DEPTH then
   begin
     SetError('JSON nesting too deep');
-    ParseObject := nil;
+    ParseObject := -1;
     Exit;
   end;
   
-  ObjectValue := NewJSONValue(jtObject);
+  ObjectValueIndex := NewJSONValue(jtObject);
+  if ObjectValueIndex < 0 then
+  begin
+    Dec(Lexer.CurrentDepth);
+    ParseObject := -1;
+    Exit;
+  end;
   
   if Lexer.CurrentChar <> '{' then
   begin
     SetError('Expected {');
     Dec(Lexer.CurrentDepth);
-    ParseObject := nil;
+    ParseObject := -1;
     Exit;
   end;
   
@@ -675,7 +792,7 @@ begin
   begin
     NextChar(Lexer);
     Dec(Lexer.CurrentDepth);
-    ParseObject := ObjectValue;
+    ParseObject := ObjectValueIndex;
     Exit;
   end;
   
@@ -685,17 +802,17 @@ begin
     if Lexer.CurrentChar <> '"' then
     begin
       SetError('Expected string key');
-      FreeJSONValue(ObjectValue);
+      FreeJSONValue(ObjectValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseObject := nil;
+      ParseObject := -1;
       Exit;
     end;
     
     if not ParseString(Lexer, Key, KeyLen) or ParseError then
     begin
-      FreeJSONValue(ObjectValue);
+      FreeJSONValue(ObjectValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseObject := nil;
+      ParseObject := -1;
       Exit;
     end;
     
@@ -704,9 +821,9 @@ begin
     if Lexer.CurrentChar <> ':' then
     begin
       SetError('Expected :');
-      FreeJSONValue(ObjectValue);
+      FreeJSONValue(ObjectValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseObject := nil;
+      ParseObject := -1;
       Exit;
     end;
     
@@ -714,26 +831,26 @@ begin
     SkipWhitespace(Lexer);
     
     // 解析值
-    Value := ParseValue(Lexer);
-    if (Value = nil) or ParseError then
+    ValueIndex := ParseValue(Lexer);
+    if (ValueIndex < 0) or ParseError then
     begin
-      FreeJSONValue(ObjectValue);
+      FreeJSONValue(ObjectValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseObject := nil;
+      ParseObject := -1;
       Exit;
     end;
     
-    if ObjectValue^.ObjectValue.Count >= MAX_OBJECT_KEYS then
+    if JSONValues[ObjectValueIndex].ObjectValue.Count >= MAX_OBJECT_KEYS then
     begin
       SetError('Object has too many keys');
-      FreeJSONValue(Value);
-      FreeJSONValue(ObjectValue);
+      FreeJSONValue(ValueIndex);
+      FreeJSONValue(ObjectValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseObject := nil;
+      ParseObject := -1;
       Exit;
     end;
     
-    AddToObject(ObjectValue^.ObjectValue, Key, KeyLen, Value);
+    AddToObject(JSONValues[ObjectValueIndex].ObjectValue, Key, KeyLen, ValueIndex);
     
     SkipWhitespace(Lexer);
     
@@ -750,30 +867,30 @@ begin
       if Lexer.CurrentChar = '}' then
       begin
         SetError('Trailing comma in object');
-        FreeJSONValue(ObjectValue);
+        FreeJSONValue(ObjectValueIndex);
         Dec(Lexer.CurrentDepth);
-        ParseObject := nil;
+        ParseObject := -1;
         Exit;
       end;
     end
     else
     begin
       SetError('Expected , or }');
-      FreeJSONValue(ObjectValue);
+      FreeJSONValue(ObjectValueIndex);
       Dec(Lexer.CurrentDepth);
-      ParseObject := nil;
+      ParseObject := -1;
       Exit;
     end;
   end;
   
   Dec(Lexer.CurrentDepth);
-  ParseObject := ObjectValue;
+  ParseObject := ObjectValueIndex;
 end;
 
 // 解析JSON值
-function ParseValue(var Lexer: TLexer): PJSONValue;
+function ParseValue(var Lexer: TLexer): Integer;
 var
-  Value: PJSONValue;
+  ValueIndex: Integer;
   Str: TJSONString;
   StrLen: Integer;
   Num: Real;
@@ -782,7 +899,7 @@ begin
   
   if ParseError then
   begin
-    ParseValue := nil;
+    ParseValue := -1;
     Exit;
   end;
   
@@ -791,14 +908,14 @@ begin
     begin
       if CheckString(Lexer, 'null') then
       begin
-        Value := NewJSONValue(jtNull);
+        ValueIndex := NewJSONValue(jtNull);
         SkipChars(Lexer, 4);
-        ParseValue := Value;
+        ParseValue := ValueIndex;
       end
       else
       begin
         SetError('Invalid literal');
-        ParseValue := nil;
+        ParseValue := -1;
       end;
     end;
     
@@ -806,15 +923,15 @@ begin
     begin
       if CheckString(Lexer, 'true') then
       begin
-        Value := NewJSONValue(jtBoolean);
-        Value^.BoolValue := True;
+        ValueIndex := NewJSONValue(jtBoolean);
+        JSONValues[ValueIndex].BoolValue := True;
         SkipChars(Lexer, 4);
-        ParseValue := Value;
+        ParseValue := ValueIndex;
       end
       else
       begin
         SetError('Invalid literal');
-        ParseValue := nil;
+        ParseValue := -1;
       end;
     end;
     
@@ -822,15 +939,15 @@ begin
     begin
       if CheckString(Lexer, 'false') then
       begin
-        Value := NewJSONValue(jtBoolean);
-        Value^.BoolValue := False;
+        ValueIndex := NewJSONValue(jtBoolean);
+        JSONValues[ValueIndex].BoolValue := False;
         SkipChars(Lexer, 5);
-        ParseValue := Value;
+        ParseValue := ValueIndex;
       end
       else
       begin
         SetError('Invalid literal');
-        ParseValue := nil;
+        ParseValue := -1;
       end;
     end;
     
@@ -838,12 +955,12 @@ begin
     begin
       if ParseString(Lexer, Str, StrLen) and not ParseError then
       begin
-        Value := NewJSONValue(jtString);
-        Value^.StrLen := StrCopy(Str, StrLen, Value^.StrValue);
-        ParseValue := Value;
+        ValueIndex := NewJSONValue(jtString);
+        JSONValues[ValueIndex].StrLen := StrCopy(Str, StrLen, JSONValues[ValueIndex].StrValue);
+        ParseValue := ValueIndex;
       end
       else
-        ParseValue := nil;
+        ParseValue := -1;
     end;
     
     '[': // array
@@ -859,52 +976,52 @@ begin
     #0:
     begin
       SetError('Unexpected end of input');
-      ParseValue := nil;
+      ParseValue := -1;
     end;
     
     else // number
     begin
       if (Lexer.CurrentChar in ['-', '0'..'9']) and ParseNumber(Lexer, Num) and not ParseError then
       begin
-        Value := NewJSONValue(jtNumber);
-        Value^.NumValue := Num;
-        ParseValue := Value;
+        ValueIndex := NewJSONValue(jtNumber);
+        JSONValues[ValueIndex].NumValue := Num;
+        ParseValue := ValueIndex;
       end
       else
       begin
         if not ParseError then
           SetError('Invalid character');
-        ParseValue := nil;
+        ParseValue := -1;
       end;
     end;
   end;
 end;
 
 // 主解析函数
-function ParseJSON(Input: PChar; Len: Integer): PJSONValue;
+function ParseJSON(const Input: String; Len: Integer): Integer;
 var
   Lexer: TLexer;
-  Result: PJSONValue;
+  ResultIndex: Integer;
 begin
   ParseError := False;
   ErrorMessage := '';
   
   InitLexer(Lexer, Input, Len);
-  Result := ParseValue(Lexer);
+  ResultIndex := ParseValue(Lexer);
   
-  if not ParseError and (Result <> nil) then
+  if not ParseError and (ResultIndex > 0) then
   begin
     // 检查是否有剩余字符
     SkipWhitespace(Lexer);
     if Lexer.CurrentChar <> #0 then
     begin
       SetError('Unexpected characters after JSON');
-      FreeJSONValue(Result);
-      Result := nil;
+      FreeJSONValue(ResultIndex);
+      ResultIndex := -1;
     end;
   end;
   
-  ParseJSON := Result;
+  ParseJSON := ResultIndex;
 end;
 
 // 安全的字符输出函数
@@ -924,7 +1041,7 @@ begin
 end;
 
 // 打印JSON值 (用于测试)
-procedure PrintValue(Value: PJSONValue; Indent: Integer); forward;
+procedure PrintValue(ValueIndex: Integer; Indent: Integer); forward;
 
 procedure PrintIndent(Indent: Integer);
 var
@@ -934,43 +1051,43 @@ begin
     Write('  ');
 end;
 
-procedure PrintValue(Value: PJSONValue; Indent: Integer);
+procedure PrintValue(ValueIndex: Integer; Indent: Integer);
 var
   i: Integer;
-  Node: PHashNode;
+  NodeIndex: Integer;
   j: Integer;
   k: Integer;
 begin
-  if Value = nil then
+  if (ValueIndex < 1) or (ValueIndex > MAX_VALUES) then
   begin
     Write('null');
     Exit;
   end;
   
-  case Value^.JSONType of
+  case JSONValues[ValueIndex].JSONType of
     jtNull: Write('null');
     jtBoolean: 
-      if Value^.BoolValue then Write('true') else Write('false');
-    jtNumber: Write(Value^.NumValue:0:6);
+      if JSONValues[ValueIndex].BoolValue then Write('true') else Write('false');
+    jtNumber: Write(JSONValues[ValueIndex].NumValue:0:6);
     jtString:
     begin
       Write('"');
-      if (Value^.StrLen > 0) and (Value^.StrLen <= MAX_STRING_LEN) then
-        for i := 1 to Value^.StrLen do
-          if (Value^.StrValue[i] <> #0) then
-            SafeWriteChar(Value^.StrValue[i]);
+      if (JSONValues[ValueIndex].StrLen > 0) and (JSONValues[ValueIndex].StrLen <= MAX_STRING_LEN) then
+        for i := 1 to JSONValues[ValueIndex].StrLen do
+          if (JSONValues[ValueIndex].StrValue[i] <> #0) then
+            SafeWriteChar(JSONValues[ValueIndex].StrValue[i]);
       Write('"');
     end;
     jtArray:
     begin
       WriteLn('[');
-      for i := 1 to Value^.ArrayValue.Count do
+      for i := 1 to JSONValues[ValueIndex].ArrayValue.Count do
       begin
         if i <= MAX_ARRAY_SIZE then
         begin
           PrintIndent(Indent + 1);
-          PrintValue(Value^.ArrayValue.Items[i], Indent + 1);
-          if i < Value^.ArrayValue.Count then
+          PrintValue(JSONValues[ValueIndex].ArrayValue.Items[i], Indent + 1);
+          if i < JSONValues[ValueIndex].ArrayValue.Count then
             WriteLn(',')
           else
             WriteLn;
@@ -986,21 +1103,21 @@ begin
       j := 0;
       for i := 0 to HASH_TABLE_SIZE - 1 do
       begin
-        Node := Value^.ObjectValue.HashTable[i];
-        while Node <> nil do
+        NodeIndex := JSONValues[ValueIndex].ObjectValue.HashTable[i];
+        while NodeIndex > 0 do
         begin
           Inc(j);
           PrintIndent(Indent + 1);
           Write('"');
-          for k := 1 to Node^.KeyLen do
-            SafeWriteChar(Node^.Key[k]);
+          for k := 1 to HashNodes[NodeIndex].KeyLen do
+            SafeWriteChar(HashNodes[NodeIndex].Key[k]);
           Write('": ');
-          PrintValue(Node^.Value, Indent + 1);
-          if j < Value^.ObjectValue.Count then
+          PrintValue(HashNodes[NodeIndex].ValueIndex, Indent + 1);
+          if j < JSONValues[ValueIndex].ObjectValue.Count then
             WriteLn(',')
           else
             WriteLn;
-          Node := Node^.Next;
+          NodeIndex := HashNodes[NodeIndex].Next;
         end;
       end;
       PrintIndent(Indent);
@@ -1012,16 +1129,19 @@ end;
 // 主程序入口点
 var
   TestJSON: String;
-  ParsedValue: PJSONValue;
+  ParsedValueIndex: Integer;
   
 begin
+  // 初始化内存管理器
+  InitMemoryManager;
+  
   // 示例JSON字符串
   TestJSON := '{"name":"John","age":30,"city":"New York","isStudent":false,"courses":["Math","Physics"],"address":{"street":"123 Main St","zipcode":"10001"}}';
   
   WriteLn('Parsing JSON: ', TestJSON);
   WriteLn;
   
-  ParsedValue := ParseJSON(@TestJSON[1], Length(TestJSON));
+  ParsedValueIndex := ParseJSON(TestJSON, Length(TestJSON));
   
   if ParseError then
   begin
@@ -1030,11 +1150,11 @@ begin
   else
   begin
     WriteLn('Parsed JSON:');
-    PrintValue(ParsedValue, 0);
+    PrintValue(ParsedValueIndex, 0);
     WriteLn;
   end;
   
   // 清理内存
-  if ParsedValue <> nil then
-    FreeJSONValue(ParsedValue);
+  if ParsedValueIndex > 0 then
+    FreeJSONValue(ParsedValueIndex);
 end.
