@@ -1,5 +1,7 @@
 import unittest
 
+from spi import InterpreterError
+
 
 class LexerTestCase(unittest.TestCase):
     def makeLexer(self, text):
@@ -61,7 +63,13 @@ class LexerTestCase(unittest.TestCase):
             ("OF", TokenType.OF, "OF"),
             ("..", TokenType.RANGE, ".."),
             ("STRING", TokenType.STRING, "STRING"),
+            ("CHAR", TokenType.CHAR, "CHAR"),
             ("'abc'", TokenType.STRING_CONST, "abc"),
+            ("'a'", TokenType.STRING_CONST, "a"),
+            ("#65", TokenType.CHAR_CONST, "A"),
+            ("#97", TokenType.CHAR_CONST, "a"),
+            ("#32", TokenType.CHAR_CONST, " "),
+            ("#0", TokenType.CHAR_CONST, "\0"),
         )
         for text, tok_type, tok_val in records:
             lexer = self.makeLexer(text)
@@ -73,6 +81,19 @@ class LexerTestCase(unittest.TestCase):
         from spi import LexerError
 
         lexer = self.makeLexer("!")
+        with self.assertRaises(LexerError):
+            lexer.get_next_token()
+
+    def test_lexer_char_const_error(self):
+        from spi import LexerError
+
+        # Test # without digits
+        lexer = self.makeLexer("#")
+        with self.assertRaises(LexerError):
+            lexer.get_next_token()
+
+        # Test # with non-digits
+        lexer = self.makeLexer("#abc")
         with self.assertRaises(LexerError):
             lexer.get_next_token()
 
@@ -243,6 +264,26 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         the_exception = cm.exception
         self.assertEqual(the_exception.error_code, ErrorCode.ID_NOT_FOUND)
         self.assertEqual(the_exception.token.value, "b")
+
+    def test_semantic_char_too_many_chars_string_literal(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            VAR
+                c : CHAR;
+            BEGIN
+               c := 'ab';  {Too many characters for CHAR}
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_CHAR_TOO_MANY_CHARS
+        )
+        self.assertEqual(the_exception.token.value, "ab")
 
 
 class TestCallStack:
@@ -987,6 +1028,196 @@ end.
 
         # Test that NullObject converts to False in boolean context
         self.assertFalse(result.to_bool())
+
+    def test_inc_procedure(self):
+        text = """\
+PROGRAM TestInc;
+
+VAR
+    i: INTEGER;
+
+BEGIN
+    i := 1;
+    Inc(i);
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 2)
+
+    def test_dec_procedure(self):
+        text = """\
+PROGRAM TestDec;
+
+VAR
+    i: INTEGER;
+
+BEGIN
+    i := 10;
+    Dec(i);
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 9)
+
+    def test_char_type_and_literals(self):
+        text = """\
+PROGRAM TestChar;
+
+VAR
+    c1, c2, c3, c4: CHAR;
+    result1, result2: INTEGER;
+
+BEGIN
+    c1 := 'A';
+    c2 := #65;  { ASCII code for 'A' }
+    c3 := #97;  { ASCII code for 'a' }
+    c4 := #32;  { ASCII code for space }
+    
+    result1 := Ord(c1);
+    result2 := Ord(c3);
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["c1"].value, "A")
+        self.assertEqual(ar["c2"].value, "A")
+        self.assertEqual(ar["c3"].value, "a")
+        self.assertEqual(ar["c4"].value, " ")
+        self.assertEqual(ar["result1"].value, 65)
+        self.assertEqual(ar["result2"].value, 97)
+
+    def test_ord_chr_functions(self):
+        text = """\
+PROGRAM TestOrdChr;
+
+VAR
+    c1, c2: CHAR;
+    n1, n2: INTEGER;
+
+BEGIN
+    c1 := 'Z';
+    n1 := Ord(c1);
+    
+    n2 := 66;
+    c2 := Chr(n2);
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["c1"].value, "Z")
+        self.assertEqual(ar["n1"].value, 90)  # ASCII code for 'Z'
+        self.assertEqual(ar["n2"].value, 66)
+        self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
+
+    def test_char_array(self):
+        text = """\
+PROGRAM TestCharArray;
+
+VAR
+    chars: array[1..3] of CHAR;
+    i: INTEGER;
+
+BEGIN
+    chars[1] := 'H';
+    chars[2] := #101;  { 'e' }
+    chars[3] := 'y';
+    
+    i := Ord(chars[2]);
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["chars"].value[1].value, "H")
+        self.assertEqual(ar["chars"].value[2].value, "e")
+        self.assertEqual(ar["chars"].value[3].value, "y")
+        self.assertEqual(ar["i"].value, 101)
+
+    def test_char_default_value(self):
+        text = """\
+PROGRAM TestCharDefault;
+
+VAR
+    c: CHAR;
+    n: INTEGER;
+
+BEGIN
+    n := Ord(c);  { Should be 0 for empty char }
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["c"].value, "")
+        self.assertEqual(ar["n"].value, 0)
+
+    def test_char_comparison(self):
+        text = """\
+program CharacterComparison;
+
+var
+  char1, char2 , char3: CHAR;
+  f0, f1, f2, f3, f4, f5, f6 : boolean;
+
+begin
+  { 初始化字符变量 }
+  char1 := 'A';
+  char2 := 'B';
+  char3 := #65;
+  
+  { 演示等于运算 (=) }
+  f0 := char1 = char3;
+  f1 := char1 = char2;
+  
+  { 演示不等于运算 (<>) }
+  f2 := char1 <> char2;
+  
+  { 演示小于运算 (<) }
+  f3 := char1 < char2;
+  
+  { 演示大于运算 (>) }
+  f4 := char1 > char2;
+  
+  { 演示小于等于运算 (<=) }
+  f5 := char1 <= char2;
+  
+  { 演示大于等于运算 (>=) }
+  f6 := char1 >= char2;
+  
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        try:
+            interpreter.interpret()
+        except InterpreterError as e:
+            print(f"Error Code: {e.error_code}")
+            print(f"Token: {e.token}")
+            print(f"Message: {e.message}")
+            raise  # 重新抛出异常以便测试框架捕获
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["char1"].value, "A")
+        self.assertEqual(ar["char2"].value, "B")
+        self.assertEqual(ar["char3"].value, "A")
+        self.assertEqual(ar["f0"].value, True)
+        self.assertEqual(ar["f1"].value, False)
+        self.assertEqual(ar["f2"].value, True)
+        self.assertEqual(ar["f3"].value, True)
+        self.assertEqual(ar["f4"].value, False)
+        self.assertEqual(ar["f5"].value, True)
+        self.assertEqual(ar["f6"].value, False)
 
 
 if __name__ == "__main__":

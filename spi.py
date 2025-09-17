@@ -25,6 +25,7 @@ class ElementType(Enum):
     REAL = "REAL"
     BOOL = "BOOL"
     STRING = "STRING"
+    CHAR = "CHAR"
     ARRAY = "ARRAY"
 
 
@@ -232,6 +233,42 @@ class CharObject(Object):
     def __init__(self, value: str = ""):
         super().__init__(str(value)[:1] if value else "")
 
+    def __lt__(self, other) -> Object:
+        """Less than comparison based on ASCII value"""
+        if isinstance(other, CharObject):
+            return BooleanObject(ord(self.value) < ord(other.value))
+        return NotImplemented
+
+    def __gt__(self, other) -> Object:
+        """Greater than comparison based on ASCII value"""
+        if isinstance(other, CharObject):
+            return BooleanObject(ord(self.value) > ord(other.value))
+        return NotImplemented
+
+    def __eq__(self, other) -> bool:
+        """Equal comparison based on ASCII value"""
+        if isinstance(other, CharObject):
+            return ord(self.value) == ord(other.value)
+        return NotImplemented
+
+    def __ne__(self, other) -> bool:
+        """Not equal comparison based on ASCII value"""
+        if isinstance(other, CharObject):
+            return ord(self.value) != ord(other.value)
+        return NotImplemented
+
+    def __le__(self, other) -> Object:
+        """Less than or equal comparison based on ASCII value"""
+        if isinstance(other, CharObject):
+            return BooleanObject(ord(self.value) <= ord(other.value))
+        return NotImplemented
+
+    def __ge__(self, other) -> Object:
+        """Greater than or equal comparison based on ASCII value"""
+        if isinstance(other, CharObject):
+            return BooleanObject(ord(self.value) >= ord(other.value))
+        return NotImplemented
+
 
 class ArrayObject(Object):
     """Array value object"""
@@ -264,6 +301,8 @@ class ArrayObject(Object):
             return BooleanObject(False)
         elif self.element_type == ElementType.STRING:
             return StringObject("")
+        elif self.element_type == ElementType.CHAR:
+            return CharObject("")
         elif self.element_type == ElementType.ARRAY:
             return ArrayObject(ElementType.INTEGER, 0, 0, True)  # Default nested array
         else:
@@ -334,6 +373,8 @@ class ErrorCode(Enum):
     SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE = "Semantic unknown array element type"
     SEMANTIC_UNKNOWN_SYMBOL = "Semantic unknown symbol"
     SEMANTIC_UNKNOWN_BOOLEAN = "Semantic unknown boolean"
+    SEMANTIC_CHAR_TOO_MANY_CHARS = "Semantic char too many characters"
+    SEMANTIC_CHAR_INVALID_ASCII = "Semantic char invalid ASCII value"
 
     # Interpreter errors
     INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
@@ -424,6 +465,7 @@ class TokenType(Enum):
     LT = "<"
     GE = ">="
     LE = "<="
+    HASH = "#"
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
     FUNCTION = "FUNCTION"
@@ -431,6 +473,7 @@ class TokenType(Enum):
     REAL = "REAL"
     BOOLEAN = "BOOLEAN"
     STRING = "STRING"
+    CHAR = "CHAR"
     INTEGER_DIV = "DIV"
     TRUE = "TRUE"
     FALSE = "FALSE"
@@ -455,6 +498,7 @@ class TokenType(Enum):
     INTEGER_CONST = "INTEGER_CONST"
     REAL_CONST = "REAL_CONST"
     STRING_CONST = "STRING_CONST"
+    CHAR_CONST = "CHAR_CONST"
     ASSIGN = ":="
     EOF = "EOF"
 
@@ -645,6 +689,42 @@ class Lexer:
         token.value = value
         return token
 
+    def __char_const(self) -> Token:
+        """Handle character const in format #digits"""
+
+        # Create a new token with current line and column number
+        token = Token(type=None, value=None, lineno=self.lineno, column=self.column)
+
+        if self.current_char == "#":
+            self.advance()
+        else:
+            raise LexerError(
+                error_code=ErrorCode.LEXER_INVALID_CHARACTER,
+                token=token,
+                message="Expected # for character constant",
+            )
+
+        # Parse the numeric part
+        value = ""
+        while self.current_char is not None and self.current_char.isdigit():
+            value += self.current_char
+            self.advance()
+
+        if not value:
+            raise LexerError(
+                error_code=ErrorCode.LEXER_INVALID_CHARACTER,
+                token=token,
+                message="Expected digits after # for character constant",
+            )
+
+        # Convert to character
+        ascii_value = int(value)
+        char_value = chr(ascii_value) if 0 <= ascii_value <= 255 else "\0"
+
+        token.type = TokenType.CHAR_CONST
+        token.value = char_value
+        return token
+
     def __id(self) -> Token:
         """Handle identifiers and reserved keywords"""
 
@@ -766,6 +846,9 @@ class Lexer:
             if self.current_char.isalpha():
                 return self.__id()
 
+            if self.current_char == "#":
+                return self.__char_const()
+
             if self.current_char == "." and self.peek() == ".":
                 token = Token(
                     type=TokenType.RANGE,
@@ -877,6 +960,12 @@ class Bool(Expression):
 
 
 class String(Expression):
+    def __init__(self, token: Token):
+        self.token = token
+        self.value: str = token.value
+
+
+class Char(Expression):
     def __init__(self, token: Token):
         self.token = token
         self.value: str = token.value
@@ -1250,6 +1339,7 @@ class Parser:
             TokenType.INTEGER,
             TokenType.REAL,
             TokenType.BOOLEAN,
+            TokenType.CHAR,
         ):
             return self.primitive_type_spec()
         elif self.current_token.type == TokenType.STRING:
@@ -1265,7 +1355,7 @@ class Parser:
 
     def primitive_type_spec(self) -> Type:
         """
-        primitive_type_spec : INTEGER | REAL | BOOLEAN
+        primitive_type_spec : INTEGER | REAL | BOOLEAN | CHAR
         """
         token = self.current_token
         if self.current_token.type == TokenType.INTEGER:
@@ -1274,6 +1364,8 @@ class Parser:
             self.eat(TokenType.REAL)
         elif self.current_token.type == TokenType.BOOLEAN:
             self.eat(TokenType.BOOLEAN)
+        elif self.current_token.type == TokenType.CHAR:
+            self.eat(TokenType.CHAR)
         node = PrimitiveType(token)
         return node
 
@@ -1687,6 +1779,12 @@ class Parser:
             self.eat(TokenType.STRING_CONST)
             return String(token=token)
 
+        # parse char expr
+        if self.current_token.type == TokenType.CHAR_CONST:
+            token = self.current_token
+            self.eat(TokenType.CHAR_CONST)
+            return Char(token=token)
+
         # call
         if (
             token.type == TokenType.ID
@@ -1771,6 +1869,7 @@ class Parser:
                | MINUS factor
                | INTEGER_CONST
                | STRING_CONST
+               | CHAR_CONST
                | REAL_CONST
                | TRUE_CONST
                | FALSE_CONST
@@ -1819,6 +1918,10 @@ class NativeMethod(Enum):
     WRITELN = "WRITELN"
     LENGTH = "LENGTH"
     SETLENGTH = "SETLENGTH"
+    ORD = "ORD"
+    CHR = "CHR"
+    INC = "INC"
+    DEC = "DEC"
 
 
 class Symbol:
@@ -1989,6 +2092,7 @@ class ScopedSymbolTable:
         self.insert(BuiltinTypeSymbol("REAL"))
         self.insert(BuiltinTypeSymbol("BOOLEAN"))
         self.insert(BuiltinTypeSymbol("STRING"))
+        self.insert(BuiltinTypeSymbol("CHAR"))
         self.insert(
             BuiltinProcedureSymbol(name=NativeMethod.WRITE.name, output_params=[])
         )
@@ -1999,10 +2103,34 @@ class ScopedSymbolTable:
             BuiltinProcedureSymbol(name=NativeMethod.SETLENGTH.name, output_params=[])
         )
         self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.INC.name, output_params=[])
+        )
+        self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.DEC.name, output_params=[])
+        )
+        self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.LENGTH.name,
                 return_type=Type(
                     token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
+                ),
+                formal_params=[],
+            )
+        )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.ORD.name,
+                return_type=Type(
+                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
+                ),
+                formal_params=[],
+            )
+        )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.CHR.name,
+                return_type=Type(
+                    token=Token(type=TokenType.CHAR, value="", lineno=-1, column=-1)
                 ),
                 formal_params=[],
             )
@@ -2247,6 +2375,16 @@ class SemanticAnalyzer(NodeVisitor):
             #         message = f"Warning: String literal has more characters[{len(string_value)}] than short string length[{string_size}]"
             #         SpiUtil.print_w(message=message)
             pass
+        elif var_symbol.type and var_symbol.type.name == "CHAR":
+            # Validate character assignment
+            if isinstance(node.right, String):
+                string_value = node.right.value
+                if len(string_value) > 1:
+                    raise SemanticError(
+                        error_code=ErrorCode.SEMANTIC_CHAR_TOO_MANY_CHARS,
+                        token=node.right.token,
+                        message=f"String literal has too many characters for CHAR variable: '{string_value}'",
+                    )
 
     def visit_Var(self, node: Var) -> None:
         var_name = node.value
@@ -2279,6 +2417,26 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_String(self, node: String) -> None:
         pass
+
+    def visit_Char(self, node: Char) -> None:
+        # Validate character value
+        char_value = node.value
+        if len(char_value) > 1:
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_CHAR_TOO_MANY_CHARS,
+                token=node.token,
+                message=f"Character literal has too many characters: '{char_value}'",
+            )
+
+        # Validate ASCII range for character constants parsed from #\d\d format
+        if node.token.type == TokenType.CHAR_CONST:
+            ascii_value = ord(char_value) if char_value else 0
+            if ascii_value < 0 or ascii_value > 255:
+                raise SemanticError(
+                    error_code=ErrorCode.SEMANTIC_CHAR_INVALID_ASCII,
+                    token=node.token,
+                    message=f"Character ASCII value {ascii_value} is out of range (0-255)",
+                )
 
     def visit_UnaryOp(self, node: UnaryOp) -> None:
         pass
@@ -2482,6 +2640,70 @@ def handle_setlength(interpreter, node):
     interpreter.log(str(interpreter.call_stack))
 
 
+def handle_inc(interpreter, node):
+    """Handle INC built-in procedure - increment a variable"""
+    proc_name = node.proc_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Get the variable name and optional increment value
+    var_name = actual_params[0].value
+    increment = 1  # Default increment
+
+    if len(actual_params) > 1:
+        increment_obj = interpreter.visit(actual_params[1])
+        if isinstance(increment_obj, NumberObject):
+            increment = increment_obj.value
+
+    # Get current value and increment it
+    var_obj = ar.get(var_name)
+    if isinstance(var_obj, NumberObject):
+        new_value = var_obj.value + increment
+        if isinstance(var_obj, IntegerObject):
+            ar[var_name] = IntegerObject(new_value)
+        else:
+            ar[var_name] = RealObject(new_value)
+
+    interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+
+def handle_dec(interpreter, node):
+    """Handle DEC built-in procedure - decrement a variable"""
+    proc_name = node.proc_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Get the variable name and optional decrement value
+    var_name = actual_params[0].value
+    decrement = 1  # Default decrement
+
+    if len(actual_params) > 1:
+        decrement_obj = interpreter.visit(actual_params[1])
+        if isinstance(decrement_obj, NumberObject):
+            decrement = decrement_obj.value
+
+    # Get current value and decrement it
+    var_obj = ar.get(var_name)
+    if isinstance(var_obj, NumberObject):
+        new_value = var_obj.value - decrement
+        if isinstance(var_obj, IntegerObject):
+            ar[var_name] = IntegerObject(new_value)
+        else:
+            ar[var_name] = RealObject(new_value)
+
+    interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+
 # Built-in function handlers
 def handle_length(interpreter, node):
     """Handle LENGTH built-in function"""
@@ -2501,6 +2723,66 @@ def handle_length(interpreter, node):
         length_value = 0
 
     result = IntegerObject(length_value)
+    ar[RETURN_NUM_FOR_LENGTH] = result
+
+    interpreter.log(f"LEAVE: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    return result
+
+
+def handle_ord(interpreter, node):
+    """Handle ORD built-in function - returns ASCII code of a character"""
+    func_name = node.func_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Get the character parameter and return its ASCII code
+    param_obj = interpreter.visit(actual_params[1])  # Skip the function name param
+
+    if isinstance(param_obj, CharObject):
+        ascii_value = ord(param_obj.value) if param_obj.value else 0
+    elif isinstance(param_obj, StringObject) and len(param_obj.value) > 0:
+        ascii_value = ord(param_obj.value[0])
+    else:
+        ascii_value = 0
+
+    result = IntegerObject(ascii_value)
+    ar[RETURN_NUM_FOR_LENGTH] = result
+
+    interpreter.log(f"LEAVE: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    return result
+
+
+def handle_chr(interpreter, node):
+    """Handle CHR built-in function - converts ASCII code to character"""
+    func_name = node.func_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Get the ASCII code parameter and convert it to a character
+    param_obj = interpreter.visit(actual_params[1])  # Skip the function name param
+
+    if isinstance(param_obj, NumberObject):
+        ascii_code = param_obj.value
+        try:
+            char_value = chr(ascii_code)
+        except (ValueError, OverflowError):
+            char_value = ""
+    else:
+        char_value = ""
+
+    result = CharObject(char_value)
     ar[RETURN_NUM_FOR_LENGTH] = result
 
     interpreter.log(f"LEAVE: FUNCTION {func_name}")
@@ -2587,7 +2869,11 @@ class Interpreter(NodeVisitor):
         register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
         register_builtin_procedure(NativeMethod.WRITELN.name, handle_writeln)
         register_builtin_procedure(NativeMethod.SETLENGTH.name, handle_setlength)
+        register_builtin_procedure(NativeMethod.INC.name, handle_inc)
+        register_builtin_procedure(NativeMethod.DEC.name, handle_dec)
         register_builtin_function(NativeMethod.LENGTH.name, handle_length)
+        register_builtin_function(NativeMethod.ORD.name, handle_ord)
+        register_builtin_function(NativeMethod.CHR.name, handle_chr)
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_STACK:
@@ -2626,6 +2912,8 @@ class Interpreter(NodeVisitor):
             ar[node.var_node.value] = IntegerObject(0)
         elif node.type_node.token.type == TokenType.REAL:
             ar[node.var_node.value] = RealObject(0.0)
+        elif node.type_node.token.type == TokenType.CHAR:
+            ar[node.var_node.value] = CharObject("")
         elif node.type_node.token.type == TokenType.STRING:
             string_node = cast(StringType, node.type_node)
             limit: int = 255
@@ -2657,6 +2945,8 @@ class Interpreter(NodeVisitor):
                 element_type = ElementType.REAL
             elif node.element_type.token.type == TokenType.STRING:
                 element_type = ElementType.STRING
+            elif node.element_type.token.type == TokenType.CHAR:
+                element_type = ElementType.CHAR
             elif node.element_type.token.type == TokenType.ARRAY:
                 element_type = ElementType.ARRAY
 
@@ -2754,10 +3044,14 @@ class Interpreter(NodeVisitor):
                 right_obj, NumberObject
             ):
                 return left_obj < right_obj
+            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
+                return left_obj < right_obj
         elif node.op.type == TokenType.GT:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
+                return left_obj > right_obj
+            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
                 return left_obj > right_obj
         elif node.op.type == TokenType.EQ:
             if isinstance(left_obj, NumberObject) and isinstance(
@@ -2768,6 +3062,8 @@ class Interpreter(NodeVisitor):
                 right_obj, BooleanObject
             ):
                 return BooleanObject(value=left_obj == right_obj)
+            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
+                return BooleanObject(value=left_obj == right_obj)
         elif node.op.type == TokenType.NE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
@@ -2777,15 +3073,21 @@ class Interpreter(NodeVisitor):
                 right_obj, BooleanObject
             ):
                 return BooleanObject(value=left_obj != right_obj)
+            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
+                return BooleanObject(value=left_obj != right_obj)
         elif node.op.type == TokenType.LE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
                 return left_obj <= right_obj
+            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
+                return left_obj <= right_obj
         elif node.op.type == TokenType.GE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
+                return left_obj >= right_obj
+            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
                 return left_obj >= right_obj
 
         # !!
@@ -2803,6 +3105,9 @@ class Interpreter(NodeVisitor):
 
     def visit_String(self, node: String) -> StringObject:
         return StringObject(node.value)
+
+    def visit_Char(self, node: Char) -> CharObject:
+        return CharObject(node.value)
 
     def visit_Bool(self, node: Bool) -> BooleanObject:
         if node.token.type == TokenType.TRUE:
@@ -2871,6 +3176,10 @@ class Interpreter(NodeVisitor):
                     )
                 else:
                     ar[var_name] = StringObject(var_value.value, existing_var.limit)
+            elif isinstance(existing_var, CharObject) and isinstance(
+                var_value, StringObject
+            ):
+                ar[var_name] = CharObject(value=var_value.value)
             else:
                 ar[var_name] = var_value
 
@@ -3111,7 +3420,7 @@ def main() -> None:
     _SHOULD_LOG_SCOPE = args.scope
     _SHOULD_LOG_STACK = args.stack
 
-    text = open(args.inputfile, "r").read()
+    text = open(args.inputfile, "r", encoding="utf-8").read()
 
     lexer = Lexer(text)
     try:
