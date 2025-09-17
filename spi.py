@@ -52,6 +52,7 @@ class ErrorCode(Enum):
     # Semantic errors
     SEMANTIC_UNKNOWN_TYPE = "Semantic unknown type"
     SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE = "Semantic unknown array element type"
+    SEMANTIC_UNKNOWN_SYMBOL = "Semantic unknown symbol"
     SEMANTIC_UNKNOWN_BOOLEAN = "Semantic unknown boolean"
 
     # Interpreter errors
@@ -106,37 +107,12 @@ class SemanticError(Error):
 
 ###############################################################################
 #                                                                             #
-#  UnknownSymbolError                                                         #
-#                                                                             #
-###############################################################################
-
-
-class UnknownSymbolError(Error):
-    pass
-
-
-###############################################################################
-#                                                                             #
 #  InterpreterError                                                           #
 #                                                                             #
 ###############################################################################
 
 
 class InterpreterError(Error):
-    pass
-
-
-# 定义测试中使用的特定错误类，作为InterpreterError的别名
-ArrayRangeInvalidError = InterpreterError
-StaticArrayModifyLengthError = InterpreterError
-
-
-# 定义其他缺失的错误类
-class UnknownBuiltinFunctionError(InterpreterError):
-    pass
-
-
-class NullPointerError(InterpreterError):
     pass
 
 
@@ -583,7 +559,22 @@ class AST:
         self.value: Any = None
 
 
-class BinOp(AST):
+class Statement(AST):
+    def __init__(self):
+        pass
+
+
+class Declaration(Statement):
+    def __init__(self):
+        super().__init__()
+
+
+class Expression(AST):
+    def __init__(self):
+        super().__init__()
+
+
+class BinOp(Expression):
     def __init__(self, left: AST, op: Token, right: AST) -> None:
         self.left = left
         self.token = self.op = op
@@ -593,38 +584,38 @@ class BinOp(AST):
 type Number = int | float
 
 
-class Num(AST):
+class Num(Expression):
     def __init__(self, token: Token) -> None:
         self.token = token
         self.value: Number = token.value
 
 
-class Bool(AST):
+class Bool(Expression):
     def __init__(self, token: Token) -> None:
         self.token = token
         self.value: bool = token.value
 
 
-class String(AST):
+class String(Expression):
     def __init__(self, token: Token):
         self.token = token
         self.value: str = token.value
 
 
-class UnaryOp(AST):
+class UnaryOp(Expression):
     def __init__(self, op: Token, expr: AST) -> None:
         self.token = self.op = op
         self.expr = expr
 
 
-class Compound(AST):
+class Compound(Statement):
     """Represents a 'BEGIN ... END' block"""
 
     def __init__(self) -> None:
         self.children: list[AST] = []
 
 
-class IfStatement(AST):
+class IfStatement(Statement):
     """Represents a 'if ... then... elseif ... then ... else' statement"""
 
     def __init__(
@@ -640,7 +631,7 @@ class IfStatement(AST):
         self.else_branch = else_branch
 
 
-class WhileStatement(AST):
+class WhileStatement(Statement):
     """Represents a 'WHILE ... DO ... BEGIN ... END' block"""
 
     def __init__(self, condition: AST, block: Compound) -> None:
@@ -648,7 +639,7 @@ class WhileStatement(AST):
         self.block = block
 
 
-class ForStatement(AST):
+class ForStatement(Statement):
     """Represents a 'FOR left:= right TO ... DO (BEGIN ... END) or statement' block"""
 
     def __init__(self, initialization: Assign, bound: AST, block: AST) -> None:
@@ -657,14 +648,14 @@ class ForStatement(AST):
         self.block = block
 
 
-class Assign(AST):
+class Assign(Statement):
     def __init__(self, left: Var, op: Token, right) -> None:
         self.left = left
         self.token = self.op = op
         self.right = right
 
 
-class Var(AST):
+class Var(Expression):
     """The Var node is constructed out of ID token."""
 
     def __init__(self, token: Token) -> None:
@@ -680,29 +671,31 @@ class IndexVar(Var):
         self.index = index
 
 
-class NoOp(AST):
+class NoOp(Statement):
     pass
 
 
-class Program(AST):
+class Program(Statement):
     def __init__(self, name: str, block: Block) -> None:
         self.name = name
         self.block = block
 
 
-class Block(AST):
-    def __init__(self, declarations: list[Decl], compound_statement: Compound) -> None:
+class Block(Statement):
+    def __init__(
+        self, declarations: list[Declaration], compound_statement: Compound
+    ) -> None:
         self.declarations = declarations
         self.compound_statement = compound_statement
 
 
-class VarDecl(AST):
+class VarDecl(Declaration):
     def __init__(self, var_node: Var, type_node: Type) -> None:
         self.var_node = var_node
         self.type_node = type_node
 
 
-class Type(AST):
+class Type(Expression):
     def __init__(self, token: Token) -> None:
         self.token = token
         self.value = token.value
@@ -717,7 +710,7 @@ class PrimitiveType(Type):
 
 
 class StringType(Type):
-    def __init__(self, token, limit: Factor | None = None):
+    def __init__(self, token, limit: Expression | None = None):
         super().__init__(token)
         self.limit = limit
 
@@ -730,8 +723,8 @@ class ArrayType(Type):
         self,
         token,
         element_type: Type,
-        lower: Factor,
-        upper: Factor,
+        lower: Expression,
+        upper: Expression,
         dynamic: bool = False,
     ):
         super().__init__(token)
@@ -746,13 +739,13 @@ class ArrayType(Type):
         )
 
 
-class Param(AST):
+class Param(Expression):
     def __init__(self, var_node: Var, type_node: Type) -> None:
         self.var_node = var_node
         self.type_node = type_node
 
 
-class ProcedureDecl(AST):
+class ProcedureDecl(Declaration):
     def __init__(
         self, proc_name: str, formal_params: list[Param], block_node: Block
     ) -> None:
@@ -761,7 +754,7 @@ class ProcedureDecl(AST):
         self.block_node = block_node
 
 
-class FunctionDecl(AST):
+class FunctionDecl(Declaration):
     def __init__(
         self,
         func_name: str,
@@ -775,8 +768,10 @@ class FunctionDecl(AST):
         self.block_node = block_node
 
 
-class ProcedureCall(AST):
-    def __init__(self, proc_name: str, actual_params: list[Expr], token: Token) -> None:
+class ProcedureCall(Statement):
+    def __init__(
+        self, proc_name: str, actual_params: list[Expression], token: Token
+    ) -> None:
         self.proc_name = proc_name
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
@@ -784,28 +779,15 @@ class ProcedureCall(AST):
         self.proc_symbol: ProcedureSymbol | None = None
 
 
-class FunctionCall(AST):
-    def __init__(self, func_name: str, actual_params: list[Expr], token: Token) -> None:
+class FunctionCall(Expression):
+    def __init__(
+        self, func_name: str, actual_params: list[Expression], token: Token
+    ) -> None:
         self.func_name = func_name
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
         # a reference to procedure declaration symbol
         self.func_symbol: FunctionSymbol | None = None
-
-
-type Decl = VarDecl | ProcedureDecl | FunctionDecl
-type Statement = (
-    Compound
-    | ProcedureCall
-    | Assign
-    | NoOp
-    | IfStatement
-    | WhileStatement
-    | ForStatement
-)
-type Expr = "Factor"
-type Term = "Factor"
-type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | String
 
 
 class Parser:
@@ -863,11 +845,11 @@ class Parser:
         node = Block(declaration_nodes, compound_statement_node)
         return node
 
-    def declarations(self) -> list[Decl]:
+    def declarations(self) -> list[Declaration]:
         """
         declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
         """
-        declarations: list[Decl] = []
+        declarations: list[Declaration] = []
 
         if self.current_token.type == TokenType.VAR:
             self.eat(TokenType.VAR)
@@ -1040,10 +1022,10 @@ class Parser:
         """array_type_spec : ARRAY (LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET)? of type_spec"""
         token = self.current_token
         self.eat(TokenType.ARRAY)
-        lower: Factor = self.newZeroNum(
+        lower: Expression = self.newZeroNum(
             lineno=self.current_token.lineno, column=self.current_token.column
         )
-        upper: Factor = self.newZeroNum(
+        upper: Expression = self.newZeroNum(
             lineno=self.current_token.lineno, column=self.current_token.column
         )
         dynamic: bool = True
@@ -1197,7 +1179,7 @@ class Parser:
         proc_name = self.current_token.value
         self.eat(TokenType.ID)
         self.eat(TokenType.LPAREN)
-        actual_params: list[Expr] = []
+        actual_params: list[Expression] = []
         if self.current_token.type != TokenType.RPAREN:
             expr = self.expr()
             actual_params.append(expr)
@@ -1223,7 +1205,7 @@ class Parser:
         fun_name = self.current_token.value
         self.eat(TokenType.ID)
         self.eat(TokenType.LPAREN)
-        actual_params: list[Expr] = []
+        actual_params: list[Expression] = []
 
         actual_params.append(
             Var(Token(TokenType.ID, fun_name, token.lineno, token.column))
@@ -1278,13 +1260,13 @@ class Parser:
         """An empty production"""
         return NoOp()
 
-    def expr(self) -> Expr:
+    def expr(self) -> Expression:
         """
         expr : logic_expr
         """
         return self.logic_expr()
 
-    def logic_expr(self) -> Expr:
+    def logic_expr(self) -> Expression:
         """logic_expr : comparison_expr ((and | or ) comparison_expr)*"""
         node = self.comparison_expr()
 
@@ -1299,7 +1281,7 @@ class Parser:
 
         return node
 
-    def comparison_expr(self) -> Expr:
+    def comparison_expr(self) -> Expression:
         """comparison_expr : summation_expr ( (EQ | NE | GT | GE | LT | LE) summation_expr )*"""
         node = self.summation_expr()
         while self.current_token.type in (
@@ -1328,7 +1310,7 @@ class Parser:
 
         return node
 
-    def summation_expr(self) -> Expr:
+    def summation_expr(self) -> Expression:
         """
         summation_expr : multiplication_expr ((PLUS | MINUS) multiplication_expr)*
         """
@@ -1345,7 +1327,7 @@ class Parser:
 
         return node
 
-    def multiplication_expr(self) -> Term:
+    def multiplication_expr(self) -> Expression:
         """multiplication_expr : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*"""
         node = self.factor()
 
@@ -1366,7 +1348,7 @@ class Parser:
 
         return node
 
-    def factor(self) -> Factor:
+    def factor(self) -> Expression:
         """
         factor : not comparison_expr
                | PLUS factor
@@ -1381,7 +1363,7 @@ class Parser:
                | variable
         """
         token = self.current_token
-        node: Factor
+        node: Expression
         # logic OP
         if token.type == TokenType.NOT:
             self.eat(TokenType.NOT)
@@ -1965,16 +1947,16 @@ class SemanticAnalyzer(NodeVisitor):
             )
         var_symbol = self.current_scope.lookup(node.left.value)
         if var_symbol is None:
-            raise UnknownSymbolError(
-                error_code=ErrorCode.ID_NOT_FOUND,
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
                 token=node.left.token,
-                message=f"{ErrorCode.ID_NOT_FOUND.value} -> {node.left.token}",
+                message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
             )
         if var_symbol.type is None:
-            raise UnknownSymbolError(
-                error_code=ErrorCode.NULL_POINTER,
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL,
                 token=node.left.token,
-                message=f"{ErrorCode.NULL_POINTER.value} -> {node.left.token}",
+                message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
             )
         if isinstance(var_symbol.type, StringTypeSymbol):
             # string_size = var_symbol.type.limit
@@ -2310,7 +2292,7 @@ class Interpreter(NodeVisitor):
             lower_bound: int = self.visit(node.lower)
             upper_bound: int = self.visit(node.upper)
             if lower_bound > upper_bound:
-                raise ArrayRangeInvalidError(
+                raise InterpreterError(
                     error_code=ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID,
                     token=node.token,
                     message=f"{ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID.value} -> {node.token}",
@@ -2526,7 +2508,7 @@ class Interpreter(NodeVisitor):
         proc_symbol = node.proc_symbol
 
         if proc_symbol is None:
-            raise NullPointerError(
+            raise InterpreterError(
                 error_code=ErrorCode.NULL_POINTER,
                 token=node.token,
                 message=f"{ErrorCode.NULL_POINTER.value} -> {node.token}",
@@ -2604,7 +2586,7 @@ class Interpreter(NodeVisitor):
                         ar[arr_name] = ar[arr_name][0:new_length]
                 else:
                     if ar.get_meta(arr_name).dynamic is False:
-                        raise StaticArrayModifyLengthError(
+                        raise InterpreterError(
                             error_code=ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH,
                             token=node.token,
                             message=f"{ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH.value} -> {node.token}",
@@ -2647,7 +2629,7 @@ class Interpreter(NodeVisitor):
 
             # evaluate procedure body
             if proc_symbol.block_ast is None:
-                raise NullPointerError(
+                raise InterpreterError(
                     error_code=ErrorCode.NULL_POINTER,
                     token=None,
                     message=f"{ErrorCode.NULL_POINTER.value}",
@@ -2684,7 +2666,11 @@ class Interpreter(NodeVisitor):
         func_symbol = node.func_symbol
 
         if func_symbol is None:
-            raise NullPointerError
+            raise InterpreterError(
+                error_code=ErrorCode.NULL_POINTER,
+                token=None,
+                message=f"{ErrorCode.NULL_POINTER.value}",
+            )
 
         ar = ActivationRecord(
             name=func_name,
@@ -2718,7 +2704,7 @@ class Interpreter(NodeVisitor):
                 self.call_stack.pop()
                 return ar[RETURN_NUM_FOR_LENGTH]
             else:
-                raise UnknownBuiltinFunctionError(
+                raise InterpreterError(
                     error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION,
                     token=None,
                     message=f"{ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION.value}",
@@ -2737,7 +2723,7 @@ class Interpreter(NodeVisitor):
 
             # evaluate procedure body
             if func_symbol.block_ast is None:
-                raise NullPointerError(
+                raise InterpreterError(
                     error_code=ErrorCode.NULL_POINTER,
                     token=None,
                     message=f"{ErrorCode.NULL_POINTER.value}",

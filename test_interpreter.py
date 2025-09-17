@@ -86,7 +86,7 @@ class ParserTestCase(unittest.TestCase):
         return parser
 
     def test_expression_invalid_syntax_01(self):
-        from spi import ParserError, ErrorCode
+        from spi import ErrorCode, ParserError
 
         parser = self.makeParser(
             """
@@ -106,7 +106,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 6)
 
     def test_expression_invalid_syntax_02(self):
-        from spi import ParserError, ErrorCode
+        from spi import ErrorCode, ParserError
 
         parser = self.makeParser(
             """
@@ -126,7 +126,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 6)
 
     def test_maximum_one_VAR_block_is_allowed(self):
-        from spi import ParserError, ErrorCode
+        from spi import ErrorCode, ParserError
 
         # zero VARs
         parser = self.makeParser(
@@ -184,7 +184,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         return semantic_analyzer
 
     def test_semantic_duplicate_id_error(self):
-        from spi import SemanticError, ErrorCode
+        from spi import ErrorCode, SemanticError
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -204,7 +204,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 5)
 
     def test_loop_control_variable_can_not_modified(self):
-        from spi import SemanticError, ErrorCode
+        from spi import ErrorCode, SemanticError
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -227,7 +227,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.lineno, 8)
 
     def test_semantic_id_not_found_error(self):
-        from spi import SemanticError, ErrorCode
+        from spi import ErrorCode, SemanticError
 
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
@@ -262,7 +262,7 @@ class TestCallStack:
 
 class InterpreterTestCase(unittest.TestCase):
     def makeInterpreter(self, text):
-        from spi import Lexer, Parser, SemanticAnalyzer, Interpreter
+        from spi import Interpreter, Lexer, Parser, SemanticAnalyzer
 
         lexer = Lexer(text)
         parser = Parser(lexer)
@@ -810,7 +810,7 @@ end.
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array_range_invalid(self):
-        from spi import InterpreterError, ArrayRangeInvalidError
+        from spi import InterpreterError
 
         text = """\
 program ArranRange;
@@ -826,10 +826,10 @@ end.
 
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar.nesting_level, 1)
-        self.assertIsInstance(cm.exception, ArrayRangeInvalidError)
+        self.assertIsInstance(cm.exception, InterpreterError)
 
     def test_static_array_modify_length(self):
-        from spi import InterpreterError, StaticArrayModifyLengthError
+        from spi import InterpreterError
 
         text = """\
 program ArranRange;
@@ -845,7 +845,7 @@ end.
 
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar.nesting_level, 1)
-        self.assertIsInstance(cm.exception, StaticArrayModifyLengthError)
+        self.assertIsInstance(cm.exception, InterpreterError)
 
     def test_array_out_of_range(self):
         text = """\
