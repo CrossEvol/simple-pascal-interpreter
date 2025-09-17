@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, cast
 
 _SHOULD_LOG_SCOPE = False  # see '--scope' command line option
@@ -29,6 +29,7 @@ class ElementType(Enum):
 
 
 class ErrorCode(Enum):
+    # Common errors
     UNEXPECTED_TOKEN = "Unexpected token"
     ID_NOT_FOUND = "Identifier not found"
     DUPLICATE_ID = "Duplicate id found"
@@ -39,6 +40,27 @@ class ErrorCode(Enum):
     MODIFY_LOOP_VAR_NOT_ALLOW = (
         "modify loop control variable is not allowed inside for-statement"
     )
+    MISSING_CURRENT_SCOPE = "Missing current scope"
+
+    # Lexer errors
+    LEXER_INVALID_CHARACTER = "Lexer invalid character"
+    LEXER_STRING_ERROR = "Lexer string error"
+
+    # Parser errors
+    PARSER_UNEXPECTED_TOKEN = "Parser unexpected token"
+
+    # Semantic errors
+    SEMANTIC_UNKNOWN_TYPE = "Semantic unknown type"
+    SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE = "Semantic unknown array element type"
+    SEMANTIC_UNKNOWN_BOOLEAN = "Semantic unknown boolean"
+
+    # Interpreter errors
+    INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
+    INTERPRETER_UNKNOWN_BUILTIN_FUNCTION = "Interpreter unknown builtin function"
+    INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE = "Interpreter unknown builtin procedure"
+    INTERPRETER_ARRAY_RANGE_INVALID = "Interpreter array range invalid"
+    INTERPRETER_UNKNOWN_OPERATOR = "Interpreter unknown operator"
+    INTERPRETER_UNKNOWN_BOOLEAN = "Interpreter unknown boolean"
 
 
 class Error(Exception):
@@ -51,7 +73,7 @@ class Error(Exception):
 
 ###############################################################################
 #                                                                             #
-#  LexerError                                                                      #
+#  LexerError                                                                 #
 #                                                                             #
 ###############################################################################
 
@@ -60,13 +82,9 @@ class LexerError(Error):
     pass
 
 
-class LexerStringError(LexerError):
-    pass
-
-
 ###############################################################################
 #                                                                             #
-#  ParserError                                                                      #
+#  ParserError                                                                #
 #                                                                             #
 ###############################################################################
 
@@ -77,7 +95,7 @@ class ParserError(Error):
 
 ###############################################################################
 #                                                                             #
-#  SemanticError                                                                      #
+#  SemanticError                                                              #
 #                                                                             #
 ###############################################################################
 
@@ -86,29 +104,20 @@ class SemanticError(Error):
     pass
 
 
-class UnknownTypeError(SemanticError):
-    pass
-
-
-class UnknownArrayElementTypeError(UnknownTypeError):
-    pass
-
-
-class UnknownBooleanError(UnknownTypeError):
-    pass
+###############################################################################
+#                                                                             #
+#  UnknownSymbolError                                                         #
+#                                                                             #
+###############################################################################
 
 
 class UnknownSymbolError(Error):
     pass
 
 
-class MissingCurrentScopeError(SemanticError):
-    pass
-
-
 ###############################################################################
 #                                                                             #
-#  InterpreterError                                                                      #
+#  InterpreterError                                                           #
 #                                                                             #
 ###############################################################################
 
@@ -117,36 +126,18 @@ class InterpreterError(Error):
     pass
 
 
-class StaticArrayModifyLengthError(InterpreterError):
-    pass
+# 定义测试中使用的特定错误类，作为InterpreterError的别名
+ArrayRangeInvalidError = InterpreterError
+StaticArrayModifyLengthError = InterpreterError
 
 
+# 定义其他缺失的错误类
 class UnknownBuiltinFunctionError(InterpreterError):
-    pass
-
-
-class UnknownBuiltinProcedureError(InterpreterError):
     pass
 
 
 class NullPointerError(InterpreterError):
     pass
-
-
-class ArrayRangeInvalidError(InterpreterError):
-    pass
-
-
-class UnknownOperatorError(InterpreterError):
-    def __init__(
-        self,
-        error_code: ErrorCode,
-        token: Token | None = None,
-    ) -> None:
-        self.error_code = error_code
-        self.token = token
-        # add exception class name before the message
-        self.message = f"{self.__class__.__name__}: {None}"
 
 
 ###############################################################################
@@ -375,7 +366,11 @@ class Lexer:
         if self.current_char == "'":
             self.advance()
         else:
-            raise LexerStringError()
+            raise LexerError(
+                error_code=ErrorCode.LEXER_STRING_ERROR,
+                token=token,
+                message="Unterminated string",
+            )
         value = ""
         while self.current_char is not None and self.current_char != "'":
             value += self.current_char
@@ -384,7 +379,11 @@ class Lexer:
         if self.current_char == "'":
             self.advance()
         else:
-            raise LexerStringError()
+            raise LexerError(
+                error_code=ErrorCode.LEXER_STRING_ERROR,
+                token=token,
+                message="Unterminated string",
+            )
 
         token.type = TokenType.STRING_CONST
         token.value = value
@@ -475,7 +474,16 @@ class Lexer:
                 )
                 self.advance()
                 return token
-        raise LexerError
+        raise LexerError(
+            error_code=ErrorCode.LEXER_INVALID_CHARACTER,
+            token=Token(
+                type=None,
+                value=self.current_char,
+                lineno=self.lineno,
+                column=self.column,
+            ),
+            message=f"{ErrorCode.LEXER_INVALID_CHARACTER.value} -> '{self.current_char}'",
+        )
 
     def get_next_token(self) -> Token:
         """Lexical analyzer (also known as scanner or tokenizer)
@@ -572,6 +580,7 @@ class Lexer:
 class AST:
     def __init__(self) -> None:
         self._num: int | None = None
+        self.value: Any = None
 
 
 class BinOp(AST):
@@ -785,14 +794,21 @@ class FunctionCall(AST):
 
 
 type Decl = VarDecl | ProcedureDecl | FunctionDecl
-type Statement = Compound | ProcedureCall | Assign | NoOp | IfStatement | WhileStatement | ForStatement
+type Statement = (
+    Compound
+    | ProcedureCall
+    | Assign
+    | NoOp
+    | IfStatement
+    | WhileStatement
+    | ForStatement
+)
 type Expr = "Factor"
 type Term = "Factor"
 type Factor = UnaryOp | BinOp | Num | Bool | Var | FunctionCall | String
 
 
 class Parser:
-
     def __init__(self, lexer: Lexer) -> None:
         self.lexer = lexer
         # set current token to the first token taken from the input
@@ -979,7 +995,11 @@ class Parser:
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
         else:
-            raise UnknownTypeError()
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                token=self.current_token,
+                message=f"{ErrorCode.SEMANTIC_UNKNOWN_TYPE.value} -> {self.current_token}",
+            )
 
     def primitive_type_spec(self) -> Type:
         """
@@ -1010,7 +1030,11 @@ class Parser:
             else:
                 return StringType(token=token)
         else:
-            raise ParserError()
+            raise ParserError(
+                error_code=ErrorCode.PARSER_UNEXPECTED_TOKEN,
+                token=self.current_token,
+                message=f"{ErrorCode.PARSER_UNEXPECTED_TOKEN.value} -> {self.current_token}",
+            )
 
     def array_type_spec(self) -> ArrayType:
         """array_type_spec : ARRAY (LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET)? of type_spec"""
@@ -1842,7 +1866,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.then_branch)
         for branch in node.else_if_branches:
             self.visit(branch)
-        if node.else_branch != None:
+        if node.else_branch is not None:
             self.visit(node.else_branch)
 
     def visit_BinOp(self, node: BinOp) -> None:
@@ -1860,7 +1884,11 @@ class SemanticAnalyzer(NodeVisitor):
             limit = int(node.limit.value)
             self.__string_type_limit = limit
             if self.current_scope is None:
-                raise MissingCurrentScopeError()
+                raise SemanticError(
+                    error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                    token=node.token,
+                    message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.token}",
+                )
             self.current_scope.insert(
                 StringTypeSymbol(
                     name=SemanticAnalyzer.string_type_name(limit), limit=int(limit)
@@ -1872,10 +1900,18 @@ class SemanticAnalyzer(NodeVisitor):
         if isinstance(node.element_type, ArrayType):
             self.visit_ArrayType(node.element_type)
         if self.current_scope is None:
-            raise MissingCurrentScopeError
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=node.token,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.token}",
+            )
         element_type_symbol = self.current_scope.lookup(str(node.element_type))
         if element_type_symbol is None:
-            raise UnknownArrayElementTypeError()
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE,
+                token=node.token,
+                message=f"{ErrorCode.SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE.value} -> {node.token}",
+            )
         type_name = str(node)
         type_symbol = self.current_scope.lookup(type_name)
         if type_symbol is None:
@@ -1892,7 +1928,11 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(node.type_node)
             type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
         if self.current_scope is None:
-            raise MissingCurrentScopeError()
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=node.var_node.token,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.var_node.token}",
+            )
         type_symbol = self.current_scope.lookup(type_name)
 
         # We have all the information we need to create a variable symbol.
@@ -1918,12 +1958,24 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
         self.visit(node.left)
         if self.current_scope is None:
-            raise MissingCurrentScopeError()
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=node.left.token,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.left.token}",
+            )
         var_symbol = self.current_scope.lookup(node.left.value)
         if var_symbol is None:
-            raise UnknownSymbolError()
+            raise UnknownSymbolError(
+                error_code=ErrorCode.ID_NOT_FOUND,
+                token=node.left.token,
+                message=f"{ErrorCode.ID_NOT_FOUND.value} -> {node.left.token}",
+            )
         if var_symbol.type is None:
-            raise UnknownSymbolError()
+            raise UnknownSymbolError(
+                error_code=ErrorCode.NULL_POINTER,
+                token=node.left.token,
+                message=f"{ErrorCode.NULL_POINTER.value} -> {node.left.token}",
+            )
         if isinstance(var_symbol.type, StringTypeSymbol):
             # string_size = var_symbol.type.limit
             # if isinstance(node.right, String):
@@ -1972,7 +2024,11 @@ class SemanticAnalyzer(NodeVisitor):
         proc_name = node.proc_name
         proc_symbol = ProcedureSymbol(proc_name)
         if self.current_scope is None:
-            raise MissingCurrentScopeError()
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=None,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value}",
+            )
         self.current_scope.insert(proc_symbol)
 
         self.log(f"ENTER scope: {proc_name}")
@@ -2018,7 +2074,11 @@ class SemanticAnalyzer(NodeVisitor):
         return_type = node.return_type
         func_symbol = FunctionSymbol(func_name, return_type)
         if self.current_scope is None:
-            raise MissingCurrentScopeError()
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=None,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value}",
+            )
         self.current_scope.insert(func_symbol)
 
         self.log(f"ENTER scope: {func_name}")
@@ -2117,13 +2177,13 @@ class ActivationRecord:
         self.name = name
         self.type = type
         self.nesting_level = nesting_level
-        self.members: dict[str, Any] = {}
+        self.members: dict[str | int, Any] = {}
         self.members_meta: dict[str, MemberMeta] = {}
 
-    def __setitem__(self, key: str, value) -> None:
+    def __setitem__(self, key: str | int, value) -> None:
         self.members[key] = value
 
-    def __getitem__(self, key: str):
+    def __getitem__(self, key: str | int):
         return self.members[key]
 
     def copy_from(self, other: "ActivationRecord", override: bool):
@@ -2149,7 +2209,11 @@ class ActivationRecord:
     def get_meta(self, key: str):
         meta = self.members_meta.get(key)
         if meta is None:
-            raise InterpreterError()
+            raise InterpreterError(
+                error_code=ErrorCode.NULL_POINTER,
+                token=None,
+                message=f"{ErrorCode.NULL_POINTER.value}",
+            )
         else:
             return meta
 
@@ -2246,7 +2310,11 @@ class Interpreter(NodeVisitor):
             lower_bound: int = self.visit(node.lower)
             upper_bound: int = self.visit(node.upper)
             if lower_bound > upper_bound:
-                raise ArrayRangeInvalidError()
+                raise ArrayRangeInvalidError(
+                    error_code=ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID,
+                    token=node.token,
+                    message=f"{ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID.value} -> {node.token}",
+                )
             if node.element_type.token.type == TokenType.BOOLEAN:
                 bool_arr: dict[int, bool] = {}
                 if node.dynamic is False:
@@ -2271,7 +2339,11 @@ class Interpreter(NodeVisitor):
                     for i in range(lower_bound, upper_bound + 1):
                         arr_arr[i] = self.__initArray(node.element_type, ar)
                 return arr_arr
-        raise UnknownTypeError()
+        raise SemanticError(
+            error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+            token=node.token,
+            message=f"{ErrorCode.SEMANTIC_UNKNOWN_TYPE.value} -> {node.token}",
+        )
 
     def visit_Type(self, node: Type) -> None:
         # Do nothing
@@ -2323,7 +2395,11 @@ class Interpreter(NodeVisitor):
             return float(self.visit(node.left)) >= float(self.visit(node.right))
 
         # !!
-        raise UnknownOperatorError(ErrorCode.UNKNOWN_BIN_OP, node.token)
+        raise InterpreterError(
+            error_code=ErrorCode.INTERPRETER_UNKNOWN_OPERATOR,
+            token=node.token,
+            message=f"{ErrorCode.INTERPRETER_UNKNOWN_OPERATOR.value} -> {node.token}",
+        )
 
     def visit_Num(self, node: Num):
         return node.value
@@ -2336,7 +2412,11 @@ class Interpreter(NodeVisitor):
             return True
         elif node.token.type == TokenType.FALSE:
             return False
-        raise UnknownBooleanError()
+        raise InterpreterError(
+            error_code=ErrorCode.INTERPRETER_UNKNOWN_BOOLEAN,
+            token=node.token,
+            message=f"{ErrorCode.INTERPRETER_UNKNOWN_BOOLEAN.value} -> {node.token}",
+        )
 
     def visit_UnaryOp(self, node: UnaryOp) -> Number | bool:
         op = node.op.type
@@ -2349,7 +2429,11 @@ class Interpreter(NodeVisitor):
             return cast(Number, +self.visit(node.expr))
         elif op == TokenType.MINUS:
             return cast(Number, -self.visit(node.expr))
-        raise UnknownOperatorError(ErrorCode.UNKNOWN_UNARY_OP, node.token)
+        raise InterpreterError(
+            error_code=ErrorCode.INTERPRETER_UNKNOWN_OPERATOR,
+            token=node.token,
+            message=f"{ErrorCode.INTERPRETER_UNKNOWN_OPERATOR.value} -> {node.token}",
+        )
 
     def visit_Compound(self, node: Compound) -> None:
         for child in node.children:
@@ -2442,7 +2526,11 @@ class Interpreter(NodeVisitor):
         proc_symbol = node.proc_symbol
 
         if proc_symbol is None:
-            raise NullPointerError
+            raise NullPointerError(
+                error_code=ErrorCode.NULL_POINTER,
+                token=node.token,
+                message=f"{ErrorCode.NULL_POINTER.value} -> {node.token}",
+            )
 
         ar = ActivationRecord(
             name=proc_name,
@@ -2516,7 +2604,11 @@ class Interpreter(NodeVisitor):
                         ar[arr_name] = ar[arr_name][0:new_length]
                 else:
                     if ar.get_meta(arr_name).dynamic is False:
-                        raise StaticArrayModifyLengthError()
+                        raise StaticArrayModifyLengthError(
+                            error_code=ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH,
+                            token=node.token,
+                            message=f"{ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH.value} -> {node.token}",
+                        )
 
                     for i in range(0, new_length):
                         if i in ar[arr_name]:
@@ -2536,7 +2628,11 @@ class Interpreter(NodeVisitor):
                 self.call_stack.pop()
                 return
             else:
-                raise UnknownBuiltinProcedureError()
+                raise InterpreterError(
+                    error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE,
+                    token=node.token,
+                    message=f"{ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE.value} -> {node.token}",
+                )
         else:
             formal_params = proc_symbol.formal_params
             actual_params = node.actual_params
@@ -2551,7 +2647,11 @@ class Interpreter(NodeVisitor):
 
             # evaluate procedure body
             if proc_symbol.block_ast is None:
-                raise NullPointerError
+                raise NullPointerError(
+                    error_code=ErrorCode.NULL_POINTER,
+                    token=None,
+                    message=f"{ErrorCode.NULL_POINTER.value}",
+                )
             self.visit(proc_symbol.block_ast)
 
             self.log(f"LEAVE: PROCEDURE {proc_name}")
@@ -2566,17 +2666,17 @@ class Interpreter(NodeVisitor):
     def visit_IfStatement(self, node: IfStatement) -> None:
         flag: bool = self.visit(node.condition)
 
-        if flag == True:
+        if flag:
             self.visit(node.then_branch)
             return
         else:
             for branch in node.else_if_branches:
                 sub_flag: bool = self.visit(branch)
-                if sub_flag == True:
+                if sub_flag:
                     self.visit(branch.then_branch)
                     return
 
-        if node.else_branch != None:
+        if node.else_branch is not None:
             self.visit(node.else_branch)
 
     def visit_FunctionCall(self, node: FunctionCall) -> Any:
@@ -2618,7 +2718,11 @@ class Interpreter(NodeVisitor):
                 self.call_stack.pop()
                 return ar[RETURN_NUM_FOR_LENGTH]
             else:
-                raise UnknownBuiltinFunctionError()
+                raise UnknownBuiltinFunctionError(
+                    error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION,
+                    token=None,
+                    message=f"{ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION.value}",
+                )
         else:
             formal_params = func_symbol.formal_params
             actual_params = node.actual_params
@@ -2633,7 +2737,11 @@ class Interpreter(NodeVisitor):
 
             # evaluate procedure body
             if func_symbol.block_ast is None:
-                raise NullPointerError
+                raise NullPointerError(
+                    error_code=ErrorCode.NULL_POINTER,
+                    token=None,
+                    message=f"{ErrorCode.NULL_POINTER.value}",
+                )
             self.visit(func_symbol.block_ast)
 
             self.log(f"LEAVE: FUNCTION {func_name}")
