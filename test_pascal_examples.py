@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import glob
 import os
 import subprocess
-import glob
 import sys
 
 
@@ -14,7 +14,7 @@ def compile_and_run_pascal_tests():
     """
     # Change to the pascal_examples directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    pascal_dir = os.path.join(script_dir, "pascal_examples")
+    pascal_dir = os.path.join(script_dir, "pas/pascal_examples")
 
     if not os.path.exists(pascal_dir):
         print(f"Error: Directory {pascal_dir} does not exist")

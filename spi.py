@@ -6,7 +6,7 @@ import argparse
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 _SHOULD_LOG_SCOPE = False  # see '--scope' command line option
 _SHOULD_LOG_STACK = False  # see '--stack' command line option
@@ -37,15 +37,16 @@ class ElementType(Enum):
 
 class Object:
     """Base class for all Pascal values in the interpreter"""
+
     def __init__(self, value=None):
         self.value = value
-    
+
     def __str__(self):
         return str(self.value)
-    
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self.value})"
-    
+
     def to_bool(self):
         """Convert to boolean for conditional expressions"""
         return bool(self.value)
@@ -53,67 +54,68 @@ class Object:
 
 class NumberObject(Object):
     """Base class for numeric types"""
+
     def __add__(self, other):
         if isinstance(other, NumberObject):
             return self._create_result(self.value + other.value)
         return NotImplemented
-    
+
     def __sub__(self, other):
         if isinstance(other, NumberObject):
             return self._create_result(self.value - other.value)
         return NotImplemented
-    
+
     def __mul__(self, other):
         if isinstance(other, NumberObject):
             return self._create_result(self.value * other.value)
         return NotImplemented
-    
+
     def __truediv__(self, other):
         if isinstance(other, NumberObject):
             return RealObject(float(self.value) / float(other.value))
         return NotImplemented
-    
+
     def __floordiv__(self, other):
         if isinstance(other, NumberObject):
             return self._create_result(self.value // other.value)
         return NotImplemented
-    
+
     def __pos__(self):
         return self._create_result(+self.value)
-    
+
     def __neg__(self):
         return self._create_result(-self.value)
-    
+
     def __lt__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value < other.value)
         return NotImplemented
-    
+
     def __le__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value <= other.value)
         return NotImplemented
-    
+
     def __gt__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value > other.value)
         return NotImplemented
-    
+
     def __ge__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value >= other.value)
         return NotImplemented
-    
+
     def __eq__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value == other.value)
         return NotImplemented
-    
+
     def __ne__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value != other.value)
         return NotImplemented
-    
+
     def _create_result(self, value):
         """Create appropriate result type based on value"""
         if isinstance(value, int):
@@ -124,9 +126,10 @@ class NumberObject(Object):
 
 class IntegerObject(NumberObject):
     """Integer value object"""
+
     def __init__(self, value: int = 0):
         super().__init__(int(value))
-    
+
     def _create_result(self, value):
         if isinstance(value, int):
             return IntegerObject(value)
@@ -136,36 +139,38 @@ class IntegerObject(NumberObject):
 
 class RealObject(NumberObject):
     """Real/Float value object"""
+
     def __init__(self, value: float = 0.0):
         super().__init__(float(value))
-    
+
     def _create_result(self, value):
         return RealObject(float(value))
 
 
 class BooleanObject(Object):
     """Boolean value object"""
+
     def __init__(self, value: bool = False):
         super().__init__(bool(value))
-    
+
     def __and__(self, other):
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value and other.value)
         return NotImplemented
-    
+
     def __or__(self, other):
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value or other.value)
         return NotImplemented
-    
+
     def __invert__(self):
         return BooleanObject(not self.value)
-    
+
     def __eq__(self, other):
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value == other.value)
         return NotImplemented
-    
+
     def __ne__(self, other):
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value != other.value)
@@ -174,28 +179,29 @@ class BooleanObject(Object):
 
 class StringObject(Object):
     """String value object"""
+
     def __init__(self, value: str = "", limit: int = -1):
         if limit > 0 and len(value) > limit:
             value = value[:limit]
         super().__init__(str(value))
         self.limit = limit
-    
+
     def __add__(self, other):
         if isinstance(other, StringObject):
             result_value = self.value + other.value
             # Don't apply limits during concatenation operations
             return StringObject(result_value, -1)
         return NotImplemented
-    
+
     def __getitem__(self, index):
         """Get character at index (1-based indexing for Pascal)"""
         if 1 <= index <= len(self.value):
             return CharObject(self.value[index - 1])
         return CharObject("")
-    
+
     def __len__(self):
         return len(self.value)
-    
+
     def set_length(self, new_length: int):
         """Set new length for string"""
         if new_length < len(self.value):
@@ -205,24 +211,32 @@ class StringObject(Object):
 
 class CharObject(Object):
     """Character value object"""
+
     def __init__(self, value: str = ""):
         super().__init__(str(value)[:1] if value else "")
 
 
 class ArrayObject(Object):
     """Array value object"""
-    def __init__(self, element_type: ElementType, lower_bound: int = 0, upper_bound: int = 0, dynamic: bool = False):
+
+    def __init__(
+        self,
+        element_type: ElementType,
+        lower_bound: int = 0,
+        upper_bound: int = 0,
+        dynamic: bool = False,
+    ):
         super().__init__({})
         self.element_type = element_type
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
         self.dynamic = dynamic
-        
+
         # Initialize static arrays
         if not dynamic and lower_bound <= upper_bound:
             for i in range(lower_bound, upper_bound + 1):
                 self.value[i] = self._create_default_element()
-    
+
     def _create_default_element(self):
         """Create default element based on element type"""
         if self.element_type == ElementType.INTEGER:
@@ -237,7 +251,7 @@ class ArrayObject(Object):
             return ArrayObject(ElementType.INTEGER, 0, 0, True)  # Default nested array
         else:
             return Object()
-    
+
     def __getitem__(self, index):
         """Get element at index"""
         if index in self.value:
@@ -245,31 +259,31 @@ class ArrayObject(Object):
         else:
             # Return default value for out-of-bounds access
             return self._create_default_element()
-    
+
     def __setitem__(self, index, value):
         """Set element at index"""
         self.value[index] = value
-    
+
     def __len__(self):
         """Return length of array"""
         if self.dynamic:
             return len(self.value)
         else:
             return self.upper_bound - self.lower_bound + 1
-    
+
     def set_length(self, new_length: int):
         """Set new length for dynamic array"""
         if not self.dynamic:
             raise InterpreterError(
                 error_code=ErrorCode.INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH,
                 token=None,
-                message="Cannot modify length of static array"
+                message="Cannot modify length of static array",
             )
-        
+
         # Add new elements if extending
         for i in range(len(self.value), new_length):
             self.value[i] = self._create_default_element()
-        
+
         # Remove elements if shrinking
         if new_length < len(self.value):
             keys_to_remove = [k for k in self.value.keys() if k >= new_length]
@@ -2366,6 +2380,117 @@ class SemanticAnalyzer(NodeVisitor):
 #                                                                             #
 ###############################################################################
 
+# Built-in procedures and functions registry
+BUILTIN_PROCEDURES: dict[str, Callable[..., None]] = {}
+BUILTIN_FUNCTIONS: dict[str, Callable[..., Object]] = {}
+
+
+def register_builtin_procedure(name, handler):
+    """Register a built-in procedure handler"""
+    BUILTIN_PROCEDURES[name.upper()] = handler
+
+
+def register_builtin_function(name, handler):
+    """Register a built-in function handler"""
+    BUILTIN_FUNCTIONS[name.upper()] = handler
+
+
+# Built-in procedure handlers
+def handle_write(interpreter, node):
+    """Handle WRITE built-in procedure"""
+    proc_name = node.proc_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # output actual params
+    for argument_node in actual_params:
+        obj = interpreter.visit(argument_node)
+        print(obj.value if hasattr(obj, "value") else obj, end=" ")
+
+    interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+
+def handle_writeln(interpreter, node):
+    """Handle WRITELN built-in procedure"""
+    proc_name = node.proc_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # output actual params
+    for argument_node in actual_params:
+        obj = interpreter.visit(argument_node)
+        print(obj.value if hasattr(obj, "value") else obj)
+
+    interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+
+def handle_setlength(interpreter, node):
+    """Handle SETLENGTH built-in procedure"""
+    proc_name = node.proc_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # core
+    arr_name = actual_params[0].value
+    new_length_obj = interpreter.visit(actual_params[1])
+    new_length = new_length_obj.value if isinstance(new_length_obj, NumberObject) else 0
+
+    pre_ar = (
+        interpreter.call_stack._records[-2]
+        if len(interpreter.call_stack._records) >= 2
+        else ar
+    )
+    var_obj = pre_ar.get(arr_name)
+
+    if isinstance(var_obj, StringObject):
+        var_obj.set_length(new_length)
+    elif isinstance(var_obj, ArrayObject):
+        var_obj.set_length(new_length)
+
+    interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+
+# Built-in function handlers
+def handle_length(interpreter, node):
+    """Handle LENGTH built-in function"""
+    func_name = node.func_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Get the array/string object and return its length
+    param_obj = interpreter.visit(actual_params[1])  # Skip the function name param
+    if isinstance(param_obj, (ArrayObject, StringObject)):
+        length_value = len(param_obj)
+    else:
+        length_value = 0
+
+    result = IntegerObject(length_value)
+    ar[RETURN_NUM_FOR_LENGTH] = result
+
+    interpreter.log(f"LEAVE: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    return result
+
 
 class ARType(Enum):
     PROGRAM = "PROGRAM"
@@ -2415,7 +2540,7 @@ class ActivationRecord:
             if override or name not in self.members:
                 self.members[name] = val
 
-    def get(self, key: str) -> Object | None:
+    def get(self, key: str) -> Object:
         return self.members.get(key)
 
     def __str__(self) -> str:
@@ -2440,6 +2565,12 @@ class Interpreter(NodeVisitor):
     def __init__(self, tree: Program) -> None:
         self.tree = tree
         self.call_stack = CallStack()
+
+        # Register built-in procedures and functions
+        register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
+        register_builtin_procedure(NativeMethod.WRITELN.name, handle_writeln)
+        register_builtin_procedure(NativeMethod.SETLENGTH.name, handle_setlength)
+        register_builtin_function(NativeMethod.LENGTH.name, handle_length)
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_STACK:
@@ -2498,7 +2629,7 @@ class Interpreter(NodeVisitor):
                     token=node.token,
                     message=f"{ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID.value} -> {node.token}",
                 )
-            
+
             # Determine element type
             element_type = ElementType.INTEGER  # default
             if node.element_type.token.type == TokenType.BOOLEAN:
@@ -2511,14 +2642,14 @@ class Interpreter(NodeVisitor):
                 element_type = ElementType.STRING
             elif node.element_type.token.type == TokenType.ARRAY:
                 element_type = ElementType.ARRAY
-            
+
             return ArrayObject(
                 element_type=element_type,
                 lower_bound=lower_bound,
                 upper_bound=upper_bound,
-                dynamic=node.dynamic
+                dynamic=node.dynamic,
             )
-        
+
         raise SemanticError(
             error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
             token=node.token,
@@ -2544,71 +2675,103 @@ class Interpreter(NodeVisitor):
     def visit_BinOp(self, node: BinOp) -> Object:
         left_obj = self.visit(node.left)
         right_obj = self.visit(node.right)
-        
+
         # logic operator
         if node.op.type == TokenType.AND:
-            if isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+            if isinstance(left_obj, BooleanObject) and isinstance(
+                right_obj, BooleanObject
+            ):
                 return left_obj & right_obj
         elif node.op.type == TokenType.OR:
-            if isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+            if isinstance(left_obj, BooleanObject) and isinstance(
+                right_obj, BooleanObject
+            ):
                 return left_obj | right_obj
 
         # arithmetic operator
         if node.op.type == TokenType.PLUS:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj + right_obj
-            elif isinstance(left_obj, StringObject) and isinstance(right_obj, StringObject):
+            elif isinstance(left_obj, StringObject) and isinstance(
+                right_obj, StringObject
+            ):
                 # For string concatenation, don't apply limits during intermediate operations
                 return StringObject(left_obj.value + right_obj.value, -1)
             # Handle string + other types conversion
             elif isinstance(left_obj, StringObject):
-                if hasattr(right_obj, 'value'):
+                if hasattr(right_obj, "value"):
                     return StringObject(left_obj.value + str(right_obj.value), -1)
                 else:
                     return StringObject(left_obj.value + str(right_obj), -1)
             elif isinstance(right_obj, StringObject):
-                if hasattr(left_obj, 'value'):
+                if hasattr(left_obj, "value"):
                     return StringObject(str(left_obj.value) + right_obj.value, -1)
                 else:
                     return StringObject(str(left_obj) + right_obj.value, -1)
         elif node.op.type == TokenType.MINUS:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj - right_obj
         elif node.op.type == TokenType.MUL:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj * right_obj
         elif node.op.type == TokenType.INTEGER_DIV:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj // right_obj
         elif node.op.type == TokenType.FLOAT_DIV:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj / right_obj
 
         # comparison operator
         if node.op.type == TokenType.LT:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj < right_obj
         elif node.op.type == TokenType.GT:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj > right_obj
         elif node.op.type == TokenType.EQ:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj == right_obj
-            elif isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+            elif isinstance(left_obj, BooleanObject) and isinstance(
+                right_obj, BooleanObject
+            ):
                 return left_obj == right_obj
         elif node.op.type == TokenType.NE:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj != right_obj
-            elif isinstance(left_obj, BooleanObject) and isinstance(right_obj, BooleanObject):
+            elif isinstance(left_obj, BooleanObject) and isinstance(
+                right_obj, BooleanObject
+            ):
                 return left_obj != right_obj
         elif node.op.type == TokenType.LE:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj <= right_obj
         elif node.op.type == TokenType.GE:
-            if isinstance(left_obj, NumberObject) and isinstance(right_obj, NumberObject):
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
                 return left_obj >= right_obj
 
-        # !! 
+        # !!
         raise InterpreterError(
             error_code=ErrorCode.INTERPRETER_UNKNOWN_OPERATOR,
             token=node.token,
@@ -2638,7 +2801,7 @@ class Interpreter(NodeVisitor):
     def visit_UnaryOp(self, node: UnaryOp) -> Object:
         expr_obj = self.visit(node.expr)
         op = node.op.type
-        
+
         # negative bang
         if op == TokenType.NOT:
             if isinstance(expr_obj, BooleanObject):
@@ -2653,7 +2816,7 @@ class Interpreter(NodeVisitor):
         elif op == TokenType.MINUS:
             if isinstance(expr_obj, NumberObject):
                 return -expr_obj
-        
+
         raise InterpreterError(
             error_code=ErrorCode.INTERPRETER_UNKNOWN_OPERATOR,
             token=node.token,
@@ -2679,12 +2842,16 @@ class Interpreter(NodeVisitor):
         else:
             # identifier = value
             existing_var = ar.get(var_name)
-            if isinstance(existing_var, StringObject) and isinstance(var_value, StringObject):
+            if isinstance(existing_var, StringObject) and isinstance(
+                var_value, StringObject
+            ):
                 # Handle string assignment with limit checking
                 if existing_var.limit > 0 and len(var_value.value) > existing_var.limit:
                     message = f"Warning: String literal has more characters[{len(var_value.value)}] than short string length[{existing_var.limit}]"
                     SpiUtil.print_w(message=message)
-                    ar[var_name] = StringObject(var_value.value[:existing_var.limit], existing_var.limit)
+                    ar[var_name] = StringObject(
+                        var_value.value[: existing_var.limit], existing_var.limit
+                    )
                 else:
                     ar[var_name] = StringObject(var_value.value, existing_var.limit)
             else:
@@ -2703,7 +2870,7 @@ class Interpreter(NodeVisitor):
 
         ar = self.call_stack.peek()
         var_obj = ar.get(var_name)
-        
+
         if isinstance(var_obj, StringObject):
             return var_obj[index]
         elif isinstance(var_obj, ArrayObject):
@@ -2725,10 +2892,10 @@ class Interpreter(NodeVisitor):
         self.visit(node.initialization)
         bound_obj = self.visit(node.bound)
         bound_value = bound_obj.value if isinstance(bound_obj, NumberObject) else 0
-        
+
         var_obj = ar[var_name]
         var_value = var_obj.value if isinstance(var_obj, NumberObject) else 0
-        
+
         while var_value <= bound_value:
             self.visit(node.block)
             var_value += 1
@@ -2761,74 +2928,18 @@ class Interpreter(NodeVisitor):
 
         # deal with built-in procedure first
         if isinstance(proc_symbol, BuiltinProcedureSymbol):
-            if proc_symbol.name.upper() == NativeMethod.WRITE.name:
+            # Look up the built-in procedure in the registry
+            handler = BUILTIN_PROCEDURES.get(proc_symbol.name.upper())
+            if handler:
+                # Prepare parameters
                 actual_params = node.actual_params
-
                 for i in range(0, len(actual_params)):
                     ar[i] = self.visit(actual_params[i])
 
                 self.call_stack.push(ar)
 
-                self.log(f"ENTER: PROCEDURE {proc_name}")
-                self.log(str(self.call_stack))
-
-                # output actual params
-                for argument_node in actual_params:
-                    obj = self.visit(argument_node)
-                    print(obj.value if hasattr(obj, 'value') else obj, end=" ")
-
-                self.log(f"LEAVE: PROCEDURE {proc_name}")
-                self.log(str(self.call_stack))
-
-                self.call_stack.pop()
-                return
-            elif proc_symbol.name.upper() == NativeMethod.WRITELN.name:
-                actual_params = node.actual_params
-
-                for i in range(0, len(actual_params)):
-                    ar[i] = self.visit(actual_params[i])
-
-                self.call_stack.push(ar)
-
-                self.log(f"ENTER: PROCEDURE {proc_name}")
-                self.log(str(self.call_stack))
-
-                # output actual params
-                for argument_node in actual_params:
-                    obj = self.visit(argument_node)
-                    print(obj.value if hasattr(obj, 'value') else obj)
-
-                self.log(f"LEAVE: PROCEDURE {proc_name}")
-                self.log(str(self.call_stack))
-
-                self.call_stack.pop()
-                return
-            elif proc_symbol.name.upper() == NativeMethod.SETLENGTH.name:
-                actual_params = node.actual_params
-
-                for i in range(0, len(actual_params)):
-                    ar[i] = self.visit(actual_params[i])
-
-                self.call_stack.push(ar)
-
-                self.log(f"ENTER: PROCEDURE {proc_name}")
-                self.log(str(self.call_stack))
-
-                # core
-                arr_name = actual_params[0].value
-                new_length_obj = self.visit(actual_params[1])
-                new_length = new_length_obj.value if isinstance(new_length_obj, NumberObject) else 0
-                
-                pre_ar = self.call_stack._records[-2] if len(self.call_stack._records) >= 2 else ar
-                var_obj = pre_ar.get(arr_name)
-                
-                if isinstance(var_obj, StringObject):
-                    var_obj.set_length(new_length)
-                elif isinstance(var_obj, ArrayObject):
-                    var_obj.set_length(new_length)
-
-                self.log(f"LEAVE: PROCEDURE {proc_name}")
-                self.log(str(self.call_stack))
+                # Call the handler
+                handler(self, node)
 
                 self.call_stack.pop()
                 return
@@ -2907,30 +3018,18 @@ class Interpreter(NodeVisitor):
 
         # deal with built-in function first
         if isinstance(func_symbol, BuiltinFunctionSymbol):
-            if func_symbol.name.upper() == NativeMethod.LENGTH.name:
+            # Look up the built-in function in the registry
+            handler = BUILTIN_FUNCTIONS.get(func_symbol.name.upper())
+            if handler:
+                # Prepare parameters
                 actual_params = node.actual_params
-
-                # [0] = LENGTH, [1] = ARRAY_NAME
                 for i in range(0, len(actual_params)):
                     ar[i] = self.visit(actual_params[i])
 
                 self.call_stack.push(ar)
 
-                self.log(f"ENTER: FUNCTION {func_name}")
-                self.log(str(self.call_stack))
-
-                # Get the array/string object and return its length
-                param_obj = self.visit(actual_params[1])  # Skip the function name param
-                if isinstance(param_obj, (ArrayObject, StringObject)):
-                    length_value = len(param_obj)
-                else:
-                    length_value = 0
-                
-                result = IntegerObject(length_value)
-                ar[RETURN_NUM_FOR_LENGTH] = result
-
-                self.log(f"LEAVE: FUNCTION {func_name}")
-                self.log(str(self.call_stack))
+                # Call the handler and get the result
+                result = handler(self, node)
 
                 self.call_stack.pop()
                 return result
