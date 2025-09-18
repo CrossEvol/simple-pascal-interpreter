@@ -442,11 +442,15 @@ class ErrorCode(Enum):
 
     # Semantic errors
     SEMANTIC_UNKNOWN_TYPE = "Semantic unknown type"
+    SEMANTIC_UNKNOWN_ENUM = "Semantic unknown enum"
     SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE = "Semantic unknown array element type"
     SEMANTIC_UNKNOWN_SYMBOL = "Semantic unknown symbol"
     SEMANTIC_UNKNOWN_BOOLEAN = "Semantic unknown boolean"
+    SEMANTIC_UNSUPPORTED_TYPE = "Semantic unsupported type"
+    SEMANTIC_INCOMPATIBLE_TYPE = "Semantic incompatible type"
     SEMANTIC_CHAR_TOO_MANY_CHARS = "Semantic char too many characters"
     SEMANTIC_CHAR_INVALID_ASCII = "Semantic char invalid ASCII value"
+    SEMANTIC_DUPLICATE_CASE_LABEL = "Semantic duplicate case label"
 
     # Interpreter errors
     INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
@@ -1768,7 +1772,6 @@ class Parser:
                 else_stmt = self.statement()
             self.eat(TokenType.SEMI)
         self.eat(TokenType.END)
-        self.eat(TokenType.SEMI)
         node = CaseStatement(case_expr, case_items, else_stmt)
         return node
 
@@ -2704,7 +2707,7 @@ class SemanticAnalyzer(NodeVisitor):
                 # 检查是否是枚举类型
                 if not isinstance(var_symbol.type, EnumTypeSymbol):
                     self.error(
-                        error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                        error_code=ErrorCode.SEMANTIC_UNSUPPORTED_TYPE,
                         token=node.case_expr.token,
                     )
 
@@ -2723,21 +2726,21 @@ class SemanticAnalyzer(NodeVisitor):
                         # 对于枚举类型，标签必须是该枚举的值之一
                         if label_value not in var_symbol.type.values:
                             self.error(
-                                error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                                error_code=ErrorCode.SEMANTIC_UNKNOWN_ENUM,
                                 token=node.case_expr.token,  # Use the case expression token for error reporting
                             )
                     elif label_type and not self._types_compatible(
                         case_type_name, label_type
                     ):
                         self.error(
-                            error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                            error_code=ErrorCode.SEMANTIC_INCOMPATIBLE_TYPE,
                             token=node.case_expr.token,  # Use the case expression token for error reporting
                         )
 
                 # 检查重复标签
                 if label_value in used_labels:
                     self.error(
-                        error_code=ErrorCode.DUPLICATE_ID,
+                        error_code=ErrorCode.SEMANTIC_DUPLICATE_CASE_LABEL,
                         token=node.case_expr.token,  # Use the case expression token for error reporting
                     )
                 used_labels.add(label_value)
@@ -2758,6 +2761,8 @@ class SemanticAnalyzer(NodeVisitor):
             return "INTEGER"
         elif isinstance(value, str) and len(value) == 1:
             return "CHAR"
+        elif self.enum_values[value]:
+            return self.enum_values[value]["type"]
         else:
             return None
 
@@ -2824,7 +2829,7 @@ class SemanticAnalyzer(NodeVisitor):
             type_name = str(node.type_node)
         elif isinstance(node.type_node, StringType):
             self.visit(node.type_node)
-            type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
+            # type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
         if self.current_scope is None:
             raise SemanticError(
                 error_code=ErrorCode.MISSING_CURRENT_SCOPE,

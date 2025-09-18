@@ -192,6 +192,50 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.value, "VAR")
         self.assertEqual(the_exception.token.lineno, 5)  # second VAR
 
+    def test_case_item_must_have_semi_end(self):
+        from spi import ErrorCode, ParserError
+
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                a : INTEGER;
+            BEGIN
+               case a of 
+                1 : a := 2
+            END.
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
+        self.assertEqual(the_exception.token.value, "END")
+        self.assertEqual(the_exception.token.lineno, 8)
+
+    def test_case_of_statement_must_have_semi_end_for_else_statement(self):
+        from spi import ErrorCode, ParserError
+
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                a : INTEGER;
+            BEGIN
+               case a of 
+                1 : a := 2;
+               else
+                a := 3
+            END.
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
+        self.assertEqual(the_exception.token.value, "END")
+        self.assertEqual(the_exception.token.lineno, 10)
+
 
 class SemanticAnalyzerTestCase(unittest.TestCase):
     def runSemanticAnalyzer(self, text):
@@ -285,6 +329,158 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             the_exception.error_code, ErrorCode.SEMANTIC_CHAR_TOO_MANY_CHARS
         )
         self.assertEqual(the_exception.token.value, "ab")
+
+    def test_semantic_duplicate_case_label_for_integer(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            VAR
+                a : INTEGER;
+            BEGIN
+                a := 1;
+                case a of
+                    1: a := 2;
+                    1: a := 2;
+                end;
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_DUPLICATE_CASE_LABEL
+        )
+        self.assertEqual(the_exception.token.value, "a")
+
+    def test_semantic_duplicate_case_label_for_enum(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            type
+                TColor = (Red , Green , Blue);
+            VAR
+                color : TColor;
+                i : Integer;
+            BEGIN
+                color := Red;
+                case color of
+                    Red: i := 0;
+                    Green: i := 1;
+                    Blue: i := 2;
+                    Green: i := 3;
+                end;
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_DUPLICATE_CASE_LABEL
+        )
+        self.assertEqual(the_exception.token.value, "color")
+
+    def test_semantic_unsupported_string_type_for_case_statement(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            VAR
+                name : String;
+                i : Integer;
+            BEGIN
+                name := 'a';
+                case name of
+                    'a': i := 0;
+                end;
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_UNSUPPORTED_TYPE)
+        self.assertEqual(the_exception.token.value, "name")
+
+    def test_semantic_unsupported_array_type_for_case_statement(
+        self,
+    ):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            VAR
+                arr : array of Integer;
+                i : Integer;
+            BEGIN
+                case arr of 
+                    1: i:= 10;
+                end;
+                writeln(i);
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_UNSUPPORTED_TYPE)
+        self.assertEqual(the_exception.token.value, "arr")
+
+    def test_semantic_incompatible_type_for_enum_for_case_statement(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            type
+                TColor = (Red , Green , Blue);
+            VAR
+                color : TColor;
+                i : Integer;
+            BEGIN
+                color := Red;
+                case color of
+                    Red: i := 0;
+                    Green: i := 1;
+                    Blue: i := 2;
+                    3: i:= 3;
+                end;
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_UNKNOWN_ENUM)
+        self.assertEqual(the_exception.token.value, "color")
+
+    def test_semantic_incompatible_type_for_integer_in_case_statement(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM Test;
+            type
+                TColor = (Red , Green , Blue);
+            VAR
+                color : TColor;
+                i : Integer;
+            BEGIN
+                case i of
+                    0: color := 0;
+                    1: color := 1;
+                    2: color := 2;
+                    Red: color:= 3;
+                end;
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPE)
+        self.assertEqual(the_exception.token.value, "i")
 
 
 class TestCallStack:
