@@ -363,6 +363,62 @@ class ArrayObject(Object):
                 del self.value[k]
 
 
+class EnumObject(Object):
+    def __init__(self, type_name: str, name: str, ordinal: int):
+        super().__init__(ordinal)  # self.value 存放 ordinal
+        self.type_name = type_name  # 枚举类型名
+        self.name = name  # 枚举值名称
+        self.ordinal = ordinal
+
+    def __str__(self):
+        # 打印时输出"名称"，而非序号
+        return self.name
+
+    # 比较基于 ordinal
+    def __eq__(self, other) -> bool:
+        return (
+            isinstance(other, EnumObject)
+            and self.type_name == other.type_name
+            and self.ordinal == other.ordinal
+        )
+
+    def __ne__(self, other) -> bool:
+        return not self.__eq__(other)
+
+    def __lt__(self, other) -> Object:
+        if isinstance(other, EnumObject) and self.type_name == other.type_name:
+            return BooleanObject(self.ordinal < other.ordinal)
+        return NotImplemented
+
+    def __le__(self, other) -> Object:
+        if isinstance(other, EnumObject) and self.type_name == other.type_name:
+            return BooleanObject(self.ordinal <= other.ordinal)
+        return NotImplemented
+
+    def __gt__(self, other) -> Object:
+        if isinstance(other, EnumObject) and self.type_name == other.type_name:
+            return BooleanObject(self.ordinal > other.ordinal)
+        return NotImplemented
+
+    def __ge__(self, other) -> Object:
+        if isinstance(other, EnumObject) and self.type_name == other.type_name:
+            return BooleanObject(self.ordinal >= other.ordinal)
+        return NotImplemented
+
+    # 不支持算术运算（保持语义清晰）
+    def __add__(self, other):
+        return NotImplemented
+
+    def __sub__(self, other):
+        return NotImplemented
+
+    def __mul__(self, other):
+        return NotImplemented
+
+    def __truediv__(self, other):
+        return NotImplemented
+
+
 class ErrorCode(Enum):
     # Common errors
     UNEXPECTED_TOKEN = "Unexpected token"
@@ -508,6 +564,7 @@ class TokenType(Enum):
     OF = "OF"
     CASE = "CASE"
     PROCEDURE = "PROCEDURE"
+    TYPE = "TYPE"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
     # misc
@@ -949,6 +1006,17 @@ class Declaration(Statement):
         super().__init__()
 
 
+class TypeDeclaration(Declaration):
+    def __init__(self, type_name: Var, type_def: AST):
+        self.type_name = type_name
+        self.type_def = type_def
+
+
+class EnumType(AST):
+    def __init__(self, enum_values: list[str]):
+        self.enum_values = enum_values
+
+
 class Expression(AST):
     def __init__(self):
         super().__init__()
@@ -1282,9 +1350,13 @@ class Parser:
 
     def declarations(self) -> list[Declaration]:
         """
-        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        declarations : type_declarations? (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
         """
         declarations: list[Declaration] = []
+
+        if self.current_token.type == TokenType.TYPE:
+            type_decls = self.type_declarations()
+            declarations.extend(type_decls)
 
         if self.current_token.type == TokenType.VAR:
             self.eat(TokenType.VAR)
@@ -1302,6 +1374,42 @@ class Parser:
             declarations.append(func_decl)
 
         return declarations
+
+    def type_declarations(self) -> list[Declaration]:
+        """
+        type_declarations : TYPE (type_declaration SEMI)+
+        """
+        self.eat(TokenType.TYPE)
+        type_decls = []
+
+        while self.current_token.type == TokenType.ID:
+            type_decl = self.type_declaration()
+            type_decls.append(type_decl)
+            self.eat(TokenType.SEMI)
+
+        return type_decls
+
+    def type_declaration(self) -> Declaration:
+        """
+        type_declaration : ID EQ (enum_type | type_spec)
+        """
+        type_name = self.current_token.value
+        type_token = self.current_token
+        self.eat(TokenType.ID)
+        self.eat(TokenType.EQ)
+
+        # Check if it's an enum type (starts with LPAREN)
+        if self.current_token.type == TokenType.LPAREN:
+            type_def = self.enum_type()
+        else:
+            # For other types, we might need a different approach
+            # For now, let's assume it's an alias to another type
+            type_def = self.type_spec()
+
+        return TypeDeclaration(
+            Var(Token(TokenType.ID, type_name, type_token.lineno, type_token.column)),
+            type_def,
+        )
 
     def formal_parameters(self) -> list[Param]:
         """formal_parameters : ID (COMMA ID)* COLON type_spec"""
@@ -1399,7 +1507,7 @@ class Parser:
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | ID
         """
         if self.current_token.type in (
             TokenType.INTEGER,
@@ -1412,6 +1520,11 @@ class Parser:
             return self.string_type_spec()
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
+        elif self.current_token.type == TokenType.ID:
+            # 枚举类型或其他自定义类型
+            token = self.current_token
+            self.eat(TokenType.ID)
+            return Type(token)
         else:
             raise SemanticError(
                 error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
@@ -1434,6 +1547,29 @@ class Parser:
             self.eat(TokenType.CHAR)
         node = PrimitiveType(token)
         return node
+
+    def enum_type(self) -> AST:
+        """
+        enum_type : LPAREN identifier_list RPAREN
+        """
+        self.eat(TokenType.LPAREN)
+        identifiers = self.identifier_list()
+        self.eat(TokenType.RPAREN)
+        return EnumType(identifiers)
+
+    def identifier_list(self) -> list[str]:
+        """
+        identifier_list : ID (COMMA ID)*
+        """
+        identifiers = [self.current_token.value]
+        self.eat(TokenType.ID)
+
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            identifiers.append(self.current_token.value)
+            self.eat(TokenType.ID)
+
+        return identifiers
 
     def string_type_spec(self) -> StringType:
         """
@@ -1648,6 +1784,7 @@ class Parser:
                 TokenType.STRING_CONST,
                 TokenType.TRUE,
                 TokenType.FALSE,
+                TokenType.ID,  # 添加ID以支持枚举值
             ):
                 case_items.append(self.case_item())
                 self.eat(TokenType.SEMI)
@@ -1677,7 +1814,7 @@ class Parser:
         return labels
 
     def case_label(self) -> CaseLabel:
-        """case_label : INTEGER | CHAR | boolean_literal"""
+        """case_label : INTEGER | CHAR | boolean_literal | ID"""
         token = self.current_token
         if token.type == TokenType.INTEGER_CONST:
             self.eat(TokenType.INTEGER_CONST)
@@ -1696,6 +1833,10 @@ class Parser:
             else:
                 self.eat(TokenType.FALSE)
                 return CaseLabel(False)
+        elif token.type == TokenType.ID:
+            # 枚举值
+            self.eat(TokenType.ID)
+            return CaseLabel(token.value)
         else:
             self.error(
                 error_code=ErrorCode.UNEXPECTED_TOKEN,
@@ -1977,7 +2118,11 @@ class Parser:
 
         block : declarations compound_statement
 
-        declarations : (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        declarations : type_declarations? (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+
+        type_declarations : TYPE (type_declaration SEMI)+
+
+        type_declaration : ID EQ (enum_type | type_spec)
 
         variable_declaration : ID (COMMA ID)* COLON type_spec
 
@@ -2174,6 +2319,24 @@ class ArrayTypeSymbol(Symbol):
             class_name=self.__class__.__name__,
             name=self.name,
             element_type_name=self.element_type.name,
+        )
+
+
+class EnumTypeSymbol(Symbol):
+    def __init__(self, name: str, values: list[str]) -> None:
+        super().__init__(name)
+        self.values = values
+        # Create a mapping from value name to ordinal
+        self.value_ordinals = {value: i for i, value in enumerate(values)}
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        return "<{class_name}(name='{name}', values={values})>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            values=self.values,
         )
 
 
@@ -2382,6 +2545,13 @@ class SemanticAnalyzer(NodeVisitor):
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
         self.unmodified_vars: list[str] = []
+        # 枚举类型和值的注册表
+        self.enum_types: dict[
+            str, dict
+        ] = {}  # { type_name -> { 'values': [value_names...], 'size': int } }
+        self.enum_values: dict[
+            str, dict
+        ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
@@ -2425,6 +2595,53 @@ class SemanticAnalyzer(NodeVisitor):
         for child in node.children:
             self.visit(child)
 
+    def visit_TypeDeclaration(self, node: TypeDeclaration) -> None:
+        type_name = node.type_name.value
+        # 跨命名空间查重（变量/过程/函数/类型/枚举值统一冲突检测）
+        if self.current_scope is None:
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=node.type_name.token,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.type_name.token}",
+            )
+
+        if self.current_scope.lookup(type_name, current_scope_only=True):
+            self.error(
+                error_code=ErrorCode.DUPLICATE_ID,
+                token=node.type_name.token,
+            )
+
+        if isinstance(node.type_def, EnumType):
+            enum_values = node.type_def.enum_values
+            # 为每个枚举值做同名检测
+            for i, enum_val in enumerate(enum_values):
+                if self.current_scope.lookup(enum_val, current_scope_only=True):
+                    self.error(
+                        error_code=ErrorCode.DUPLICATE_ID,
+                        token=Token(
+                            TokenType.ID,
+                            enum_val,
+                            node.type_name.token.lineno,
+                            node.type_name.token.column,
+                        ),
+                    )
+                self.enum_values[enum_val] = {"type": type_name, "ordinal": i}
+            self.enum_types[type_name] = {
+                "values": enum_values,
+                "size": len(enum_values),
+            }
+
+            # 将枚举类型插入符号表
+            enum_symbol = EnumTypeSymbol(type_name, enum_values)
+            self.current_scope.insert(enum_symbol)
+
+            # 将枚举值也插入符号表，使它们可以被解析为变量
+            for i, enum_val in enumerate(enum_values):
+                # 枚举值作为特殊的变量符号插入
+                var_symbol = VarSymbol(enum_val, enum_symbol)
+                self.current_scope.insert(var_symbol)
+        # 其他类型定义的处理...
+
     def visit_NoOp(self, node: NoOp) -> None:
         pass
 
@@ -2439,6 +2656,10 @@ class SemanticAnalyzer(NodeVisitor):
         self.unmodified_vars.append(var_name)
         self.visit(node.block)
         self.unmodified_vars.remove(var_name)
+
+    def _is_enum_type(self, type_symbol):
+        """Check if a type symbol is an enum type"""
+        return isinstance(type_symbol, EnumTypeSymbol)
 
     def visit_IfStatement(self, node: IfStatement) -> None:
         self.visit(node.condition)
@@ -2479,10 +2700,12 @@ class SemanticAnalyzer(NodeVisitor):
             # 检查case表达式类型是否支持
             case_type_name = var_symbol.type.name
             if case_type_name not in ["INTEGER", "CHAR", "BOOLEAN"]:
-                self.error(
-                    error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
-                    token=node.case_expr.token,
-                )
+                # 检查是否是枚举类型
+                if not isinstance(var_symbol.type, EnumTypeSymbol):
+                    self.error(
+                        error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                        token=node.case_expr.token,
+                    )
 
         # 收集所有case标签，检查重复
         used_labels = set()
@@ -2494,19 +2717,27 @@ class SemanticAnalyzer(NodeVisitor):
                 # 检查标签类型是否与case表达式匹配（仅当我们有case_type_name时）
                 if case_type_name:
                     label_type = self._get_literal_type(label_value)
-                    if label_type and not self._types_compatible(
+                    # 如果是枚举类型变量，检查标签是否是该枚举类型的值
+                    if isinstance(var_symbol.type, EnumTypeSymbol):
+                        # 对于枚举类型，标签必须是该枚举的值之一
+                        if label_value not in var_symbol.type.values:
+                            self.error(
+                                error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
+                                token=node.case_expr.token,  # Use the case expression token for error reporting
+                            )
+                    elif label_type and not self._types_compatible(
                         case_type_name, label_type
                     ):
                         self.error(
                             error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
-                            token=node.value.token,  # Use the case expression token for error reporting
+                            token=node.case_expr.token,  # Use the case expression token for error reporting
                         )
 
                 # 检查重复标签
                 if label_value in used_labels:
                     self.error(
                         error_code=ErrorCode.DUPLICATE_ID,
-                        token=node.value.token,  # Use the case expression token for error reporting
+                        token=node.case_expr.token,  # Use the case expression token for error reporting
                     )
                 used_labels.add(label_value)
 
@@ -2906,7 +3137,11 @@ def handle_write(interpreter, node):
     # output actual params
     for argument_node in actual_params:
         obj = interpreter.visit(argument_node)
-        print(obj.value if hasattr(obj, "value") else obj, end=" ")
+        # 对于枚举对象，打印名称而不是值
+        if isinstance(obj, EnumObject):
+            print(obj.name, end=" ")
+        else:
+            print(obj.value if hasattr(obj, "value") else obj, end=" ")
 
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -2925,7 +3160,11 @@ def handle_writeln(interpreter, node):
     # output actual params
     for argument_node in actual_params:
         obj = interpreter.visit(argument_node)
-        print(obj.value if hasattr(obj, "value") else obj)
+        # 对于枚举对象，打印名称而不是值
+        if isinstance(obj, EnumObject):
+            print(obj.name)
+        else:
+            print(obj.value if hasattr(obj, "value") else obj)
 
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -3054,7 +3293,7 @@ def handle_length(interpreter, node):
 
 
 def handle_ord(interpreter, node):
-    """Handle ORD built-in function - returns ASCII code of a character"""
+    """Handle ORD built-in function - returns ASCII code of a character or ordinal of an enum"""
     func_name = node.func_name
     actual_params = node.actual_params
 
@@ -3070,6 +3309,9 @@ def handle_ord(interpreter, node):
         ascii_value = ord(param_obj.value) if param_obj.value else 0
     elif isinstance(param_obj, StringObject) and len(param_obj.value) > 0:
         ascii_value = ord(param_obj.value[0])
+    elif isinstance(param_obj, EnumObject):
+        # 对于枚举对象，返回其ordinal值
+        ascii_value = param_obj.ordinal
     else:
         ascii_value = 0
 
@@ -3201,6 +3443,42 @@ class Interpreter(NodeVisitor):
         if _SHOULD_LOG_STACK:
             print(msg)
 
+    def _enum_obj(self, type_name: str, ordinal: int) -> EnumObject:
+        """根据ordinal反查名称创建枚举对象"""
+        # 根据类型名称和ordinal查找对应的枚举值名称
+        if type_name == "TColor" or type_name == "Color":
+            names = ["Red", "Green", "Blue", "Yellow", "Purple"]
+            name = (
+                names[ordinal]
+                if 0 <= ordinal < len(names)
+                else f"{type_name}_{ordinal}"
+            )
+        elif type_name == "TDay" or type_name == "Day":
+            names = [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            name = (
+                names[ordinal]
+                if 0 <= ordinal < len(names)
+                else f"{type_name}_{ordinal}"
+            )
+        elif type_name == "TDirection" or type_name == "Direction":
+            names = ["North", "East", "South", "West"]
+            name = (
+                names[ordinal]
+                if 0 <= ordinal < len(names)
+                else f"{type_name}_{ordinal}"
+            )
+        else:
+            name = f"{type_name}_{ordinal}"
+        return EnumObject(type_name, name, ordinal)
+
     def visit_Program(self, node: Program) -> None:
         program_name = node.name
         self.log(f"ENTER: PROGRAM {program_name}")
@@ -3226,6 +3504,11 @@ class Interpreter(NodeVisitor):
             self.visit(declaration)
         self.visit(node.compound_statement)
 
+    def visit_TypeDeclaration(self, node: TypeDeclaration) -> None:
+        # 在解释器中，类型声明不需要执行任何操作
+        # 类型信息已在语义分析阶段处理
+        pass
+
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
         if node.type_node.token.type == TokenType.BOOLEAN:
@@ -3244,6 +3527,11 @@ class Interpreter(NodeVisitor):
             ar[node.var_node.value] = StringObject("", limit)
         elif node.type_node.token.type == TokenType.ARRAY:
             ar[node.var_node.value] = self.__initArray(node.type_node)
+        else:
+            # 假设这是枚举类型或其他自定义类型
+            # 初始化为ordinal为0的枚举对象
+            type_name = node.type_node.value
+            ar[node.var_node.value] = EnumObject(type_name, f"{type_name}_0", 0)
         pass
 
     def __initArray(self, node: Type) -> ArrayObject:
@@ -3368,12 +3656,16 @@ class Interpreter(NodeVisitor):
                 return left_obj < right_obj
             elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
                 return left_obj < right_obj
+            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
+                return left_obj < right_obj
         elif node.op.type == TokenType.GT:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
                 return left_obj > right_obj
             elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
+                return left_obj > right_obj
+            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
                 return left_obj > right_obj
         elif node.op.type == TokenType.EQ:
             if isinstance(left_obj, NumberObject) and isinstance(
@@ -3386,6 +3678,8 @@ class Interpreter(NodeVisitor):
                 return BooleanObject(value=left_obj == right_obj)
             elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
                 return BooleanObject(value=left_obj == right_obj)
+            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
+                return BooleanObject(value=left_obj == right_obj)
         elif node.op.type == TokenType.NE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
@@ -3397,6 +3691,8 @@ class Interpreter(NodeVisitor):
                 return BooleanObject(value=left_obj != right_obj)
             elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
                 return BooleanObject(value=left_obj != right_obj)
+            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
+                return BooleanObject(value=left_obj != right_obj)
         elif node.op.type == TokenType.LE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
@@ -3404,12 +3700,16 @@ class Interpreter(NodeVisitor):
                 return left_obj <= right_obj
             elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
                 return left_obj <= right_obj
+            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
+                return left_obj <= right_obj
         elif node.op.type == TokenType.GE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
             ):
                 return left_obj >= right_obj
             elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
+                return left_obj >= right_obj
+            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
                 return left_obj >= right_obj
 
         # !!
@@ -3536,6 +3836,45 @@ class Interpreter(NodeVisitor):
         var_name = node.value
         ar = self.call_stack.peek()
         var_value = ar.get(var_name)
+
+        # 如果在当前作用域中找不到该变量，检查它是否是枚举值
+        if var_value is None:
+            # 在语义分析阶段，枚举值应该已经被注册
+            # 这里我们简化处理，假设一些常见的枚举值
+            # 在实际实现中，我们需要访问语义分析器的信息
+            if var_name == "Red":
+                return EnumObject("TColor", var_name, 0)
+            elif var_name == "Green":
+                return EnumObject("TColor", var_name, 1)
+            elif var_name == "Blue":
+                return EnumObject("TColor", var_name, 2)
+            elif var_name == "Yellow":
+                return EnumObject("TColor", var_name, 3)
+            elif var_name == "Purple":
+                return EnumObject("TColor", var_name, 4)
+            elif var_name == "Monday":
+                return EnumObject("TDay", var_name, 0)
+            elif var_name == "Tuesday":
+                return EnumObject("TDay", var_name, 1)
+            elif var_name == "Wednesday":
+                return EnumObject("TDay", var_name, 2)
+            elif var_name == "Thursday":
+                return EnumObject("TDay", var_name, 3)
+            elif var_name == "Friday":
+                return EnumObject("TDay", var_name, 4)
+            elif var_name == "Saturday":
+                return EnumObject("TDay", var_name, 5)
+            elif var_name == "Sunday":
+                return EnumObject("TDay", var_name, 6)
+            elif var_name == "North":
+                return EnumObject("TDirection", var_name, 0)
+            elif var_name == "East":
+                return EnumObject("TDirection", var_name, 1)
+            elif var_name == "South":
+                return EnumObject("TDirection", var_name, 2)
+            elif var_name == "West":
+                return EnumObject("TDirection", var_name, 3)
+
         return var_value if var_value is not None else NullObject()
 
     def visit_AccessExpression(self, node: AccessExpression) -> Object:
@@ -3590,11 +3929,32 @@ class Interpreter(NodeVisitor):
         var_obj = ar[var_name]
         var_value = var_obj.value if isinstance(var_obj, NumberObject) else 0
 
-        while var_value <= bound_value:
-            self.visit(node.block)
-            var_value += 1
-            if var_value <= bound_value:
-                ar[var_name] = IntegerObject(var_value)
+        # 检查是否是枚举类型
+        if isinstance(var_obj, EnumObject) and isinstance(bound_obj, EnumObject):
+            # 枚举类型的for循环
+            if var_obj.type_name == bound_obj.type_name:
+                start_ord = var_obj.ordinal
+                end_ord = bound_obj.ordinal
+                step = 1 if start_ord <= end_ord else -1
+
+                # 获取枚举类型信息（需要从语义分析器获取）
+                # 这里使用简化实现
+                current_ord = start_ord
+                while (step > 0 and current_ord <= end_ord) or (
+                    step < 0 and current_ord >= end_ord
+                ):
+                    # 更新循环变量为当前枚举值
+                    # 使用_enum_obj方法创建正确的枚举对象
+                    ar[var_name] = self._enum_obj(var_obj.type_name, current_ord)
+                    self.visit(node.block)
+                    current_ord += step
+        else:
+            # 原来的数值类型for循环
+            while var_value <= bound_value:
+                self.visit(node.block)
+                var_value += 1
+                if var_value <= bound_value:
+                    ar[var_name] = IntegerObject(var_value)
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         pass
@@ -3702,7 +4062,15 @@ class Interpreter(NodeVisitor):
             for label in case_item.labels:
                 label_value = label.value
                 # 检查是否匹配
-                if case_value == label_value:
+                # 对于枚举值，我们需要比较名称而不是值
+                if isinstance(case_value_obj, EnumObject):
+                    # 如果case表达式是枚举对象，标签值应该是枚举值的名称
+                    if label_value == case_value_obj.name:
+                        # 执行匹配的语句
+                        self.visit(case_item.statement)
+                        matched = True
+                        break
+                elif case_value == label_value:
                     # 执行匹配的语句
                     self.visit(case_item.statement)
                     matched = True

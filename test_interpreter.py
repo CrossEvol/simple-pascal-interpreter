@@ -1,6 +1,6 @@
 import unittest
 
-from spi import InterpreterError
+from spi import EnumObject, InterpreterError
 
 
 class LexerTestCase(unittest.TestCase):
@@ -1287,6 +1287,33 @@ end.
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["b"].value, False)
         self.assertEqual(ar["result"].value, 2)
+
+    def test_enum_types(self):
+        text = """\
+program EnumTest;
+
+type
+  Color = (Red, Green, Blue);
+
+var
+  c: Color;
+  i: Integer;
+
+begin
+  c := Green;
+  i := Ord(c);
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        # 检查枚举值是否正确设置
+        self.assertIsInstance(ar["c"], EnumObject)
+        self.assertEqual(ar["c"].name, "Green")
+        self.assertEqual(ar["c"].ordinal, 1)
+        # 检查Ord函数是否返回正确的ordinal
+        self.assertEqual(ar["i"].value, 1)
 
 
 if __name__ == "__main__":
