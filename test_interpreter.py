@@ -526,6 +526,9 @@ class InterpreterTestCase(unittest.TestCase):
             ("+ 3", 3),
             ("5 - - - + - 3", 8),
             ("5 - - - + - (3 + 4) - +2", 10),
+            ("17 MOD 5", 2),
+            ("20 MOD 5", 0),
+            ("10 MOD 3", 1),
         ):
             interpreter = self.makeInterpreter(
                 """PROGRAM Test;
@@ -540,6 +543,21 @@ class InterpreterTestCase(unittest.TestCase):
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar["a"].value, result)
+
+    def test_mod_operator_with_floats(self):
+        """Test that MOD operator works with floats (converted to integers)"""
+        interpreter = self.makeInterpreter(
+            """PROGRAM Test;
+               VAR
+                   a : INTEGER;
+               BEGIN
+                   a := 17.5 MOD 5.2;  { Should be 2 (17 MOD 5) }
+               END.
+            """
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"].value, 2)
 
     def test_float_arithmetic_expressions(self):
         for expr, result in (

@@ -552,6 +552,7 @@ class TokenType(Enum):
     STRING = "STRING"
     CHAR = "CHAR"
     INTEGER_DIV = "DIV"
+    MOD = "MOD"
     TRUE = "TRUE"
     FALSE = "FALSE"
     AND = "AND"
@@ -626,6 +627,7 @@ def _build_reserved_keywords():
          'INTEGER': <TokenType.INTEGER: 'INTEGER'>,
          'REAL': <TokenType.REAL: 'REAL'>,
          'DIV': <TokenType.INTEGER_DIV: 'DIV'>,
+         'MOD': <TokenType.MOD: 'MOD'>,
          'VAR': <TokenType.VAR: 'VAR'>,
          'PROCEDURE': <TokenType.PROCEDURE: 'PROCEDURE'>,
          'BEGIN': <TokenType.BEGIN: 'BEGIN'>,
@@ -2020,13 +2022,14 @@ class Parser:
         return node
 
     def multiplication_expr(self) -> Expression:
-        """multiplication_expr : factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*"""
+        """multiplication_expr : factor ((MUL | INTEGER_DIV | FLOAT_DIV | MOD) factor)*"""
         node = self.factor()
 
         while self.current_token.type in (
             TokenType.MUL,
             TokenType.INTEGER_DIV,
             TokenType.FLOAT_DIV,
+            TokenType.MOD,
         ):
             token = self.current_token
             if token.type == TokenType.MUL:
@@ -2035,6 +2038,8 @@ class Parser:
                 self.eat(TokenType.INTEGER_DIV)
             elif token.type == TokenType.FLOAT_DIV:
                 self.eat(TokenType.FLOAT_DIV)
+            elif token.type == TokenType.MOD:
+                self.eat(TokenType.MOD)
 
             node = BinOp(left=node, op=token, right=self.factor())
 
@@ -3654,6 +3659,15 @@ class Interpreter(NodeVisitor):
                 right_obj, NumberObject
             ):
                 return left_obj / right_obj
+        elif node.op.type == TokenType.MOD:
+            if isinstance(left_obj, NumberObject) and isinstance(
+                right_obj, NumberObject
+            ):
+                # MOD 运算符应该返回整数余数
+                # 在 Pascal 中，MOD 只对整数有效，因此我们需要转换为整数
+                left_val = int(left_obj.value) if isinstance(left_obj, RealObject) else left_obj.value
+                right_val = int(right_obj.value) if isinstance(right_obj, RealObject) else right_obj.value
+                return IntegerObject(left_val % right_val)
 
         # comparison operator
         if node.op.type == TokenType.LT:
