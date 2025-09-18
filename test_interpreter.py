@@ -1,6 +1,6 @@
 import unittest
 
-from spi import EnumObject, InterpreterError
+from spi import BooleanObject, EnumObject, IntegerObject, InterpreterError
 
 
 class LexerTestCase(unittest.TestCase):
@@ -1289,19 +1289,57 @@ end.
         self.assertEqual(ar["result"].value, 2)
 
     def test_enum_types(self):
+        """
+        该测试中不要使用 Ord() 取值， 所有的函数调用都会压栈
+        但是测试用的 TestCallStack 是不会出栈的， 也不会有复制值进去复制新值出来的操作
+        """
         text = """\
-program EnumTest;
+program EnumDemo;
 
 type
-  Color = (Red, Green, Blue);
+  {定义一个名为 TColor 的枚举类型}
+  TColor = (Red, Green, Blue, Yellow, Purple);
 
 var
-  c: Color;
-  i: Integer;
+  {声明 TColor 类型的变量}
+  r, g , b , y , p: TColor;
+  myColor: TColor;
+  {声明一个整数变量用于存储枚举值的序号}
+  c1,c2,c3, c4,c5: Integer;
+  f1, f2 , f3, f4, f5, f6:Boolean;
 
 begin
-  c := Green;
-  i := Ord(c);
+  {给枚举变量赋值}
+  r := Red;
+  g := Green;
+  b := Blue;
+  y := Yellow;
+  p := Purple;
+
+ 
+
+  {比较枚举值}
+  f1 := r = Red;
+  f2 := r <> Green;
+  f3 := g < Blue;
+  f4 := b > Yellow;
+  f5 := y <= Purple;
+  f6 := p >= Red;
+
+  {遍历所有枚举值}
+  for myColor := Red to Purple do
+  begin
+    case myColor of
+      Red:    c1 := 0;
+      Green:  c2 := 1;
+      Blue:   c3 := 2;
+      Yellow: c4 := 3;
+      Purple: c5 := 4;
+    end;
+  end;
+
+  {注意：不能直接 Write(myColor) 输出枚举名称（某些编译器支持，但非标准）}
+  {标准做法是使用 Case 语句转换为字符串输出}
 end.
 """
         interpreter = self.makeInterpreter(text)
@@ -1309,11 +1347,65 @@ end.
 
         ar = interpreter.call_stack.peek()
         # 检查枚举值是否正确设置
-        self.assertIsInstance(ar["c"], EnumObject)
-        self.assertEqual(ar["c"].name, "Green")
-        self.assertEqual(ar["c"].ordinal, 1)
         # 检查Ord函数是否返回正确的ordinal
-        self.assertEqual(ar["i"].value, 1)
+        self.assertIsInstance(ar["r"], EnumObject)
+        self.assertEqual(ar["r"].name, "Red")
+        self.assertEqual(ar["r"].ordinal, 0)
+        self.assertEqual(ar["r"].value, 0)
+        self.assertEqual(ar["r"].type_name, "TColor")
+        self.assertIsInstance(ar["g"], EnumObject)
+        self.assertEqual(ar["g"].name, "Green")
+        self.assertEqual(ar["g"].ordinal, 1)
+        self.assertEqual(ar["g"].value, 1)
+        self.assertEqual(ar["g"].type_name, "TColor")
+        self.assertIsInstance(ar["b"], EnumObject)
+        self.assertEqual(ar["b"].name, "Blue")
+        self.assertEqual(ar["b"].ordinal, 2)
+        self.assertEqual(ar["b"].value, 2)
+        self.assertEqual(ar["b"].type_name, "TColor")
+        self.assertIsInstance(ar["y"], EnumObject)
+        self.assertEqual(ar["y"].name, "Yellow")
+        self.assertEqual(ar["y"].ordinal, 3)
+        self.assertEqual(ar["y"].value, 3)
+        self.assertEqual(ar["y"].type_name, "TColor")
+        self.assertIsInstance(ar["p"], EnumObject)
+        self.assertEqual(ar["p"].name, "Purple")
+        self.assertEqual(ar["p"].ordinal, 4)
+        self.assertEqual(ar["p"].value, 4)
+        self.assertEqual(ar["p"].type_name, "TColor")
+
+        # 检查 c1~c5 是否赋值成功
+        self.assertIsInstance(ar["c1"], IntegerObject)
+        self.assertEqual(ar["c1"].value, 0)
+        self.assertIsInstance(ar["c2"], IntegerObject)
+        self.assertEqual(ar["c2"].value, 1)
+        self.assertIsInstance(ar["c3"], IntegerObject)
+        self.assertEqual(ar["c3"].value, 2)
+        self.assertIsInstance(ar["c4"], IntegerObject)
+        self.assertEqual(ar["c4"].value, 3)
+        self.assertIsInstance(ar["c5"], IntegerObject)
+        self.assertEqual(ar["c5"].value, 4)
+
+        # 检查 f1~f6 是否赋值成功
+        self.assertIsInstance(ar["f1"], BooleanObject)
+        self.assertEqual(ar["f1"].value, True)
+        self.assertIsInstance(ar["f2"], BooleanObject)
+        self.assertEqual(ar["f2"].value, True)
+        self.assertIsInstance(ar["f3"], BooleanObject)
+        self.assertEqual(ar["f3"].value, True)
+        self.assertIsInstance(ar["f4"], BooleanObject)
+        self.assertEqual(ar["f4"].value, False)
+        self.assertIsInstance(ar["f5"], BooleanObject)
+        self.assertEqual(ar["f5"].value, True)
+        self.assertIsInstance(ar["f6"], BooleanObject)
+        self.assertEqual(ar["f6"].value, True)
+
+        # 检查 myColor 是否赋值成功
+        self.assertIsInstance(ar["myColor"], EnumObject)
+        self.assertEqual(ar["myColor"].name, "Purple")
+        self.assertEqual(ar["myColor"].ordinal, 4)
+        self.assertEqual(ar["myColor"].value, 4)
+        self.assertEqual(ar["myColor"].type_name, "TColor")
 
 
 if __name__ == "__main__":

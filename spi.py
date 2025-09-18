@@ -454,6 +454,7 @@ class ErrorCode(Enum):
     INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE = "Interpreter unknown builtin procedure"
     INTERPRETER_ARRAY_RANGE_INVALID = "Interpreter array range invalid"
     INTERPRETER_UNKNOWN_OPERATOR = "Interpreter unknown operator"
+    INTERPRETER_UNKNOWN_ENUM = "Interpreter unknown enum"
     INTERPRETER_UNKNOWN_BOOLEAN = "Interpreter unknown boolean"
 
 
@@ -3139,9 +3140,9 @@ def handle_write(interpreter, node):
         obj = interpreter.visit(argument_node)
         # 对于枚举对象，打印名称而不是值
         if isinstance(obj, EnumObject):
-            print(obj.name, end=" ")
+            print(obj.name, end="")
         else:
-            print(obj.value if hasattr(obj, "value") else obj, end=" ")
+            print(obj.value if hasattr(obj, "value") else obj, end="")
 
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -3162,10 +3163,10 @@ def handle_writeln(interpreter, node):
         obj = interpreter.visit(argument_node)
         # 对于枚举对象，打印名称而不是值
         if isinstance(obj, EnumObject):
-            print(obj.name)
+            print(obj.name, end="")
         else:
-            print(obj.value if hasattr(obj, "value") else obj)
-
+            print(obj.value if hasattr(obj, "value") else obj, end="")
+    print()
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
 
@@ -3429,6 +3430,14 @@ class Interpreter(NodeVisitor):
         self.tree = tree
         self.call_stack = CallStack()
 
+        # 枚举类型和值的注册表（模仿semantic analyzer的实现）
+        self.enum_types: dict[
+            str, dict
+        ] = {}  # { type_name -> { 'values': [value_names...], 'size': int } }
+        self.enum_values: dict[
+            str, dict
+        ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
+
         # Register built-in procedures and functions
         register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
         register_builtin_procedure(NativeMethod.WRITELN.name, handle_writeln)
@@ -3445,39 +3454,15 @@ class Interpreter(NodeVisitor):
 
     def _enum_obj(self, type_name: str, ordinal: int) -> EnumObject:
         """根据ordinal反查名称创建枚举对象"""
-        # 根据类型名称和ordinal查找对应的枚举值名称
-        if type_name == "TColor" or type_name == "Color":
-            names = ["Red", "Green", "Blue", "Yellow", "Purple"]
-            name = (
-                names[ordinal]
-                if 0 <= ordinal < len(names)
-                else f"{type_name}_{ordinal}"
-            )
-        elif type_name == "TDay" or type_name == "Day":
-            names = [
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-            name = (
-                names[ordinal]
-                if 0 <= ordinal < len(names)
-                else f"{type_name}_{ordinal}"
-            )
-        elif type_name == "TDirection" or type_name == "Direction":
-            names = ["North", "East", "South", "West"]
-            name = (
-                names[ordinal]
-                if 0 <= ordinal < len(names)
-                else f"{type_name}_{ordinal}"
-            )
+        # 首先尝试从注册的枚举类型中查找名称
+        if (
+            type_name in self.enum_types
+            and ordinal < self.enum_types[type_name]["size"]
+        ):
+            name = self.enum_types[type_name]["values"][ordinal]
+            return EnumObject(type_name, name, ordinal)
         else:
-            name = f"{type_name}_{ordinal}"
-        return EnumObject(type_name, name, ordinal)
+            raise InterpreterError(error_code=ErrorCode.INTERPRETER_UNKNOWN_ENUM)
 
     def visit_Program(self, node: Program) -> None:
         program_name = node.name
@@ -3505,9 +3490,20 @@ class Interpreter(NodeVisitor):
         self.visit(node.compound_statement)
 
     def visit_TypeDeclaration(self, node: TypeDeclaration) -> None:
-        # 在解释器中，类型声明不需要执行任何操作
-        # 类型信息已在语义分析阶段处理
-        pass
+        # 在解释器中处理枚举类型声明，将枚举类型和枚举值注册到本地注册表中
+        if isinstance(node.type_def, EnumType):
+            type_name = node.type_name.value
+            enum_values = node.type_def.enum_values
+
+            # 注册枚举类型
+            self.enum_types[type_name] = {
+                "values": enum_values,
+                "size": len(enum_values),
+            }
+
+            # 注册枚举值
+            for i, enum_val in enumerate(enum_values):
+                self.enum_values[enum_val] = {"type": type_name, "ordinal": i}
 
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
@@ -3531,7 +3527,13 @@ class Interpreter(NodeVisitor):
             # 假设这是枚举类型或其他自定义类型
             # 初始化为ordinal为0的枚举对象
             type_name = node.type_node.value
-            ar[node.var_node.value] = EnumObject(type_name, f"{type_name}_0", 0)
+            # 检查是否是已注册的枚举类型
+            if type_name in self.enum_types:
+                # 创建ordinal为0的枚举对象
+                enum_obj = self._enum_obj(type_name, 0)
+                ar[node.var_node.value] = enum_obj
+            else:
+                raise InterpreterError(error_code=ErrorCode.INTERPRETER_UNKNOWN_ENUM)
         pass
 
     def __initArray(self, node: Type) -> ArrayObject:
@@ -3839,42 +3841,10 @@ class Interpreter(NodeVisitor):
 
         # 如果在当前作用域中找不到该变量，检查它是否是枚举值
         if var_value is None:
-            # 在语义分析阶段，枚举值应该已经被注册
-            # 这里我们简化处理，假设一些常见的枚举值
-            # 在实际实现中，我们需要访问语义分析器的信息
-            if var_name == "Red":
-                return EnumObject("TColor", var_name, 0)
-            elif var_name == "Green":
-                return EnumObject("TColor", var_name, 1)
-            elif var_name == "Blue":
-                return EnumObject("TColor", var_name, 2)
-            elif var_name == "Yellow":
-                return EnumObject("TColor", var_name, 3)
-            elif var_name == "Purple":
-                return EnumObject("TColor", var_name, 4)
-            elif var_name == "Monday":
-                return EnumObject("TDay", var_name, 0)
-            elif var_name == "Tuesday":
-                return EnumObject("TDay", var_name, 1)
-            elif var_name == "Wednesday":
-                return EnumObject("TDay", var_name, 2)
-            elif var_name == "Thursday":
-                return EnumObject("TDay", var_name, 3)
-            elif var_name == "Friday":
-                return EnumObject("TDay", var_name, 4)
-            elif var_name == "Saturday":
-                return EnumObject("TDay", var_name, 5)
-            elif var_name == "Sunday":
-                return EnumObject("TDay", var_name, 6)
-            elif var_name == "North":
-                return EnumObject("TDirection", var_name, 0)
-            elif var_name == "East":
-                return EnumObject("TDirection", var_name, 1)
-            elif var_name == "South":
-                return EnumObject("TDirection", var_name, 2)
-            elif var_name == "West":
-                return EnumObject("TDirection", var_name, 3)
-
+            # 检查是否是已注册的枚举值
+            if var_name in self.enum_values:
+                enum_info = self.enum_values[var_name]
+                return EnumObject(enum_info["type"], var_name, enum_info["ordinal"])
         return var_value if var_value is not None else NullObject()
 
     def visit_AccessExpression(self, node: AccessExpression) -> Object:
