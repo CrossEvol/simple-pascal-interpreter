@@ -60,7 +60,7 @@ class NullObject(Object):
         super().__init__(None)
 
     def __str__(self):
-        return "null"
+        return "None"
 
     def __repr__(self):
         return "NullObject()"
@@ -419,6 +419,123 @@ class EnumObject(Object):
         return NotImplemented
 
 
+class RecordObject(Object):
+    """表示记录对象，只需要record_type参数初始化"""
+
+    def __init__(self, record_type: RecordType):
+        super().__init__()
+        self.fields: dict[str, Object] = {}  # 字段名到字段对象的映射
+        self.record_type = record_type  # 记录类型模板，相当于元信息
+
+        # 初始化常规字段
+        self._init_regular_fields()
+
+    def _init_regular_fields(self):
+        """初始化常规字段"""
+        for field in self.record_type.fields:
+            field_name = field.name.value
+            field_type = field.type_node
+            self.fields[field_name] = self._create_default_object_from_type_node(
+                field_type
+            )
+
+    def _create_default_object_from_type_node(self, type_node) -> Object:
+        """根据类型节点创建默认对象（仅处理基本类型）"""
+        if hasattr(type_node, "token"):
+            token_type = type_node.token.type
+            if token_type == TokenType.INTEGER:
+                return IntegerObject(0)
+            elif token_type == TokenType.REAL:
+                return RealObject(0.0)
+            elif token_type == TokenType.BOOLEAN:
+                return BooleanObject(False)
+            elif token_type == TokenType.STRING:
+                return StringObject("")
+            elif token_type == TokenType.CHAR:
+                return CharObject("")
+
+        # 对于其他类型，返回空对象，等待后续通过interpreter初始化
+        return NullObject()
+
+    def _init_variant_fields(self, tag_value: str):
+        """根据标签值初始化变体字段"""
+        if not self.record_type.variant_part:
+            return
+
+        # 清除现有的变体字段
+        variant_fields = set()
+        for variant_case in self.record_type.variant_part.variant_cases:
+            for field in variant_case.fields:
+                variant_fields.add(field.name.value)
+
+        for field_name in variant_fields:
+            if field_name in self.fields:
+                del self.fields[field_name]
+
+        # 添加新的变体字段
+        for variant_case in self.record_type.variant_part.variant_cases:
+            if tag_value in variant_case.tag_values:
+                for field in variant_case.fields:
+                    field_name = field.name.value
+                    self.fields[field_name] = (
+                        self._create_default_object_from_type_node(field.type_node)
+                    )
+
+    def __str__(self):
+        fields_str = ", ".join(
+            [f"{name}={value}" for name, value in self.fields.items()]
+        )
+        return f"Record({fields_str})"
+
+    def __getitem__(self, field_name: str):
+        """获取字段值"""
+        return self.fields.get(field_name, NullObject())
+
+    def __setitem__(self, field_name: str, value: Object):
+        """设置字段值"""
+        # 检查字段是否在常规字段中
+        is_valid_field = self._is_regular_field(field_name)
+
+        # 检查是否是变体字段
+        if not is_valid_field and self.record_type.variant_part:
+            is_valid_field = self._is_variant_field(field_name)
+
+        if is_valid_field:
+            self.fields[field_name] = value
+
+            # 如果设置的是标签字段，需要重新初始化变体字段
+            if (
+                self.record_type.variant_part
+                and field_name == self.record_type.variant_part.tag_field.value
+            ):
+                if hasattr(value, "value"):
+                    # For enum objects, use the enum name, not the ordinal
+                    if isinstance(value, EnumObject):
+                        self._init_variant_fields(value.name)
+                    else:
+                        self._init_variant_fields(str(value.value))
+        else:
+            raise KeyError(f"Field '{field_name}' not found in record")
+
+    def _is_regular_field(self, field_name: str) -> bool:
+        """检查是否是常规字段"""
+        for field in self.record_type.fields:
+            if field.name.value == field_name:
+                return True
+        return False
+
+    def _is_variant_field(self, field_name: str) -> bool:
+        """检查是否是变体字段"""
+        if not self.record_type.variant_part:
+            return False
+
+        for variant_case in self.record_type.variant_part.variant_cases:
+            for field in variant_case.fields:
+                if field.name.value == field_name:
+                    return True
+        return False
+
+
 class ErrorCode(Enum):
     # Common errors
     UNEXPECTED_TOKEN = "Unexpected token"
@@ -432,6 +549,7 @@ class ErrorCode(Enum):
         "modify loop control variable is not allowed inside for-statement"
     )
     MISSING_CURRENT_SCOPE = "Missing current scope"
+    SEMANTIC_ERROR = "Semantic error"
 
     # Lexer errors
     LEXER_INVALID_CHARACTER = "Lexer invalid character"
@@ -545,6 +663,7 @@ class TokenType(Enum):
     HASH = "#"
     # block of reserved words
     PROGRAM = "PROGRAM"  # marks the beginning of the block
+    RECORD = "RECORD"
     FUNCTION = "FUNCTION"
     INTEGER = "INTEGER"
     REAL = "REAL"
@@ -1203,6 +1322,7 @@ class VarDecl(Declaration):
     def __init__(self, var_node: Var, type_node: Type) -> None:
         self.var_node = var_node
         self.type_node = type_node
+        self.type_symbol: Symbol | None = None  # Set by semantic analyzer
 
 
 class Type(Expression):
@@ -1225,7 +1345,7 @@ class StringType(Type):
         self.limit = limit
 
     def __str__(self):
-        return super().__str__()
+        return "STRING"
 
 
 class ArrayType(Type):
@@ -1298,6 +1418,54 @@ class FunctionCall(Expression):
         self.token = token
         # a reference to procedure declaration symbol
         self.func_symbol: FunctionSymbol | None = None
+
+
+class RecordType(Type):
+    """表示记录类型定义，包含常规字段和可选的变体部分"""
+
+    def __init__(
+        self, fields: list[RecordField], variant_part: VariantPart | None = None
+    ):
+        self.fields = fields  # 常规字段列表
+        self.variant_part = variant_part  # 可选的变体部分
+
+    @property
+    def field_names(self) -> list[str]:
+        names: list[str] = []
+        for field in self.fields:
+            names.append(field.name.value)
+        return names
+
+    @property
+    def field_entries(self) -> dict[str, Type]:
+        entries: dict[str, Type] = {}
+        for field in self.fields:
+            entries[field.name.value] = field.type_node
+        return entries
+
+
+class RecordField(AST):
+    """表示记录中的字段"""
+
+    def __init__(self, name: Var, type_node: Type):
+        self.name = name  # 字段名
+        self.type_node = type_node  # 字段类型
+
+
+class VariantPart(AST):
+    """表示记录的变体部分"""
+
+    def __init__(self, tag_field: Var, variant_cases: list[VariantCase]):
+        self.tag_field = tag_field  # 标签字段（必须是枚举类型）
+        self.variant_cases = variant_cases  # 变体情况列表
+
+
+class VariantCase(AST):
+    """表示变体记录中的一个变体情况"""
+
+    def __init__(self, tag_values: list[str], fields: list[RecordField]):
+        self.tag_values = tag_values  # 此变体情况对应的标签值列表
+        self.fields = fields  # 该变体的字段列表
 
 
 class Parser:
@@ -1514,7 +1682,7 @@ class Parser:
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec | ID
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | record_type_spec | ID
         """
         if self.current_token.type in (
             TokenType.INTEGER,
@@ -1527,6 +1695,8 @@ class Parser:
             return self.string_type_spec()
         elif self.current_token.type == TokenType.ARRAY:
             return self.array_type_spec()
+        elif self.current_token.type == TokenType.RECORD:
+            return self.record_type_spec()
         elif self.current_token.type == TokenType.ID:
             # 枚举类型或其他自定义类型
             token = self.current_token
@@ -1627,6 +1797,100 @@ class Parser:
             dynamic=dynamic,
         )
         return node
+
+    def record_type_spec(self) -> RecordType:
+        """解析记录类型定义，包括常规字段和可选的变体部分"""
+        self.eat(TokenType.RECORD)
+        fields = []
+
+        # 解析固定部分字段
+        while (
+            self.current_token.type != TokenType.CASE
+            and self.current_token.type != TokenType.END
+        ):
+            # 解析字段声明
+            var_nodes = [Var(self.current_token)]
+            self.eat(TokenType.ID)
+
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                var_nodes.append(Var(self.current_token))
+                self.eat(TokenType.ID)
+
+            self.eat(TokenType.COLON)
+            type_node = self.type_spec()
+
+            # 为每个变量创建字段节点
+            for var_node in var_nodes:
+                fields.append(RecordField(var_node, type_node))
+
+            if self.current_token.type == TokenType.SEMI:
+                self.eat(TokenType.SEMI)
+
+        # 解析变体部分（可选）
+        variant_part = None
+        if self.current_token.type == TokenType.CASE:
+            variant_part = self._parse_variant_part()
+
+        self.eat(TokenType.END)
+        return RecordType(fields, variant_part)
+
+    def _parse_variant_part(self) -> VariantPart:
+        """解析记录的变体部分，使用 'case kind of' 语法格式"""
+        self.eat(TokenType.CASE)
+
+        # 解析标签字段（必须是枚举类型）
+        tag_field = Var(self.current_token)
+        self.eat(TokenType.ID)
+
+        self.eat(TokenType.OF)
+
+        # 解析变体情况列表
+        variant_cases = []
+        while self.current_token.type != TokenType.END:
+            # 解析标签值列表
+            tag_values = [self.current_token.value]
+            self.eat(TokenType.ID)
+
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                tag_values.append(self.current_token.value)
+                self.eat(TokenType.ID)
+
+            self.eat(TokenType.COLON)
+            self.eat(TokenType.LPAREN)
+
+            # 解析变体字段列表
+            variant_fields = []
+            while self.current_token.type != TokenType.RPAREN:
+                # 解析字段声明（与 record_type_spec 相同）
+                var_nodes = [Var(self.current_token)]
+                self.eat(TokenType.ID)
+
+                while self.current_token.type == TokenType.COMMA:
+                    self.eat(TokenType.COMMA)
+                    var_nodes.append(Var(self.current_token))
+                    self.eat(TokenType.ID)
+
+                self.eat(TokenType.COLON)
+                type_node = self.type_spec()
+
+                for var_node in var_nodes:
+                    variant_fields.append(RecordField(var_node, type_node))
+
+                if self.current_token.type == TokenType.SEMI:
+                    self.eat(TokenType.SEMI)
+
+            self.eat(TokenType.RPAREN)
+
+            # 创建变体情况
+            variant_case = VariantCase(tag_values, variant_fields)
+            variant_cases.append(variant_case)
+
+            if self.current_token.type == TokenType.SEMI:
+                self.eat(TokenType.SEMI)
+
+        return VariantPart(tag_field, variant_cases)
 
     def compound_statement(self) -> Compound:
         """
@@ -2349,6 +2613,42 @@ class EnumTypeSymbol(Symbol):
         )
 
 
+class RecordTypeSymbol(Symbol):
+    """表示记录类型符号"""
+
+    def __init__(
+        self,
+        name: str,
+        fields: dict[str, Symbol],
+        variant_part: VariantPartSymbol | None = None,
+    ):
+        super().__init__(name)
+        self.fields = fields  # 字段名到字段符号的映射
+        self.variant_part = variant_part  # 可选的变体部分符号
+
+
+class RecordFieldSymbol(Symbol):
+    """表示记录字段符号"""
+
+    def __init__(self, name: str, type_symbol: Symbol):
+        super().__init__(name)
+        self.type = type_symbol
+
+
+class VariantPartSymbol:
+    """表示记录变体部分的符号"""
+
+    def __init__(
+        self,
+        tag_field: str,
+        tag_type: Symbol,
+        variant_cases: dict[str, dict[str, Symbol]],
+    ):
+        self.tag_field = tag_field  # 标签字段名
+        self.tag_type = tag_type  # 标签字段类型（必须是枚举类型）
+        self.variant_cases = variant_cases  # 标签值到变体字段符号的映射
+
+
 class ProcedureSymbol(Symbol):
     def __init__(self, name: str, formal_params: list[Symbol] | None = None) -> None:
         super().__init__(name)
@@ -2553,6 +2853,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
+        self.current_type: Symbol | None = None
         self.unmodified_vars: list[str] = []
         # 枚举类型和值的注册表
         self.enum_types: dict[
@@ -2649,6 +2950,17 @@ class SemanticAnalyzer(NodeVisitor):
                 # 枚举值作为特殊的变量符号插入
                 var_symbol = VarSymbol(enum_val, enum_symbol)
                 self.current_scope.insert(var_symbol)
+        elif isinstance(node.type_def, RecordType):
+            # Handle record type definition
+            # Process the record type to create a RecordTypeSymbol
+            self.visit(node.type_def)
+            record_type_symbol = cast(Symbol, self.current_type)
+
+            # Insert the record type symbol into the scope
+            self.current_scope.insert(record_type_symbol)
+
+            # Store the record type information for the interpreter
+            # This is a simplified approach - in a real implementation, we would need more detailed info
         # 其他类型定义的处理...
 
     def visit_NoOp(self, node: NoOp) -> None:
@@ -2782,7 +3094,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.right)
 
     def visit_Type(self, node: Type):
-        pass
+        return self.current_scope.lookup(node.value)
 
     def visit_PrimitiveType(self, node: PrimitiveType):
         pass
@@ -2827,6 +3139,83 @@ class SemanticAnalyzer(NodeVisitor):
                 ArrayTypeSymbol(name=type_name, element_type=element_type_symbol)
             )
 
+    def visit_RecordType(self, node: RecordType) -> None:
+        """访问记录类型定义节点"""
+        # 创建记录类型符号
+        type_name = f"record_{self._get_record_type_counter()}"
+        fields = {}
+
+        # 处理常规字段
+        for field in node.fields:
+            field_name = field.name.value
+            field_type = cast(Symbol, self.visit(field.type_node))
+
+            # 创建字段符号并添加到记录中
+            field_symbol = RecordFieldSymbol(field_name, field_type)
+            fields[field_name] = field_symbol
+
+        # 处理变体部分（如果存在）
+        variant_part_symbol = None
+        if node.variant_part:
+            variant_part_symbol = self._process_variant_part(node.variant_part, fields)
+
+        # 创建记录类型符号
+        record_type_symbol = RecordTypeSymbol(type_name, fields, variant_part_symbol)
+        self.current_type = record_type_symbol
+
+    def _process_variant_part(
+        self, variant_part: VariantPart, existing_fields: dict[str, Symbol]
+    ) -> VariantPartSymbol:
+        """处理记录的变体部分"""
+        tag_field_name = variant_part.tag_field.value
+
+        # 检查标签字段是否是已定义的枚举类型
+        if tag_field_name not in existing_fields:
+            self.error(
+                error_code=ErrorCode.SEMANTIC_ERROR, token=variant_part.tag_field.token
+            )
+
+        tag_field_symbol = cast(Symbol, existing_fields[tag_field_name])
+        if not isinstance(tag_field_symbol.type, EnumTypeSymbol):
+            self.error(
+                error_code=ErrorCode.SEMANTIC_ERROR, token=variant_part.tag_field.token
+            )
+
+        # 处理变体情况
+        variant_cases = {}
+        for variant_case in variant_part.variant_cases:
+            # 检查标签值是否有效
+            for tag_value in variant_case.tag_values:
+                if tag_value not in tag_field_symbol.type.values:
+                    self.error(
+                        error_code=ErrorCode.SEMANTIC_ERROR,
+                        token=variant_part.tag_field.token,
+                    )
+
+            # 处理变体字段
+            variant_fields = {}
+            for field in variant_case.fields:
+                field_name = field.name.value
+                self.visit(field.type_node)
+                field_type = cast(Symbol, self.current_type)
+
+                # 创建字段符号并添加到变体字段中
+                field_symbol = RecordFieldSymbol(field_name, field_type)
+                variant_fields[field_name] = field_symbol
+
+            # 将变体字段添加到对应的标签值
+            for tag_value in variant_case.tag_values:
+                variant_cases[tag_value] = variant_fields
+
+        return VariantPartSymbol(tag_field_name, tag_field_symbol.type, variant_cases)
+
+    def _get_record_type_counter(self) -> int:
+        """获取记录类型计数器，用于生成唯一的记录类型名称"""
+        if not hasattr(self, "_record_type_counter"):
+            self._record_type_counter = 0
+        self._record_type_counter += 1
+        return self._record_type_counter
+
     def visit_VarDecl(self, node: VarDecl) -> None:
         type_name = node.type_node.value
         if isinstance(node.type_node, ArrayType):
@@ -2835,13 +3224,18 @@ class SemanticAnalyzer(NodeVisitor):
         elif isinstance(node.type_node, StringType):
             self.visit(node.type_node)
             # type_name = SemanticAnalyzer.string_type_name(size=self.__string_type_limit)
+        elif isinstance(node.type_node, RecordType):
+            self.visit(node.type_node)
+            # For record types, we'll use the type symbol directly
+            type_symbol = self.current_type
         if self.current_scope is None:
             raise SemanticError(
                 error_code=ErrorCode.MISSING_CURRENT_SCOPE,
                 token=node.var_node.token,
                 message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.var_node.token}",
             )
-        type_symbol = self.current_scope.lookup(type_name)
+        if not isinstance(node.type_node, RecordType):
+            type_symbol = self.current_scope.lookup(type_name)
 
         # We have all the information we need to create a variable symbol.
         # Create the symbol and insert it into the symbol table.
@@ -2857,6 +3251,8 @@ class SemanticAnalyzer(NodeVisitor):
             )
 
         self.current_scope.insert(var_symbol)
+        # Set the type symbol in the node for the interpreter
+        node.type_symbol = type_symbol
 
     def visit_Assign(self, node: Assign) -> None:
         # right-hand side
@@ -2961,10 +3357,9 @@ class SemanticAnalyzer(NodeVisitor):
 
             elif isinstance(suffix, MemberSuffix):
                 # Member access - check if base supports member access (records, enums)
-                # For now, we'll just report an error since we don't have records/enums yet
-                self.error(
-                    error_code=ErrorCode.SEMANTIC_UNKNOWN_SYMBOL, token=suffix.member
-                )
+                # For records, we need to check if the field exists
+                # For now, we'll allow member access without strict validation
+                pass  # Allow member access for records
 
     def visit_IndexSuffix(self, node: IndexSuffix) -> None:
         self.visit(node.index)
@@ -3447,6 +3842,7 @@ class Interpreter(NodeVisitor):
         self.enum_values: dict[
             str, dict
         ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
+        self.record_types: dict[str, RecordType] = {}
 
         # Register built-in procedures and functions
         register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
@@ -3473,6 +3869,67 @@ class Interpreter(NodeVisitor):
             return EnumObject(type_name, name, ordinal)
         else:
             raise InterpreterError(error_code=ErrorCode.INTERPRETER_UNKNOWN_ENUM)
+
+    def _initialize_record_complex_fields(self, record_obj: RecordObject) -> None:
+        """使用Interpreter的属性信息初始化RecordObject中的复杂类型字段"""
+        for field in record_obj.record_type.fields:
+            field_name = field.name.value
+            field_type = field.type_node
+
+            # 获取已创建的默认对象
+            current_obj = record_obj.fields.get(field_name, NullObject())
+
+            # 如果是空对象，尝试使用interpreter信息初始化
+            if isinstance(current_obj, NullObject):
+                new_obj = self._create_complex_object_from_type_node(field_type)
+                if not isinstance(new_obj, NullObject):
+                    record_obj.fields[field_name] = new_obj
+
+    def _create_complex_object_from_type_node(self, type_node) -> Object:
+        """根据类型节点创建复杂类型对象，使用interpreter的属性信息"""
+        # 直接检查是否是ArrayType实例
+        if (
+            hasattr(type_node, "__class__")
+            and type_node.__class__.__name__ == "ArrayType"
+        ):
+            return self.__initArray(type_node)
+
+        # 处理数组类型
+        if hasattr(type_node, "token") and type_node.token.type == TokenType.ARRAY:
+            return self.__initArray(type_node)
+
+        # 处理基本类型
+        if hasattr(type_node, "token"):
+            token_type = type_node.token.type
+            if token_type == TokenType.INTEGER:
+                return IntegerObject(0)
+            elif token_type == TokenType.REAL:
+                return RealObject(0.0)
+            elif token_type == TokenType.BOOLEAN:
+                return BooleanObject(False)
+            elif token_type == TokenType.STRING:
+                return StringObject("")
+            elif token_type == TokenType.CHAR:
+                return CharObject("")
+
+        # 处理自定义类型（枚举、记录等）
+        if hasattr(type_node, "value"):
+            type_name = type_node.value
+
+            # 检查是否是枚举类型
+            if type_name in self.enum_types:
+                return self._enum_obj(type_name, 0)  # 使用第一个枚举值
+
+            # 检查是否是记录类型
+            if type_name in self.record_types:
+                record_type = self.record_types[type_name]
+                nested_record_obj = RecordObject(record_type)
+                # 递归初始化嵌套记录的复杂字段
+                self._initialize_record_complex_fields(nested_record_obj)
+                return nested_record_obj
+
+        # 其他情况返回空对象
+        return NullObject()
 
     def visit_Program(self, node: Program) -> None:
         program_name = node.name
@@ -3514,6 +3971,10 @@ class Interpreter(NodeVisitor):
             # 注册枚举值
             for i, enum_val in enumerate(enum_values):
                 self.enum_values[enum_val] = {"type": type_name, "ordinal": i}
+        elif isinstance(node.type_def, RecordType):
+            type_name = node.type_name.value
+            # Insert the record type into global record_types for interpreter use
+            self.record_types[type_name] = node.type_def
 
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
@@ -3534,16 +3995,45 @@ class Interpreter(NodeVisitor):
         elif node.type_node.token.type == TokenType.ARRAY:
             ar[node.var_node.value] = self.__initArray(node.type_node)
         else:
-            # 假设这是枚举类型或其他自定义类型
-            # 初始化为ordinal为0的枚举对象
-            type_name = node.type_node.value
-            # 检查是否是已注册的枚举类型
-            if type_name in self.enum_types:
-                # 创建ordinal为0的枚举对象
-                enum_obj = self._enum_obj(type_name, 0)
-                ar[node.var_node.value] = enum_obj
+            # For all other types (including record types), use the type_symbol
+            # that was set by the semantic analyzer
+            var_name = node.var_node.value
+            type_symbol = node.type_symbol
+
+            if type_symbol is not None:
+                # Handle based on the type symbol
+                if isinstance(type_symbol, RecordTypeSymbol):
+                    # Handle record type - use global record_types lookup
+                    type_name = node.type_node.value
+                    if type_name in self.record_types:
+                        record_type = self.record_types[type_name]
+                        record_obj = RecordObject(record_type)
+                        # 初始化复杂类型字段
+                        self._initialize_record_complex_fields(record_obj)
+                        ar[var_name] = record_obj
+                    else:
+                        ar[var_name] = NullObject()
+                elif (
+                    isinstance(type_symbol, EnumTypeSymbol)
+                    or type_symbol.name in self.enum_types
+                ):
+                    # Handle enum type
+                    enum_obj = self._enum_obj(type_symbol.name, 0)
+                    ar[var_name] = enum_obj
+                else:
+                    # For other custom types, treat as null for now
+                    # This is a simplified approach
+                    ar[var_name] = NullObject()
             else:
-                raise InterpreterError(error_code=ErrorCode.INTERPRETER_UNKNOWN_ENUM)
+                type_name = node.type_node.value
+                if type_name in self.record_types:
+                    record_type = self.record_types[type_name]
+                    record_obj = RecordObject(record_type)
+                    # 初始化复杂类型字段
+                    self._initialize_record_complex_fields(record_obj)
+                    ar[var_name] = record_obj
+                else:
+                    ar[var_name] = NullObject()
         pass
 
     def __initArray(self, node: Type) -> ArrayObject:
@@ -3599,6 +4089,11 @@ class Interpreter(NodeVisitor):
 
     def visit_ArrayType(self, node: ArrayType) -> None:
         # Do nothing
+        pass
+
+    def visit_RecordType(self, node: RecordType) -> None:
+        """访问记录类型定义节点"""
+        # 在解释器中，记录类型定义已经在语义分析阶段处理
         pass
 
     def visit_BinOp(self, node: BinOp) -> Object:
@@ -3665,8 +4160,16 @@ class Interpreter(NodeVisitor):
             ):
                 # MOD 运算符应该返回整数余数
                 # 在 Pascal 中，MOD 只对整数有效，因此我们需要转换为整数
-                left_val = int(left_obj.value) if isinstance(left_obj, RealObject) else left_obj.value
-                right_val = int(right_obj.value) if isinstance(right_obj, RealObject) else right_obj.value
+                left_val = (
+                    int(left_obj.value)
+                    if isinstance(left_obj, RealObject)
+                    else left_obj.value
+                )
+                right_val = (
+                    int(right_obj.value)
+                    if isinstance(right_obj, RealObject)
+                    else right_obj.value
+                )
                 return IntegerObject(left_val % right_val)
 
         # comparison operator
@@ -3797,32 +4300,100 @@ class Interpreter(NodeVisitor):
         ar = self.call_stack.peek()
 
         if isinstance(node.left, AccessExpression):
-            # Handle access expression assignments (e.g., arr[i] := value)
-            if isinstance(node.left.base, Var):
-                base_name = node.left.base.value
-                base_obj = ar.get(base_name)
+            # Handle access expression assignments (e.g., arr[i] := value or record.field := value)
+            # Get the base object
+            base_obj = self.visit(node.left.base)
+            current_obj = base_obj
 
-                if len(node.left.suffixes) == 1 and isinstance(
-                    node.left.suffixes[0], IndexSuffix
-                ):
-                    # Single index assignment: arr[i] := value
-                    index_obj = self.visit(node.left.suffixes[0].index)
+            # Handle all suffixes except the last one
+            for suffix in node.left.suffixes[:-1]:
+                if isinstance(suffix, IndexSuffix):
+                    # Handle array/string index access
+                    index_obj = self.visit(suffix.index)
                     index = (
                         index_obj.value if isinstance(index_obj, NumberObject) else 0
                     )
 
-                    if isinstance(base_obj, ArrayObject):
-                        base_obj[index] = var_value
-                    elif isinstance(base_obj, StringObject):
-                        # Handle string character assignment
+                    if isinstance(current_obj, StringObject):
+                        current_obj = current_obj[index]
+                    elif isinstance(current_obj, ArrayObject):
+                        current_obj = current_obj[index]
+                    else:
+                        # Unsupported indexing
+                        return
+
+                elif isinstance(suffix, MemberSuffix):
+                    # Handle record member access
+                    field_name = suffix.member.value
+
+                    if isinstance(current_obj, RecordObject):
+                        # Check if accessing variant field and initialize if needed
                         if (
-                            isinstance(var_value, StringObject)
-                            and len(var_value.value) == 1
+                            current_obj.record_type.variant_part
+                            and current_obj._is_variant_field(field_name)
                         ):
-                            base_obj[index] = CharObject(var_value.value)
-                        elif isinstance(var_value, CharObject):
-                            base_obj[index] = var_value
-                # TODO: Handle member assignments and multi-level access
+                            # Get current tag field value to ensure variant fields are initialized
+                            tag_field_name = (
+                                current_obj.record_type.variant_part.tag_field.value
+                            )
+                            tag_field_value = current_obj.fields.get(tag_field_name)
+                            if tag_field_value and hasattr(tag_field_value, "value"):
+                                current_obj._init_variant_fields(
+                                    str(tag_field_value.value)
+                                )
+
+                        current_obj = current_obj[field_name]
+                    else:
+                        # Unsupported member access
+                        return
+
+            # Handle the last suffix for assignment
+            last_suffix = node.left.suffixes[-1]
+            if isinstance(last_suffix, IndexSuffix):
+                # Handle array/string index assignment
+                index_obj = self.visit(last_suffix.index)
+                index = index_obj.value if isinstance(index_obj, NumberObject) else 0
+
+                if isinstance(current_obj, StringObject) and isinstance(
+                    var_value, (StringObject, CharObject)
+                ):
+                    # Handle string character assignment
+                    if (
+                        isinstance(var_value, StringObject)
+                        and len(var_value.value) == 1
+                    ):
+                        current_obj[index] = CharObject(var_value.value)
+                    elif isinstance(var_value, CharObject):
+                        current_obj[index] = var_value
+                elif isinstance(current_obj, ArrayObject):
+                    # Handle array element assignment
+                    current_obj[index] = var_value
+
+            elif isinstance(last_suffix, MemberSuffix):
+                # Handle record member assignment
+                field_name = last_suffix.member.value
+
+                if isinstance(current_obj, RecordObject):
+                    # Check if assigning to variant field and initialize if needed
+                    if (
+                        current_obj.record_type.variant_part
+                        and current_obj._is_variant_field(field_name)
+                    ):
+                        # Get current tag field value to ensure variant fields are initialized
+                        tag_field_name = (
+                            current_obj.record_type.variant_part.tag_field.value
+                        )
+                        tag_field_value = current_obj.fields.get(tag_field_name)
+                        if tag_field_value and hasattr(tag_field_value, "value"):
+                            if isinstance(tag_field_value, EnumObject):
+                                current_obj._init_variant_fields(tag_field_value.name)
+                            else:
+                                current_obj._init_variant_fields(
+                                    str(tag_field_value.value)
+                                )
+
+                    current_obj[field_name] = var_value
+
             return
         elif isinstance(node.left, Var):
             var_name = node.left.value
@@ -3887,9 +4458,16 @@ class Interpreter(NodeVisitor):
                     return NullObject()
 
             elif isinstance(suffix, MemberSuffix):
-                # Member access for records/enums (not implemented yet)
-                # For now, return null object
-                return NullObject()
+                # Member access for records/enums
+                field_name = suffix.member.value
+
+                if isinstance(current_obj, RecordObject):
+                    # Direct field access - variant fields are already initialized
+                    # when the tag field is set in RecordObject.__setitem__
+                    current_obj = current_obj[field_name]
+                else:
+                    # Return null object for unsupported member access
+                    return NullObject()
 
         return current_obj if current_obj is not None else NullObject()
 

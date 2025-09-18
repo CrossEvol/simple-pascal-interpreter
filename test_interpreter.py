@@ -1,6 +1,15 @@
 import unittest
 
-from spi import BooleanObject, EnumObject, IntegerObject, InterpreterError
+from spi import (
+    BooleanObject,
+    CharObject,
+    EnumObject,
+    IntegerObject,
+    InterpreterError,
+    RealObject,
+    RecordObject,
+    StringObject,
+)
 
 
 class LexerTestCase(unittest.TestCase):
@@ -1620,6 +1629,204 @@ end.
         self.assertEqual(ar["myColor"].ordinal, 4)
         self.assertEqual(ar["myColor"].value, 4)
         self.assertEqual(ar["myColor"].type_name, "TColor")
+
+    def test_record_types_with_basic_type_as_field(self):
+        """Test basic record type functionality"""
+        text = """\
+program RecordTest;
+type
+    TPerson = record
+        name: String;
+        age: Integer;
+        height: Real;
+        married: Boolean;
+        mark : Char;
+    end;
+
+var
+    person1: TPerson;
+    name : String;
+    age : Integer;
+    height: Real;
+    married : Boolean;
+    mark : Char;
+begin
+    person1.name := 'Alice';
+    person1.age := 30;
+    person1.height := 1.65;
+    person1.married := true;
+    person1.mark := #65;
+    name := person1.name;
+    age := person1.age;
+    height := person1.height;
+    married := person1.married;
+    mark := person1.mark;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the record was created
+        self.assertIn("person1", ar.members)
+        self.assertIsInstance(ar["person1"], RecordObject)
+        self.assertIsInstance(ar["name"], StringObject)
+        self.assertEqual(ar["name"].value, "Alice")
+        self.assertIsInstance(ar["age"], IntegerObject)
+        self.assertEqual(ar["age"].value, 30)
+        self.assertIsInstance(ar["height"], RealObject)
+        self.assertEqual(ar["height"].value, 1.65)
+        self.assertIsInstance(ar["married"], BooleanObject)
+        self.assertEqual(ar["married"].value, True)
+        self.assertIsInstance(ar["mark"], CharObject)
+        self.assertEqual(ar["mark"].value, "A")
+
+        # For now, we're just checking that the program runs without error
+        # In a more complete implementation, we would check the record fields
+
+    def test_record_with_one_level_array(self):
+        """Test record field access and assignment"""
+        text = """\
+program RecordExample;
+
+type
+    TPerson = record
+        name: array of String;
+        age: array of Integer;
+        height: array of Real;
+        married: array of Boolean;
+        mark: array of Char;
+    end;
+
+var
+    person1: TPerson;
+    name : String;
+    age : Integer;
+    height : Real;
+    married : Boolean;
+    mark : Char;
+
+begin
+    {Allocate memory for the dynamic array 'name' and set its length to 1.}
+    {Dynamic arrays are 0-indexed in Pascal, so the first element is at index 0.}
+    {SetLength(person1.name, 1);}
+
+    person1.name[0] := 'Alice'; {Change index to 0}
+    person1.age[1] := 30;
+    person1.height[2] := 1.65;
+    person1.married[3] := true;
+    person1.mark[4] := #65;
+    
+    name := person1.name[0];
+    age := person1.age[1];
+    height := person1.height[2];
+    married := person1.married[3];
+    mark := person1.mark[4];
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertIn("person1", ar.members)
+        self.assertIsInstance(ar["person1"], RecordObject)
+        self.assertIsInstance(ar["name"], StringObject)
+        self.assertEqual(ar["name"].value, "Alice")
+        self.assertIsInstance(ar["age"], IntegerObject)
+        self.assertEqual(ar["age"].value, 30)
+        self.assertIsInstance(ar["height"], RealObject)
+        self.assertEqual(ar["height"].value, 1.65)
+        self.assertIsInstance(ar["married"], BooleanObject)
+        self.assertEqual(ar["married"].value, True)
+        self.assertIsInstance(ar["mark"], CharObject)
+        self.assertEqual(ar["mark"].value, "A")
+
+    def test_nested_record_access(self):
+        """Test nested record access"""
+        text = """\
+program NestedRecordAccess;
+type
+    TAddress = record
+        street: String;
+        city: String;
+    end;
+    
+    TPerson = record
+        name: String;
+        address: TAddress;
+    end;
+
+var
+    person: TPerson;
+    name : String;
+    street : String;
+    city : String;
+begin
+    person.name := 'John Doe';
+    person.address.street := '123 Main St';
+    person.address.city := 'Anytown';
+    name := person.name;
+    street := person.address.street;
+    city := person.address.city;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("person", ar.members)
+        self.assertIsInstance(ar["person"], RecordObject)
+        self.assertIsInstance(ar["name"], StringObject)
+        self.assertEqual(ar["name"].value, "John Doe")
+        self.assertIsInstance(ar["street"], StringObject)
+        self.assertEqual(ar["street"].value, "123 Main St")
+        self.assertIsInstance(ar["city"], StringObject)
+        self.assertEqual(ar["city"].value, "Anytown")
+        # In a more complete implementation, we would check the actual values
+
+    def test_simple_variant_record(self):
+        """Test nested record access"""
+        text = """\
+program SimpleVariantRecordExample;
+
+type
+    TShapeType = (Circle, Rectangle);
+    
+    TShape = record
+        shapeType: TShapeType;
+        case shapeType of
+            Circle: (radius: Real);
+            Rectangle: (width, height: Real);
+    end;
+
+var
+    shape1: TShape;
+    shapeType : TShapeType;
+    radius : Real;
+begin
+    shape1.shapeType := Circle;
+    shape1.shapeType := Rectangle;
+    shape1.radius := 5.0;
+    shape1.radius := shape1.radius + 5.0;
+    shapeType := shape1.shapeType;
+    radius := shape1.radius;
+end.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("shape1", ar.members)
+        self.assertIn("shapeType", ar.members)
+        self.assertIn("radius", ar.members)
+        self.assertIsInstance(ar["shape1"], RecordObject)
+        self.assertIsInstance(ar["shapeType"], EnumObject)
+        self.assertEqual(ar["shapeType"].name, "Rectangle")
+        self.assertIsInstance(ar["radius"], RealObject)
+        self.assertEqual(ar["radius"].value, 10.0)
+        # In a more complete implementation, we would check the actual values
 
 
 if __name__ == "__main__":
