@@ -27,6 +27,8 @@ class ElementType(Enum):
     STRING = "STRING"
     CHAR = "CHAR"
     ARRAY = "ARRAY"
+    RECORD = "RECORD"
+    CUSTOM = "CUSTOM"
 
 
 ###############################################################################
@@ -321,6 +323,12 @@ class ArrayObject(Object):
             return CharObject("")
         elif self.element_type == ElementType.ARRAY:
             return ArrayObject(ElementType.INTEGER, 0, 0, True)  # Default nested array
+        elif self.element_type == ElementType.RECORD:
+            # For record elements, return NullObject - will be initialized by interpreter
+            return NullObject()
+        elif self.element_type == ElementType.CUSTOM:
+            # For custom types, return NullObject - will be initialized by interpreter
+            return NullObject()
         else:
             return Object()
 
@@ -2862,6 +2870,8 @@ class SemanticAnalyzer(NodeVisitor):
         self.enum_values: dict[
             str, dict
         ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
+        # 类型名称和符号的映射关系
+        self.type_mappings: dict[str, Symbol] = {}  # { type_name -> type_symbol }
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
@@ -2944,6 +2954,8 @@ class SemanticAnalyzer(NodeVisitor):
             # 将枚举类型插入符号表
             enum_symbol = EnumTypeSymbol(type_name, enum_values)
             self.current_scope.insert(enum_symbol)
+            # 将类型映射添加到映射字典
+            self.type_mappings[type_name] = enum_symbol
 
             # 将枚举值也插入符号表，使它们可以被解析为变量
             for i, enum_val in enumerate(enum_values):
@@ -2961,6 +2973,8 @@ class SemanticAnalyzer(NodeVisitor):
 
             # Insert the record type symbol into the scope
             self.current_scope.insert(record_type_symbol)
+            # 将类型映射添加到映射字典
+            self.type_mappings[type_name] = record_type_symbol
 
             # Store the record type information for the interpreter
             # This is a simplified approach - in a real implementation, we would need more detailed info
@@ -2989,6 +3003,8 @@ class SemanticAnalyzer(NodeVisitor):
                 )
 
                 self.current_scope.insert(alias_symbol)
+                # 将类型映射添加到映射字典
+                self.type_mappings[type_name] = alias_symbol
             else:
                 # For complex types (arrays, strings, etc.), register them with their string representation
                 type_name_str = str(node.type_def)
@@ -2998,6 +3014,8 @@ class SemanticAnalyzer(NodeVisitor):
                     alias_symbol = BuiltinTypeSymbol(type_name)
                     alias_symbol.type = type_symbol
                     self.current_scope.insert(alias_symbol)
+                    # 将类型映射添加到映射字典
+                    self.type_mappings[type_name] = alias_symbol
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
@@ -3186,7 +3204,22 @@ class SemanticAnalyzer(NodeVisitor):
                 token=node.token,
                 message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.token}",
             )
-        element_type_symbol = self.current_scope.lookup(str(node.element_type))
+
+        # 首先尝试从类型映射中查找
+        # 正确处理元素类型名称
+        if hasattr(node.element_type, "value"):
+            element_type_str = node.element_type.value
+        else:
+            element_type_str = str(node.element_type)
+        element_type_symbol = self.type_mappings.get(element_type_str)
+
+        # 如果映射中没找到，尝试从符号表中查找
+        if element_type_symbol is None:
+            element_type_symbol = self.current_scope.lookup(element_type_str)
+
+        if element_type_symbol is None:
+            element_type_symbol = self.current_scope.lookup(str(node.element_type))
+
         if element_type_symbol is None:
             raise SemanticError(
                 error_code=ErrorCode.SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE,
@@ -3196,9 +3229,12 @@ class SemanticAnalyzer(NodeVisitor):
         type_name = str(node)
         type_symbol = self.current_scope.lookup(type_name)
         if type_symbol is None:
-            self.current_scope.insert(
-                ArrayTypeSymbol(name=type_name, element_type=element_type_symbol)
+            array_type_symbol = ArrayTypeSymbol(
+                name=type_name, element_type=element_type_symbol
             )
+            self.current_scope.insert(array_type_symbol)
+            # 将类型映射添加到映射字典
+            self.type_mappings[type_name] = array_type_symbol
 
     def visit_RecordType(self, node: RecordType) -> None:
         """访问记录类型定义节点"""
@@ -4010,8 +4046,40 @@ class Interpreter(NodeVisitor):
                 self._initialize_record_complex_fields(nested_record_obj)
                 return nested_record_obj
 
+            # 检查是否是类型别名，然后递归解析
+            if type_name in self.type_aliases:
+                actual_type = self.type_aliases[type_name]
+                return self._create_complex_object_from_type_node(actual_type)
+
         # 其他情况返回空对象
         return NullObject()
+    
+    def _post_initialize_array_elements(self, array_obj: ArrayObject, element_type_node: Type) -> None:
+        """为包含复杂类型元素的数组后初始化元素"""
+        # 为静态数组的每个位置创建适当的对象，替换NullObject
+        for index in range(array_obj.lower_bound, array_obj.upper_bound + 1):
+            if array_obj.element_type == ElementType.RECORD:
+                # 为记录类型创建对象
+                if hasattr(element_type_node, 'value'):
+                    type_name = element_type_node.value
+                    if type_name in self.record_types:
+                        record_type = self.record_types[type_name]
+                        record_obj = RecordObject(record_type)
+                        self._initialize_record_complex_fields(record_obj)
+                        array_obj.value[index] = record_obj
+            elif array_obj.element_type == ElementType.CUSTOM:
+                # 为其他自定义类型创建对象
+                if hasattr(element_type_node, 'value'):
+                    type_name = element_type_node.value
+                    if type_name in self.enum_types:
+                        # 枚举类型，使用第一个枚举值
+                        enum_obj = self._enum_obj(type_name, 0)
+                        array_obj.value[index] = enum_obj
+                    elif type_name in self.type_aliases:
+                        # 处理类型别名
+                        actual_type = self.type_aliases[type_name]
+                        complex_obj = self._create_complex_object_from_type_node(actual_type)
+                        array_obj.value[index] = complex_obj
 
     def visit_Program(self, node: Program) -> None:
         program_name = node.name
@@ -4166,25 +4234,50 @@ class Interpreter(NodeVisitor):
 
             # Determine element type
             element_type = ElementType.INTEGER  # default
-            if node.element_type.token.type == TokenType.BOOLEAN:
-                element_type = ElementType.BOOL
-            elif node.element_type.token.type == TokenType.INTEGER:
-                element_type = ElementType.INTEGER
-            elif node.element_type.token.type == TokenType.REAL:
-                element_type = ElementType.REAL
-            elif node.element_type.token.type == TokenType.STRING:
-                element_type = ElementType.STRING
-            elif node.element_type.token.type == TokenType.CHAR:
-                element_type = ElementType.CHAR
-            elif node.element_type.token.type == TokenType.ARRAY:
-                element_type = ElementType.ARRAY
 
-            return ArrayObject(
+            # Check if element_type has a token attribute for basic types
+            if hasattr(node.element_type, "token"):
+                if node.element_type.token.type == TokenType.BOOLEAN:
+                    element_type = ElementType.BOOL
+                elif node.element_type.token.type == TokenType.INTEGER:
+                    element_type = ElementType.INTEGER
+                elif node.element_type.token.type == TokenType.REAL:
+                    element_type = ElementType.REAL
+                elif node.element_type.token.type == TokenType.STRING:
+                    element_type = ElementType.STRING
+                elif node.element_type.token.type == TokenType.CHAR:
+                    element_type = ElementType.CHAR
+                elif node.element_type.token.type == TokenType.ARRAY:
+                    element_type = ElementType.ARRAY
+                elif node.element_type.token.type == TokenType.ID:
+                    # Custom type (record, enum, etc.)
+                    # Check if it's a record type first
+                    type_name = node.element_type.value
+                    if type_name in self.record_types:
+                        element_type = ElementType.RECORD
+                    else:
+                        # Could be enum or other custom type
+                        element_type = ElementType.CUSTOM
+            else:
+                # For complex types without simple token, treat as custom
+                element_type = ElementType.CUSTOM
+
+            # Create array with the determined element type
+            array_obj = ArrayObject(
                 element_type=element_type,
                 lower_bound=lower_bound,
                 upper_bound=upper_bound,
                 dynamic=node.dynamic,
             )
+
+            # For record and custom types, we need to post-initialize elements
+            if (
+                element_type in (ElementType.RECORD, ElementType.CUSTOM)
+                and not node.dynamic
+            ):
+                self._post_initialize_array_elements(array_obj, node.element_type)
+
+            return array_obj
 
         raise SemanticError(
             error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,

@@ -2034,6 +2034,80 @@ END.
         self.assertEqual(ar["c3"].name, "Blue")
         # In a more complete implementation, we would check the actual values
 
+    def test_complex_nested_record(self):
+        """Test nested record access"""
+        text = """\
+program ComplexNestedRecordExample;
+
+{ Define the character array type }
+type
+  TStringArray = array[0..3] of string; { An array of 4 strings }
+
+{ Define the innermost record 'C' which contains the string array }
+  TRecordC = record
+    d: TStringArray; { This field is an array of strings }
+  end;
+
+{ Define the middle record 'B' which contains record 'C' }
+  TRecordB = record
+    c: TRecordC;
+  end;
+
+{ Define the main record 'A' which contains record 'B' }
+  TRecordA = record
+    b: TRecordB;
+  end;
+
+  T1 = TRecordA;
+  T2 = T1;
+
+{ Define the array of records 'Arr' }
+  TRecordArray = array[0..2] of T2; { An array of 3 'A' records }
+
+{ Main program variables }
+var
+  arr: TRecordArray;
+  charToAccess: Char;
+  testString: string;
+  testCharIndex: Integer;
+
+begin
+  { Set the string array within the innermost record for arr[1] }
+  testCharIndex := 3;
+  arr[1].b.c.d[0] := 'Alpha';
+  arr[1].b.c.d[1] := 'Bravo';
+  arr[1].b.c.d[2] := 'Charlie';
+  arr[1].b.c.d[testCharIndex] := 'Delta';
+
+  { Access the string at index 2 (which is 'Charlie') }
+  testString := arr[1].b.c.d[2]; 
+  
+  { Access the character at index 3 within that string }
+  { Note: Pascal string indexing is 1-based, not 0-based like arrays. }
+  { The 'C' in 'Charlie' is at index 1, 'h' is at 2, 'a' is at 3. }
+  charToAccess := arr[1].b.c.d[2][testCharIndex];
+  
+end.
+
+
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("arr", ar.members)
+        self.assertIn("charToAccess", ar.members)
+        self.assertIn("testString", ar.members)
+        self.assertIn("testCharIndex", ar.members)
+        self.assertIsInstance(ar["charToAccess"], CharObject)
+        self.assertEqual(ar["charToAccess"].value, "a")
+        self.assertIsInstance(ar["testString"], StringObject)
+        self.assertEqual(ar["testString"].value, "Charlie")
+        self.assertIsInstance(ar["testCharIndex"], IntegerObject)
+        self.assertEqual(ar["testCharIndex"].value, 3)
+        # In a more complete implementation, we would check the actual values
+
 
 if __name__ == "__main__":
     unittest.main()
