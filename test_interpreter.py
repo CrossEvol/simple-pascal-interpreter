@@ -1,6 +1,7 @@
 import unittest
 
 from spi import (
+    ArrayObject,
     BooleanObject,
     CharObject,
     EnumObject,
@@ -490,6 +491,31 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         the_exception = cm.exception
         self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPE)
         self.assertEqual(the_exception.token.value, "i")
+
+    def test_semantic_type_alias_refer_to_undefined_type(self):
+        from spi import ErrorCode, SemanticError
+
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            PROGRAM TypeAliasErrorTest;
+
+            { Test error case: Reference to undefined type }
+            TYPE
+            StringAlias = String;
+            BadAlias = NonExistentType;
+
+            VAR
+            x: BadAlias;
+
+            BEGIN
+            x := 42;
+            END.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.ID_NOT_FOUND)
+        self.assertEqual(the_exception.token.value, "NonExistentType")
 
 
 class TestCallStack:
@@ -1826,6 +1852,186 @@ end.
         self.assertEqual(ar["shapeType"].name, "Rectangle")
         self.assertIsInstance(ar["radius"], RealObject)
         self.assertEqual(ar["radius"].value, 10.0)
+        # In a more complete implementation, we would check the actual values
+
+    def test_chained_alias_for_basic_type(self):
+        """Test nested record access"""
+        text = """\
+PROGRAM ChainedAliasTest;
+
+TYPE
+  T1 = INTEGER;
+  T2 = T1;
+  T3 = T2;
+  T4 = T3;
+
+VAR
+  a: T1;
+  b: T2;
+  c: T3;
+  d: T4;
+
+BEGIN
+  a := 10;
+  b := 20;
+  c := 30;
+  d := 40;
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("a", ar.members)
+        self.assertIn("b", ar.members)
+        self.assertIn("c", ar.members)
+        self.assertIn("d", ar.members)
+        self.assertIsInstance(ar["a"], IntegerObject)
+        self.assertEqual(ar["a"].value, 10)
+        self.assertIsInstance(ar["b"], IntegerObject)
+        self.assertEqual(ar["b"].value, 20)
+        self.assertIsInstance(ar["c"], IntegerObject)
+        self.assertEqual(ar["c"].value, 30)
+        self.assertIsInstance(ar["d"], IntegerObject)
+        self.assertEqual(ar["d"].value, 40)
+        # In a more complete implementation, we would check the actual values
+
+    def test_chained_alias_for_record_type(self):
+        """Test nested record access"""
+        text = """\
+PROGRAM RecordAliasTest;
+
+TYPE
+  Point = RECORD
+    x, y: REAL;
+  END;
+  Vector = Point;
+  P1 = Vector;
+  P2 = Vector;
+  P3 = Vector;
+
+VAR
+  p: P3;
+  x: Real;
+  y: Real;
+
+BEGIN
+  p.x := 1.5;
+  p.y := 2.5;
+  
+  x := p.x;
+  y := p.y;
+  
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("p", ar.members)
+        self.assertIn("x", ar.members)
+        self.assertIn("y", ar.members)
+        self.assertIsInstance(ar["p"], RecordObject)
+        self.assertIsInstance(ar["x"], RealObject)
+        self.assertEqual(ar["x"].value, 1.5)
+        self.assertIsInstance(ar["y"], RealObject)
+        self.assertEqual(ar["y"].value, 2.5)
+        # In a more complete implementation, we would check the actual values
+
+    def test_chained_alias_for_array_type(self):
+        """Test nested record access"""
+        text = """\
+PROGRAM ArrayAliasTest;
+
+TYPE
+  IntArray = array of Integer;
+  A1 = IntArray;
+  A2 = A1;
+  A3 = A2;
+var 
+  arr : A3;
+  i : Integer;
+BEGIN
+  {setLength(arr, 10);}
+  arr[0] := 1;
+  i := arr[0];
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("arr", ar.members)
+        self.assertIn("i", ar.members)
+        self.assertIsInstance(ar["arr"], ArrayObject)
+        self.assertIsInstance(ar["i"], IntegerObject)
+        self.assertEqual(ar["i"].value, 1)
+        # In a more complete implementation, we would check the actual values
+
+    def test_chained_alias_for_string_type(self):
+        """Test nested record access"""
+        text = """\
+PROGRAM ArrayAliasTest;
+
+TYPE
+    S0 = String;
+    S1 = S0;
+    S2 = S1;
+    S3 = S2;
+var 
+  s : S3;
+BEGIN
+  s := 'ABC';
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("s", ar.members)
+        self.assertIsInstance(ar["s"], StringObject)
+        self.assertEqual(ar["s"].value, "ABC")
+        # In a more complete implementation, we would check the actual values
+
+    def test_chained_alias_for_enum_type(self):
+        """Test nested record access"""
+        text = """\
+PROGRAM EnumAliasTest;
+
+TYPE
+  Color = (Red, Green, Blue);
+  MyColor = Color;
+  PrimaryColor = MyColor;
+
+VAR
+  c1: Color;
+  c2: MyColor;
+  c3: PrimaryColor;
+
+BEGIN
+  c1 := Red;
+  c2 := Green;
+  c3 := Blue;
+END.
+"""
+        interpreter = self.makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Check that the nested record was created and accessed
+        self.assertIn("c1", ar.members)
+        self.assertIn("c2", ar.members)
+        self.assertIn("c3", ar.members)
+        self.assertIsInstance(ar["c1"], EnumObject)
+        self.assertEqual(ar["c1"].name, "Red")
+        self.assertIsInstance(ar["c2"], EnumObject)
+        self.assertEqual(ar["c2"].name, "Green")
+        self.assertIsInstance(ar["c3"], EnumObject)
+        self.assertEqual(ar["c3"].name, "Blue")
         # In a more complete implementation, we would check the actual values
 
 

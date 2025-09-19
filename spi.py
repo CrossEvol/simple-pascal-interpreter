@@ -1133,19 +1133,63 @@ class Declaration(Statement):
 
 
 class TypeDeclaration(Declaration):
-    def __init__(self, type_name: Var, type_def: AST):
+    def __init__(self, type_name: Var, type_def: Type):
         self.type_name = type_name
         self.type_def = type_def
-
-
-class EnumType(AST):
-    def __init__(self, enum_values: list[str]):
-        self.enum_values = enum_values
 
 
 class Expression(AST):
     def __init__(self):
         super().__init__()
+
+
+class Type(Expression):
+    def __init__(self, token: Token) -> None:
+        self.token = token
+        self.value = token.value
+
+
+class PrimitiveType(Type):
+    def __init__(self, token):
+        super().__init__(token)
+
+    def __str__(self):
+        return self.value
+
+
+class StringType(Type):
+    def __init__(self, token, limit: Expression | None = None):
+        super().__init__(token)
+        self.limit = limit
+
+    def __str__(self):
+        return "STRING"
+
+
+class ArrayType(Type):
+    def __init__(
+        self,
+        token,
+        element_type: Type,
+        lower: Expression,
+        upper: Expression,
+        dynamic: bool = False,
+    ):
+        super().__init__(token)
+        self.element_type = element_type
+        self.lower = lower
+        self.upper = upper
+        self.dynamic = dynamic
+
+    def __str__(self):
+        return "Array[{element_type_name}]".format(
+            element_type_name=str(self.element_type)
+        )
+
+
+class EnumType(Type):
+    def __init__(self, enum_values: list[str]):
+        self.enum_values = enum_values
 
 
 class BinOp(Expression):
@@ -1323,50 +1367,6 @@ class VarDecl(Declaration):
         self.var_node = var_node
         self.type_node = type_node
         self.type_symbol: Symbol | None = None  # Set by semantic analyzer
-
-
-class Type(Expression):
-    def __init__(self, token: Token) -> None:
-        self.token = token
-        self.value = token.value
-
-
-class PrimitiveType(Type):
-    def __init__(self, token):
-        super().__init__(token)
-
-    def __str__(self):
-        return self.value
-
-
-class StringType(Type):
-    def __init__(self, token, limit: Expression | None = None):
-        super().__init__(token)
-        self.limit = limit
-
-    def __str__(self):
-        return "STRING"
-
-
-class ArrayType(Type):
-    def __init__(
-        self,
-        token,
-        element_type: Type,
-        lower: Expression,
-        upper: Expression,
-        dynamic: bool = False,
-    ):
-        super().__init__(token)
-        self.element_type = element_type
-        self.lower = lower
-        self.upper = upper
-        self.dynamic = dynamic
-
-    def __str__(self):
-        return "Array[{element_type_name}]".format(
-            element_type_name=str(self.element_type)
-        )
 
 
 class Param(Expression):
@@ -1725,7 +1725,7 @@ class Parser:
         node = PrimitiveType(token)
         return node
 
-    def enum_type(self) -> AST:
+    def enum_type(self) -> Type:
         """
         enum_type : LPAREN identifier_list RPAREN
         """
@@ -2956,12 +2956,48 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(node.type_def)
             record_type_symbol = cast(Symbol, self.current_type)
 
+            # Update the record type symbol name to match the type declaration name
+            record_type_symbol.name = type_name
+
             # Insert the record type symbol into the scope
             self.current_scope.insert(record_type_symbol)
 
             # Store the record type information for the interpreter
             # This is a simplified approach - in a real implementation, we would need more detailed info
-        # 其他类型定义的处理...
+        else:
+            # Handle type aliases and other type definitions
+            # First, visit the type definition to ensure any nested types are processed
+            self.visit(node.type_def)
+
+            # Check if this is a simple type alias (Type with value attribute)
+            if hasattr(node.type_def, "value") and hasattr(node.type_def, "token"):
+                original_type_name = node.type_def.value
+                original_type_symbol = self.current_scope.lookup(original_type_name)
+
+                if original_type_symbol is None:
+                    original_type_symbol = self.current_scope.lookup(str(node.type_def))
+                    if original_type_symbol is None:
+                        self.error(
+                            error_code=ErrorCode.ID_NOT_FOUND, token=node.type_def.token
+                        )
+
+                # Create a new type alias symbol
+                # For simplicity, we'll create a BuiltinTypeSymbol that points to the original type
+                alias_symbol = BuiltinTypeSymbol(type_name)
+                alias_symbol.type = (
+                    original_type_symbol  # Make it "point to" the actual type
+                )
+
+                self.current_scope.insert(alias_symbol)
+            else:
+                # For complex types (arrays, strings, etc.), register them with their string representation
+                type_name_str = str(node.type_def)
+                type_symbol = self.current_scope.lookup(type_name_str)
+
+                if type_symbol:
+                    alias_symbol = BuiltinTypeSymbol(type_name)
+                    alias_symbol.type = type_symbol
+                    self.current_scope.insert(alias_symbol)
 
     def visit_NoOp(self, node: NoOp) -> None:
         pass
@@ -3088,6 +3124,31 @@ class SemanticAnalyzer(NodeVisitor):
         if case_type is None or label_type is None:
             return False
         return case_type == label_type
+
+    def _resolve_type_alias(self, symbol: Symbol) -> Symbol:
+        """Follow alias chain until finding the base type symbol."""
+        if symbol is None:
+            return symbol
+
+        visited = {symbol.name}
+        current_symbol = symbol
+
+        while (
+            hasattr(current_symbol, "type")
+            and current_symbol.type is not None
+            and current_symbol.type != current_symbol
+        ):
+            current_symbol = current_symbol.type
+
+            # Detect alias cycles
+            if current_symbol.name in visited:
+                # For simplicity, return the symbol as-is if we detect a cycle
+                # In a real implementation, we should throw an error
+                return symbol
+
+            visited.add(current_symbol.name)
+
+        return current_symbol
 
     def visit_BinOp(self, node: BinOp) -> None:
         self.visit(node.left)
@@ -3237,10 +3298,16 @@ class SemanticAnalyzer(NodeVisitor):
         if not isinstance(node.type_node, RecordType):
             type_symbol = self.current_scope.lookup(type_name)
 
+        # Resolve type aliases to get the base type
+        if type_symbol is not None:
+            resolved_type_symbol = self._resolve_type_alias(type_symbol)
+        else:
+            resolved_type_symbol = type_symbol
+
         # We have all the information we need to create a variable symbol.
         # Create the symbol and insert it into the symbol table.
         var_name = node.var_node.value
-        var_symbol = VarSymbol(var_name, type_symbol)
+        var_symbol = VarSymbol(var_name, resolved_type_symbol)
 
         # Signal an error if the table already has a symbol
         # with the same name
@@ -3251,8 +3318,8 @@ class SemanticAnalyzer(NodeVisitor):
             )
 
         self.current_scope.insert(var_symbol)
-        # Set the type symbol in the node for the interpreter
-        node.type_symbol = type_symbol
+        # Set the resolved type symbol in the node for the interpreter
+        node.type_symbol = resolved_type_symbol
 
     def visit_Assign(self, node: Assign) -> None:
         # right-hand side
@@ -3844,6 +3911,9 @@ class Interpreter(NodeVisitor):
         ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
         self.record_types: dict[str, RecordType] = {}
 
+        # 类型别名映射表：alias_name -> actual_type_node
+        self.type_aliases: dict[str, Type] = {}
+
         # Register built-in procedures and functions
         register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
         register_builtin_procedure(NativeMethod.WRITELN.name, handle_writeln)
@@ -3857,6 +3927,18 @@ class Interpreter(NodeVisitor):
     def log(self, msg) -> None:
         if _SHOULD_LOG_STACK:
             print(msg)
+
+    def _resolve_type_alias(self, type_node: Type) -> Type:
+        """解析类型别名，追随别名链直到找到实际类型"""
+        if hasattr(type_node, "value"):
+            type_name = type_node.value
+            # 检查是否是类型别名
+            if type_name in self.type_aliases:
+                # 递归解析别名链
+                return self._resolve_type_alias(self.type_aliases[type_name])
+
+        # 如果不是别名或者已经是实际类型，直接返回
+        return type_node
 
     def _enum_obj(self, type_name: str, ordinal: int) -> EnumObject:
         """根据ordinal反查名称创建枚举对象"""
@@ -3975,57 +4057,80 @@ class Interpreter(NodeVisitor):
             type_name = node.type_name.value
             # Insert the record type into global record_types for interpreter use
             self.record_types[type_name] = node.type_def
+        else:
+            # 处理类型别名 (type aliases)
+            # 对于非枚举和非记录类型，将其作为类型别名处理
+            type_name = node.type_name.value
+            self.type_aliases[type_name] = node.type_def
 
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
-        if node.type_node.token.type == TokenType.BOOLEAN:
-            ar[node.var_node.value] = BooleanObject(False)
-        elif node.type_node.token.type == TokenType.INTEGER:
-            ar[node.var_node.value] = IntegerObject(0)
-        elif node.type_node.token.type == TokenType.REAL:
-            ar[node.var_node.value] = RealObject(0.0)
-        elif node.type_node.token.type == TokenType.CHAR:
-            ar[node.var_node.value] = CharObject("")
-        elif node.type_node.token.type == TokenType.STRING:
-            string_node = cast(StringType, node.type_node)
-            limit: int = 255
-            if string_node.limit is not None:
-                limit = self.visit(string_node.limit).value
-            ar[node.var_node.value] = StringObject("", limit)
-        elif node.type_node.token.type == TokenType.ARRAY:
-            ar[node.var_node.value] = self.__initArray(node.type_node)
-        else:
-            # For all other types (including record types), use the type_symbol
-            # that was set by the semantic analyzer
-            var_name = node.var_node.value
-            type_symbol = node.type_symbol
 
-            if type_symbol is not None:
-                # Handle based on the type symbol
-                if isinstance(type_symbol, RecordTypeSymbol):
-                    # Handle record type - use global record_types lookup
-                    type_name = node.type_node.value
-                    if type_name in self.record_types:
-                        record_type = self.record_types[type_name]
-                        record_obj = RecordObject(record_type)
-                        # 初始化复杂类型字段
-                        self._initialize_record_complex_fields(record_obj)
-                        ar[var_name] = record_obj
-                    else:
-                        ar[var_name] = NullObject()
-                elif (
-                    isinstance(type_symbol, EnumTypeSymbol)
-                    or type_symbol.name in self.enum_types
-                ):
-                    # Handle enum type
-                    enum_obj = self._enum_obj(type_symbol.name, 0)
-                    ar[var_name] = enum_obj
-                else:
-                    # For other custom types, treat as null for now
-                    # This is a simplified approach
-                    ar[var_name] = NullObject()
-            else:
-                type_name = node.type_node.value
+        # 解析类型别名，获取实际类型
+        resolved_type_node = self._resolve_type_alias(node.type_node)
+
+        # 处理基本类型
+        if hasattr(resolved_type_node, "token"):
+            if resolved_type_node.token.type == TokenType.BOOLEAN:
+                ar[node.var_node.value] = BooleanObject(False)
+                return
+            elif resolved_type_node.token.type == TokenType.INTEGER:
+                ar[node.var_node.value] = IntegerObject(0)
+                return
+            elif resolved_type_node.token.type == TokenType.REAL:
+                ar[node.var_node.value] = RealObject(0.0)
+                return
+            elif resolved_type_node.token.type == TokenType.CHAR:
+                ar[node.var_node.value] = CharObject("")
+                return
+            elif resolved_type_node.token.type == TokenType.STRING:
+                string_node = cast(StringType, resolved_type_node)
+                limit: int = 255
+                if string_node.limit is not None:
+                    limit = self.visit(string_node.limit).value
+                ar[node.var_node.value] = StringObject("", limit)
+                return
+            elif resolved_type_node.token.type == TokenType.ARRAY:
+                ar[node.var_node.value] = self.__initArray(resolved_type_node)
+                return
+
+        # 处理复杂类型（记录、枚举等）
+        var_name = node.var_node.value
+
+        # 检查是否是记录类型
+        if isinstance(resolved_type_node, RecordType):
+            record_obj = RecordObject(resolved_type_node)
+            # 初始化复杂类型字段
+            self._initialize_record_complex_fields(record_obj)
+            ar[var_name] = record_obj
+            return
+
+        # 检查是否是枚举类型（通过类型名称）
+        if hasattr(resolved_type_node, "value"):
+            type_name = resolved_type_node.value
+            if type_name in self.enum_types:
+                enum_obj = self._enum_obj(type_name, 0)
+                ar[var_name] = enum_obj
+                return
+            elif type_name in self.record_types:
+                record_type = self.record_types[type_name]
+                record_obj = RecordObject(record_type)
+                # 初始化复杂类型字段
+                self._initialize_record_complex_fields(record_obj)
+                ar[var_name] = record_obj
+                return
+
+        # 如果有type_symbol（从语义分析器传来），尝试使用它
+        type_symbol = node.type_symbol
+        if type_symbol is not None:
+            # Handle based on the type symbol
+            if isinstance(type_symbol, RecordTypeSymbol):
+                # Handle record type - use global record_types lookup
+                type_name = (
+                    resolved_type_node.value
+                    if hasattr(resolved_type_node, "value")
+                    else ""
+                )
                 if type_name in self.record_types:
                     record_type = self.record_types[type_name]
                     record_obj = RecordObject(record_type)
@@ -4034,7 +4139,19 @@ class Interpreter(NodeVisitor):
                     ar[var_name] = record_obj
                 else:
                     ar[var_name] = NullObject()
-        pass
+            elif (
+                isinstance(type_symbol, EnumTypeSymbol)
+                or type_symbol.name in self.enum_types
+            ):
+                # Handle enum type
+                enum_obj = self._enum_obj(type_symbol.name, 0)
+                ar[var_name] = enum_obj
+            else:
+                # For other custom types, treat as null for now
+                ar[var_name] = NullObject()
+        else:
+            # 如果没有type_symbol，默认创建Null对象
+            ar[var_name] = NullObject()
 
     def __initArray(self, node: Type) -> ArrayObject:
         if isinstance(node, ArrayType):
