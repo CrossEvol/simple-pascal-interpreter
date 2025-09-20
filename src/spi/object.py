@@ -408,6 +408,43 @@ class EnumObject(Object):
         return NotImplemented
 
 
+class ProcedureObject(Object):
+    """Runtime object representing a user-defined procedure"""
+
+    def __init__(self, name: str, formal_params: list, block_ast):
+        super().__init__()
+        self.name = name
+        self.formal_params = formal_params  # List of Param AST nodes
+        self.block_ast = block_ast
+
+    def get_param_names(self) -> list[str]:
+        """Get list of formal parameter names"""
+        return [param.var_node.value for param in self.formal_params]
+
+    def get_param_count(self) -> int:
+        """Get number of formal parameters"""
+        return len(self.formal_params)
+
+
+class FunctionObject(Object):
+    """Runtime object representing a user-defined function"""
+
+    def __init__(self, name: str, formal_params: list, return_type, block_ast):
+        super().__init__()
+        self.name = name
+        self.formal_params = formal_params  # List of Param AST nodes
+        self.return_type = return_type
+        self.block_ast = block_ast
+
+    def get_param_names(self) -> list[str]:
+        """Get list of formal parameter names"""
+        return [param.var_node.value for param in self.formal_params]
+
+    def get_param_count(self) -> int:
+        """Get number of formal parameters"""
+        return len(self.formal_params)
+
+
 class RecordObject(Object):
     """表示记录对象，只需要record_type参数初始化"""
 

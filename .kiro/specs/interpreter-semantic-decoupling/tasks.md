@@ -1,6 +1,11 @@
 # Implementation Plan
 
-- [ ] 1. Create ProcedureObject and FunctionObject classes in object.py
+- [x] 1. Create ProcedureObject and FunctionObject classes in object.py
+
+
+
+
+
   - Add ProcedureObject class with name, formal_params, and block_ast attributes
   - Add FunctionObject class with name, formal_params, return_type, and block_ast attributes
   - Implement helper methods for parameter access (get_param_names, get_param_count)
