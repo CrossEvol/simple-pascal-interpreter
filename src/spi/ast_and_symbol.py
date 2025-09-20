@@ -96,13 +96,10 @@ class BinOp(Expression):
         self.right = right
 
 
-type Number = int | float
-
-
 class Num(Expression):
     def __init__(self, token: Token) -> None:
         self.token = token
-        self.value: Number = token.value
+        self.value = token.value
 
 
 class Bool(Expression):

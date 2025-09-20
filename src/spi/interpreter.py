@@ -1271,55 +1271,6 @@ class Interpreter(NodeVisitor):
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
         pass
 
-    def visit_IfStatement(self, node: IfStatement) -> None:
-        flag = self.visit(node.condition).to_bool()
-
-        if flag:
-            self.visit(node.then_branch)
-            return
-        else:
-            for branch in node.else_if_branches:
-                sub_flag = self.visit(branch.condition).to_bool()
-                if sub_flag:
-                    self.visit(branch.then_branch)
-                    return
-
-        if node.else_branch is not None:
-            self.visit(node.else_branch)
-
-    def visit_CaseStatement(self, node: CaseStatement) -> None:
-        # 计算case表达式的值
-        case_value_obj = self.visit(node.case_expr)
-        case_value = (
-            case_value_obj.value if hasattr(case_value_obj, "value") else case_value_obj
-        )
-
-        # 查找匹配的case项
-        matched = False
-        for case_item in node.case_items:
-            for label in case_item.labels:
-                label_value = label.value
-                # 检查是否匹配
-                # 对于枚举值，我们需要比较名称而不是值
-                if isinstance(case_value_obj, EnumObject):
-                    # 如果case表达式是枚举对象，标签值应该是枚举值的名称
-                    if label_value == case_value_obj.name:
-                        # 执行匹配的语句
-                        self.visit(case_item.statement)
-                        matched = True
-                        break
-                elif case_value == label_value:
-                    # 执行匹配的语句
-                    self.visit(case_item.statement)
-                    matched = True
-                    break
-            if matched:
-                break
-
-        # 如果没有匹配项且有else语句，则执行else语句
-        if not matched and node.else_stmt:
-            self.visit(node.else_stmt)
-
     def visit_FunctionCall(self, node: FunctionCall) -> Object:
         func_name = node.func_name
         func_symbol = node.func_symbol
@@ -1392,6 +1343,56 @@ class Interpreter(NodeVisitor):
             self.call_stack.pop()
 
             return result if result is not None else NullObject()
+            
+    def visit_IfStatement(self, node: IfStatement) -> None:
+        flag = self.visit(node.condition).to_bool()
+
+        if flag:
+            self.visit(node.then_branch)
+            return
+        else:
+            for branch in node.else_if_branches:
+                sub_flag = self.visit(branch.condition).to_bool()
+                if sub_flag:
+                    self.visit(branch.then_branch)
+                    return
+
+        if node.else_branch is not None:
+            self.visit(node.else_branch)
+
+    def visit_CaseStatement(self, node: CaseStatement) -> None:
+        # 计算case表达式的值
+        case_value_obj = self.visit(node.case_expr)
+        case_value = (
+            case_value_obj.value if hasattr(case_value_obj, "value") else case_value_obj
+        )
+
+        # 查找匹配的case项
+        matched = False
+        for case_item in node.case_items:
+            for label in case_item.labels:
+                label_value = label.value
+                # 检查是否匹配
+                # 对于枚举值，我们需要比较名称而不是值
+                if isinstance(case_value_obj, EnumObject):
+                    # 如果case表达式是枚举对象，标签值应该是枚举值的名称
+                    if label_value == case_value_obj.name:
+                        # 执行匹配的语句
+                        self.visit(case_item.statement)
+                        matched = True
+                        break
+                elif case_value == label_value:
+                    # 执行匹配的语句
+                    self.visit(case_item.statement)
+                    matched = True
+                    break
+            if matched:
+                break
+
+        # 如果没有匹配项且有else语句，则执行else语句
+        if not matched and node.else_stmt:
+            self.visit(node.else_stmt)
+
 
     def interpret(self):
         tree = self.tree

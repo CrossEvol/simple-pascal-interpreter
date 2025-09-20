@@ -29,14 +29,14 @@ main:
 	fi
 	@$(UV_PYTHON) main.py $(file) --stack --scope
 
-# 运行解释器
-.PHONY: interpret
-interpret:
-	@if [ -z "$(FILE)" ]; then \
-		echo "Error: Please specify a Pascal file with FILE=<filename>"; \
+# 简单运行解释器
+.PHONY: run
+run:
+	@if [ -z "$(file)" ]; then \
+		echo "Error: Please specify a Pascal file with file=<filename>"; \
 		exit 1; \
 	fi
-	@$(PYTHON) spi.py $(FILE)
+	@$(PYTHON) main.py $(file)
 
 
 # 运行测试
