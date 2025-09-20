@@ -4053,14 +4053,16 @@ class Interpreter(NodeVisitor):
 
         # 其他情况返回空对象
         return NullObject()
-    
-    def _post_initialize_array_elements(self, array_obj: ArrayObject, element_type_node: Type) -> None:
+
+    def _post_initialize_array_elements(
+        self, array_obj: ArrayObject, element_type_node: Type
+    ) -> None:
         """为包含复杂类型元素的数组后初始化元素"""
         # 为静态数组的每个位置创建适当的对象，替换NullObject
         for index in range(array_obj.lower_bound, array_obj.upper_bound + 1):
             if array_obj.element_type == ElementType.RECORD:
                 # 为记录类型创建对象
-                if hasattr(element_type_node, 'value'):
+                if hasattr(element_type_node, "value"):
                     type_name = element_type_node.value
                     if type_name in self.record_types:
                         record_type = self.record_types[type_name]
@@ -4069,7 +4071,7 @@ class Interpreter(NodeVisitor):
                         array_obj.value[index] = record_obj
             elif array_obj.element_type == ElementType.CUSTOM:
                 # 为其他自定义类型创建对象
-                if hasattr(element_type_node, 'value'):
+                if hasattr(element_type_node, "value"):
                     type_name = element_type_node.value
                     if type_name in self.enum_types:
                         # 枚举类型，使用第一个枚举值
@@ -4078,7 +4080,9 @@ class Interpreter(NodeVisitor):
                     elif type_name in self.type_aliases:
                         # 处理类型别名
                         actual_type = self.type_aliases[type_name]
-                        complex_obj = self._create_complex_object_from_type_node(actual_type)
+                        complex_obj = self._create_complex_object_from_type_node(
+                            actual_type
+                        )
                         array_obj.value[index] = complex_obj
 
     def visit_Program(self, node: Program) -> None:
@@ -4939,7 +4943,7 @@ class Interpreter(NodeVisitor):
         return self.visit(tree)
 
 
-def main() -> None:
+def runSpi() -> None:
     arg_parser = argparse.ArgumentParser(description="SPI - Simple Pascal Interpreter")
     arg_parser.add_argument("inputfile", help="Pascal source file")
     arg_parser.add_argument(
@@ -4977,7 +4981,3 @@ def main() -> None:
 
     interpreter = Interpreter(tree)
     interpreter.interpret()
-
-
-if __name__ == "__main__":
-    main()

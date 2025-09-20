@@ -518,7 +518,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.value, "NonExistentType")
 
 
-class TestCallStack:
+class MockCallStack:
     def __init__(self):
         self._records = []
 
@@ -545,7 +545,7 @@ class InterpreterTestCase(unittest.TestCase):
         semantic_analyzer.visit(tree)
 
         interpreter = Interpreter(tree)
-        interpreter.call_stack = TestCallStack()
+        interpreter.call_stack = MockCallStack()
         return interpreter
 
     def test_integer_arithmetic_expressions(self):

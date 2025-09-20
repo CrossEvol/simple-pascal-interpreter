@@ -15,16 +15,19 @@ help:
 
 # 变量定义
 PYTHON := python
+UV_PYTHON := uv run python 
+UV_PYTEST := $(UV_PYTHON) -m pytest
 DOT := dot
 
+
 # 运行解释器，带堆栈和作用域日志
-.PHONY: run
-run:
-	@if [ -z "$(FILE)" ]; then \
-		echo "Error: Please specify a Pascal file with FILE=<filename>"; \
+.PHONY: main
+main:
+	@if [ -z "$(file)" ]; then \
+		echo "Error: Please specify a Pascal file with file=<filename>"; \
 		exit 1; \
 	fi
-	@$(PYTHON) spi.py $(FILE) --stack --scope
+	@$(UV_PYTHON) main.py $(file) --stack --scope
 
 # 运行解释器
 .PHONY: interpret
@@ -35,15 +38,32 @@ interpret:
 	fi
 	@$(PYTHON) spi.py $(FILE)
 
-# 运行主程序
-.PHONY: main
-main:
-	@$(PYTHON) main.py
 
 # 运行测试
 .PHONY: test
-test:
-	@$(PYTHON) test_interpreter.py
+test: 
+	$(UV_PYTEST) tests/test_interpreter.py -v
+
+# Run only lexer tests
+.PHONY: test_lexer 
+test_lexer:
+	$(UV_PYTEST) tests/test_interpreter.py::LexerTestCase -v
+
+# Run only lexer tests
+.PHONY: test_parser
+test_parser:
+	$(UV_PYTEST) tests/test_interpreter.py::ParserTestCase -v
+
+# Run only lexer tests
+.PHONY: test_semantic
+test_semantic:
+	$(UV_PYTEST) tests/test_interpreter.py::SemanticAnalyzerTestCase -v
+
+# Run only interpreter tests  
+.PHONY: test_interpreter
+test_interpreter:
+	$(UV_PYTEST) tests/test_interpreter.py::InterpreterTestCase -v
+
 
 # 生成AST可视化
 .PHONY: dot
@@ -83,3 +103,4 @@ example-function:
 .PHONY: example-procedure
 example-procedure:
 	@$(PYTHON) spi.py pas/procedure.pas
+
