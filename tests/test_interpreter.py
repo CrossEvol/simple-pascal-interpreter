@@ -35,19 +35,20 @@ class MockCallStack:
         return self._records[-1]
 
 
-class InterpreterTestCase(unittest.TestCase):
-    def makeInterpreter(self, text):
-        lexer = Lexer(text)
-        parser = Parser(lexer)
-        tree = parser.parse()
+def makeInterpreter(text):
+    lexer = Lexer(text)
+    parser = Parser(lexer)
+    tree = parser.parse()
 
-        semantic_analyzer = SemanticAnalyzer()
-        semantic_analyzer.visit(tree)
+    semantic_analyzer = SemanticAnalyzer()
+    semantic_analyzer.visit(tree)
 
-        interpreter = Interpreter(tree)
-        interpreter.call_stack = MockCallStack()
-        return interpreter
+    interpreter = Interpreter(tree)
+    interpreter.call_stack = MockCallStack()
+    return interpreter
 
+
+class InterpreterCalculusTestCase(unittest.TestCase):
     def test_integer_arithmetic_expressions(self):
         for expr, result in (
             ("3", 3),
@@ -65,7 +66,7 @@ class InterpreterTestCase(unittest.TestCase):
             ("20 MOD 5", 0),
             ("10 MOD 3", 1),
         ):
-            interpreter = self.makeInterpreter(
+            interpreter = makeInterpreter(
                 """PROGRAM Test;
                    VAR
                        a : INTEGER;
@@ -81,7 +82,7 @@ class InterpreterTestCase(unittest.TestCase):
 
     def test_mod_operator_with_floats(self):
         """Test that MOD operator works with floats (converted to integers)"""
-        interpreter = self.makeInterpreter(
+        interpreter = makeInterpreter(
             """PROGRAM Test;
                VAR
                    a : INTEGER;
@@ -100,7 +101,7 @@ class InterpreterTestCase(unittest.TestCase):
             ("2.14 + 7 * 4", 30.14),
             ("7.14 - 8 / 4", 5.14),
         ):
-            interpreter = self.makeInterpreter(
+            interpreter = makeInterpreter(
                 """PROGRAM Test;
                    VAR
                        a : REAL;
@@ -113,82 +114,6 @@ class InterpreterTestCase(unittest.TestCase):
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
             self.assertEqual(ar["a"].value, result)
-
-    def test_boolean_expressions(self):
-        for expr, result in (
-            ("true", True),
-            ("false", False),
-            ("true and false", False),
-            ("true and true", True),
-            ("true or false", True),
-            ("not true", False),
-            ("not false", True),
-            ("not true and not true", False),
-            ("1 < 2", True),
-            ("1 > 2", False),
-            ("1 = 2", False),
-            ("1 <> 2", True),
-            ("1 <= 2", True),
-            ("1 >= 2", False),
-            ("1 < 2 and 2 < 3", True),
-            ("1 < 2 and 2 > 3", False),
-            ("1 < 2 or 2 > 3", True),
-        ):
-            interpreter = self.makeInterpreter(
-                """PROGRAM Test;
-                   VAR
-                       flag : BOOLEAN;
-                   BEGIN
-                       flag := %s
-                   END.
-                """
-                % expr
-            )
-            interpreter.interpret()
-            ar = interpreter.call_stack.peek()
-            self.assertEqual(ar["flag"].value, result)
-
-    def test_default_value_for_type(self):
-        text = """\
-program DefaultValue;
-var
-  num: Integer;
-  bool: Boolean;
-begin {Main}
-end. {Main}
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-        ar = interpreter.call_stack.peek()
-
-        self.assertEqual(ar["num"].value, 0)
-        self.assertEqual(ar["bool"].value, False)
-        self.assertEqual(ar.nesting_level, 1)
-
-    def test_procedure_call(self):
-        text = """\
-program Main;
-
-procedure Alpha(a : integer; b : integer);
-var x : integer;
-begin
-   x := (a + b ) * 2;
-end;
-
-begin { Main }
-
-   Alpha(3 + 5, 7);
-
-end.  { Main }
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-        ar = interpreter.call_stack.peek()
-
-        self.assertEqual(ar["a"].value, 8)
-        self.assertEqual(ar["b"].value, 7)
-        self.assertEqual(ar["x"].value, 30)
-        self.assertEqual(ar.nesting_level, 2)
 
     def test_comparison_calculus(self):
         text = """\
@@ -207,7 +132,7 @@ begin {Main}
   f6:= a >= b; {FALSE}
 end. {Main}
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -235,7 +160,7 @@ begin {Main}
   f4 := not b; {TRUE}
 end. {Main}
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -247,51 +172,8 @@ end. {Main}
         self.assertEqual(ar["f4"].value, True)
         self.assertEqual(ar.nesting_level, 1)
 
-    def test_function_call(self):
-        text = """\
-program SimpleFunction;
-var
-  sum: Integer;
-function Add(a, b: Integer): Integer;
-begin {ADD}
-  Add := a + b;
-end; {ADD}
 
-begin {Main}
-  sum := Add(5, 3);
-end. {Main}
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-        ar = interpreter.call_stack.peek()
-
-        self.assertEqual(ar["sum"].value, 8)
-        self.assertEqual(ar.nesting_level, 2)
-
-    def test_inner_ref_outer_var(self):
-        text = """\
-program Main;
-var x : integer;
-procedure Alpha();
-   procedure Beta();
-   begin
-      x := x +  20;
-   end;
-begin
-   x := 10;
-   Beta();      { procedure call }
-end;
-begin { Main }
-   Alpha();  { procedure call }
-end.  { Main }
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-        ar = interpreter.call_stack.peek()
-
-        self.assertEqual(ar["x"].value, 30)
-        self.assertEqual(ar.nesting_level, 3)
-
+class InterpreterNativeMethodTestCase(unittest.TestCase):
     def test_write_and_writeln(self):
         text = """\
 program HackOutput;
@@ -314,7 +196,7 @@ begin {Main}
   
 end. {Main}
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -339,7 +221,7 @@ begin {Main}
   a := sayHello(2);     { Call the function 'sayHello' with argument 7 }
 end. {Main}
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -361,7 +243,7 @@ begin
     setLength(arr,5);
 end.
     """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -382,13 +264,76 @@ begin
   i := Length(arr);
 end.
     """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["i"].value, 5)
         self.assertEqual(ar.nesting_level, 2)
 
+    def test_inc_procedure(self):
+        text = """\
+PROGRAM TestInc;
+
+VAR
+    i: INTEGER;
+
+BEGIN
+    i := 1;
+    Inc(i);
+END.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 2)
+
+    def test_dec_procedure(self):
+        text = """\
+PROGRAM TestDec;
+
+VAR
+    i: INTEGER;
+
+BEGIN
+    i := 10;
+    Dec(i);
+END.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 9)
+
+    def test_ord_chr_functions(self):
+        text = """\
+PROGRAM TestOrdChr;
+
+VAR
+    c1, c2: CHAR;
+    n1, n2: INTEGER;
+
+BEGIN
+    c1 := 'Z';
+    n1 := Ord(c1);
+    
+    n2 := 66;
+    c2 := Chr(n2);
+END.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["c1"].value, "Z")
+        self.assertEqual(ar["n1"].value, 90)  # ASCII code for 'Z'
+        self.assertEqual(ar["n2"].value, 66)
+        self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
+
+
+class InterpreterConditionalTestCase(unittest.TestCase):
     def test_if_then(self):
         for expr, result in ((10, -1), (21, 1)):
             text = (
@@ -405,7 +350,7 @@ end.
         """
                 % expr
             )
-            interpreter = self.makeInterpreter(text)
+            interpreter = makeInterpreter(text)
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
 
@@ -430,7 +375,7 @@ end.
     """
                 % expr
             )
-            interpreter = self.makeInterpreter(text)
+            interpreter = makeInterpreter(text)
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
 
@@ -460,7 +405,7 @@ begin
     flag := false;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -494,7 +439,7 @@ end.
     """
                 % flag
             )
-            interpreter = self.makeInterpreter(text)
+            interpreter = makeInterpreter(text)
             interpreter.interpret()
             ar = interpreter.call_stack.peek()
 
@@ -503,245 +448,126 @@ end.
             self.assertEqual(ar["b"].value, b)
             self.assertEqual(ar.nesting_level, 1)
 
-    def test_while_loop(self):
+    def test_case_integer_statement(self):
         text = """\
-program whileLoop;
+program TestCaseInteger;
 var
-   a: integer;
-
+  i, result: integer;
 begin
-   a := 10;
-   while  a < 20  do
-   begin
-      {writeln('value of a: ', a);}
-      a := a + 1;
-   end;
+  i := 2;
+  case i of
+    1: result := 10;
+    2: result := 20;
+    3: result := 30;
+  else
+    result := 0;
+  end;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"].value, 20)
-        self.assertEqual(ar.nesting_level, 1)
+        self.assertEqual(ar["i"].value, 2)
+        self.assertEqual(ar["result"].value, 20)
 
-    def test_for_loop(self):
+    def test_case_char_statement(self):
         text = """\
-program forLoop;
+program TestCaseChar;
 var
-   a: integer;
-   b: integer;
-   sum : integer;
-
+  c: char;
+  result: integer;
 begin
-   b := 10;
-   for a := 1 to b do
-   begin
-      sum := sum + a;
-   end;
-   {writeln(a);}
-   {writeln(b);}
-   {writeln(sum);}
+  c := 'B';
+  case c of
+    'A': result := 1;
+    'B': result := 2;
+    'C': result := 3;
+  else
+    result := 0;
+  end;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"].value, 10)
-        self.assertEqual(ar["sum"].value, 55)
-        self.assertEqual(ar.nesting_level, 1)
+        self.assertEqual(ar["c"].value, "B")
+        self.assertEqual(ar["result"].value, 2)
 
-    def test_array(self):
+    def test_case_boolean_statement(self):
         text = """\
-    program exArrays;
-    var
-       n: array [1..10] of integer;
-       i, j, sum: integer;
-
-    begin
-       for i := 1 to 10 do
-           n[ i ] := i + 100;
-       for j := 1 to 10 do
-           sum := sum + n[j];
-    end.
-    """
-        interpreter = self.makeInterpreter(text)
+program TestCaseBoolean;
+var
+  b: boolean;
+  result: integer;
+begin
+  b := false;
+  case b of
+    true: result := 1;
+    false: result := 2;
+  end;
+end.
+"""
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"].value, 10)
-        self.assertEqual(ar["j"].value, 10)
-        self.assertEqual(ar["sum"].value, 1055)
-        for i in range(1, 10):
-            self.assertEqual(ar["n"].value[i].value, 100 + i)
-        self.assertEqual(ar.nesting_level, 1)
-
-    def test_array_initialized(self):
-        text = """\
-program exArrays;
-var
-    intArr: array [1..2] of integer;
-    boolArr: array [1..2] of boolean;
-    realArr: array [1..2] of real;
-    negativeArr: array [-1..1] of integer;
-    zeroArr : array of integer;
-    nestArr : array [1..2] of array of integer;
-begin
-end.
-    """
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        for i in range(1, 2):
-            self.assertEqual(ar["intArr"].value[i].value, 0)
-            self.assertEqual(ar["boolArr"].value[i].value, False)
-            self.assertEqual(ar["realArr"].value[i].value, 0.0)
-        self.assertEqual(ar.nesting_level, 1)
-
-    def test_array_range_invalid(self):
-        text = """\
-program ArranRange;
-var
-    validArr: array [1..2] of integer;
-    invalidArr : array [2 .. -2] of integer;
-begin
-end.
-    """
-        with self.assertRaises(InterpreterError) as cm:
-            interpreter = self.makeInterpreter(text)
-            interpreter.interpret()
-
-            ar = interpreter.call_stack.peek()
-            self.assertEqual(ar.nesting_level, 1)
-        self.assertIsInstance(cm.exception, InterpreterError)
-
-    def test_static_array_modify_length(self):
-        text = """\
-program ArranRange;
-var
-    arr: array [1..2] of integer;
-begin
-    setLength(arr,5);
-end.
-    """
-        with self.assertRaises(InterpreterError) as cm:
-            interpreter = self.makeInterpreter(text)
-            interpreter.interpret()
-
-            ar = interpreter.call_stack.peek()
-            self.assertEqual(ar.nesting_level, 1)
-        self.assertIsInstance(cm.exception, InterpreterError)
-
-    def test_array_out_of_range(self):
-        text = """\
-program ArranRange;
-var
-    intArr: array [1..2] of integer;
-    boolArr: array [1..2] of boolean;
-    realArr: array [1..2] of real;
-    nestArr : array [1..2] of array of integer;
-    a , b , c, d : integer;
-begin
-    a := intArr[100];
-    b := boolArr[100];
-    c := realArr[100];
-    d := nestArr[100];
-end.
-    """
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"].value, 0)
         self.assertEqual(ar["b"].value, False)
-        self.assertEqual(ar["c"].value, 0.0)
-        self.assertEqual(ar["d"].value, {})
-        self.assertEqual(ar.nesting_level, 1)
+        self.assertEqual(ar["result"].value, 2)
 
-    def test_string(self):
+
+class InterpreterBasicTypeTestCase(unittest.TestCase):
+    def test_boolean_expressions(self):
+        for expr, result in (
+            ("true", True),
+            ("false", False),
+            ("true and false", False),
+            ("true and true", True),
+            ("true or false", True),
+            ("not true", False),
+            ("not false", True),
+            ("not true and not true", False),
+            ("1 < 2", True),
+            ("1 > 2", False),
+            ("1 = 2", False),
+            ("1 <> 2", True),
+            ("1 <= 2", True),
+            ("1 >= 2", False),
+            ("1 < 2 and 2 < 3", True),
+            ("1 < 2 and 2 > 3", False),
+            ("1 < 2 or 2 > 3", True),
+        ):
+            interpreter = makeInterpreter(
+                """PROGRAM Test;
+                   VAR
+                       flag : BOOLEAN;
+                   BEGIN
+                       flag := %s
+                   END.
+                """
+                % expr
+            )
+            interpreter.interpret()
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar["flag"].value, result)
+
+    def test_default_value_for_type(self):
         text = """\
-program StringExample;
+program DefaultValue;
 var
-  str1: string[7]; {Declare a string wth a maximum size}
-  str2 : string; {Declare a string without a maximum size}
-  str3 : string; {will be used for setLength()}
-  concat1 : string; {will be used for s1 + s2}
-  concat2 : string[7]; {will be used for s1 + s2}
-  a, b : string; {will use subscript to extra char from string}
-  l1 , l2 , l3: integer;
-
-begin
-  str1 := 'abcdefghijklmnopqrstuvwxyz'; { will warn in sematic analyzer }
-  str2 := 'abcdefghijklmnopqrstuvwxyz';
-  str3 := str2;
-
-  l1 := length(str1);
-  l2 := length(str2);
-
-  setLength(str3,14);
-  l3 := length(str3);
-  a := str3[1];
-  b := str3[36];
-  concat1 := str1 + '123' + '456' + str2[1];
-  concat2 := str1 + '123' + '456' + str2[1]; { will warn in interpreter }
-end.
-    """
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["str1"].value, "abcdefg")
-        self.assertEqual(ar["str2"].value, "abcdefghijklmnopqrstuvwxyz")
-        self.assertEqual(ar["str3"].value, "abcdefghijklmn")
-        self.assertEqual(ar["l1"].value, 7)
-        self.assertEqual(ar["l2"].value, 26)
-        self.assertEqual(ar["l3"].value, 14)
-        self.assertEqual(ar["a"].value, "a")
-        self.assertEqual(ar["b"].value, "")
-        self.assertEqual(ar["concat1"].value, "abcdefg123456a")
-        self.assertEqual(ar["concat2"].value, "abcdefg")
-        self.assertEqual(ar.nesting_level, 2)
-
-    def test_program(self):
-        text = """\
-PROGRAM Part12;
-VAR
-   number : INTEGER;
-   a, b   : INTEGER;
-   y      : REAL;
-
-PROCEDURE P1;
-VAR
-   a : REAL;
-   k : INTEGER;
-   PROCEDURE P2;
-   VAR
-      a, z : INTEGER;
-   BEGIN {P2}
-      z := 777;
-   END;  {P2}
-BEGIN {P1}
-
-END;  {P1}
-
-BEGIN {Part12}
-   number := 2;
-   a := number ;
-   b := 10 * a + 10 * number DIV 4;
-   y := 20 / 7 + 3.14
-END.  {Part12}
+  num: Integer;
+  bool: Boolean;
+begin {Main}
+end. {Main}
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
-
         ar = interpreter.call_stack.peek()
-        self.assertEqual(len(ar.members.keys()), 4)
-        self.assertEqual(ar["number"].value, 2)
-        self.assertEqual(ar["a"].value, 2)
-        self.assertEqual(ar["b"].value, 25)
-        self.assertAlmostEqual(ar["y"].value, float(20) / 7 + 3.14)  # 5.9971...
+
+        self.assertEqual(ar["num"].value, 0)
+        self.assertEqual(ar["bool"].value, False)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_null_object(self):
         text = """\
@@ -754,7 +580,7 @@ begin
   b := true;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -772,42 +598,6 @@ end.
 
         # Test that NullObject converts to False in boolean context
         self.assertFalse(result.to_bool())
-
-    def test_inc_procedure(self):
-        text = """\
-PROGRAM TestInc;
-
-VAR
-    i: INTEGER;
-
-BEGIN
-    i := 1;
-    Inc(i);
-END.
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"].value, 2)
-
-    def test_dec_procedure(self):
-        text = """\
-PROGRAM TestDec;
-
-VAR
-    i: INTEGER;
-
-BEGIN
-    i := 10;
-    Dec(i);
-END.
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"].value, 9)
 
     def test_char_type_and_literals(self):
         text = """\
@@ -827,7 +617,7 @@ BEGIN
     result2 := Ord(c3);
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -837,56 +627,6 @@ END.
         self.assertEqual(ar["c4"].value, " ")
         self.assertEqual(ar["result1"].value, 65)
         self.assertEqual(ar["result2"].value, 97)
-
-    def test_ord_chr_functions(self):
-        text = """\
-PROGRAM TestOrdChr;
-
-VAR
-    c1, c2: CHAR;
-    n1, n2: INTEGER;
-
-BEGIN
-    c1 := 'Z';
-    n1 := Ord(c1);
-    
-    n2 := 66;
-    c2 := Chr(n2);
-END.
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["c1"].value, "Z")
-        self.assertEqual(ar["n1"].value, 90)  # ASCII code for 'Z'
-        self.assertEqual(ar["n2"].value, 66)
-        self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
-
-    def test_char_array(self):
-        text = """\
-PROGRAM TestCharArray;
-
-VAR
-    chars: array[1..3] of CHAR;
-    i: INTEGER;
-
-BEGIN
-    chars[1] := 'H';
-    chars[2] := #101;  { 'e' }
-    chars[3] := 'y';
-    
-    i := Ord(chars[2]);
-END.
-"""
-        interpreter = self.makeInterpreter(text)
-        interpreter.interpret()
-
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["chars"].value[1].value, "H")
-        self.assertEqual(ar["chars"].value[2].value, "e")
-        self.assertEqual(ar["chars"].value[3].value, "y")
-        self.assertEqual(ar["i"].value, 101)
 
     def test_char_default_value(self):
         text = """\
@@ -900,7 +640,7 @@ BEGIN
     n := Ord(c);  { Should be 0 for empty char }
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -942,7 +682,7 @@ begin
   
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         try:
             interpreter.interpret()
         except InterpreterError as e:
@@ -963,73 +703,184 @@ end.
         self.assertEqual(ar["f5"].value, True)
         self.assertEqual(ar["f6"].value, False)
 
-    def test_case_integer_statement(self):
+
+class InterpreterComplexTypeTestCase(unittest.TestCase):
+    def test_array(self):
         text = """\
-program TestCaseInteger;
-var
-  i, result: integer;
-begin
-  i := 2;
-  case i of
-    1: result := 10;
-    2: result := 20;
-    3: result := 30;
-  else
-    result := 0;
-  end;
-end.
-"""
-        interpreter = self.makeInterpreter(text)
+    program exArrays;
+    var
+       n: array [1..10] of integer;
+       i, j, sum: integer;
+
+    begin
+       for i := 1 to 10 do
+           n[ i ] := i + 100;
+       for j := 1 to 10 do
+           sum := sum + n[j];
+    end.
+    """
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["i"].value, 2)
-        self.assertEqual(ar["result"].value, 20)
+        self.assertEqual(ar["i"].value, 10)
+        self.assertEqual(ar["j"].value, 10)
+        self.assertEqual(ar["sum"].value, 1055)
+        for i in range(1, 10):
+            self.assertEqual(ar["n"].value[i].value, 100 + i)
+        self.assertEqual(ar.nesting_level, 1)
 
-    def test_case_char_statement(self):
+    def test_array_initialized(self):
         text = """\
-program TestCaseChar;
+program exArrays;
 var
-  c: char;
-  result: integer;
+    intArr: array [1..2] of integer;
+    boolArr: array [1..2] of boolean;
+    realArr: array [1..2] of real;
+    negativeArr: array [-1..1] of integer;
+    zeroArr : array of integer;
+    nestArr : array [1..2] of array of integer;
 begin
-  c := 'B';
-  case c of
-    'A': result := 1;
-    'B': result := 2;
-    'C': result := 3;
-  else
-    result := 0;
-  end;
 end.
-"""
-        interpreter = self.makeInterpreter(text)
+    """
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["c"].value, "B")
-        self.assertEqual(ar["result"].value, 2)
+        for i in range(1, 2):
+            self.assertEqual(ar["intArr"].value[i].value, 0)
+            self.assertEqual(ar["boolArr"].value[i].value, False)
+            self.assertEqual(ar["realArr"].value[i].value, 0.0)
+        self.assertEqual(ar.nesting_level, 1)
 
-    def test_case_boolean_statement(self):
+    def test_array_range_invalid(self):
         text = """\
-program TestCaseBoolean;
+program ArranRange;
 var
-  b: boolean;
-  result: integer;
+    validArr: array [1..2] of integer;
+    invalidArr : array [2 .. -2] of integer;
 begin
-  b := false;
-  case b of
-    true: result := 1;
-    false: result := 2;
-  end;
 end.
-"""
-        interpreter = self.makeInterpreter(text)
+    """
+        with self.assertRaises(InterpreterError) as cm:
+            interpreter = makeInterpreter(text)
+            interpreter.interpret()
+
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar.nesting_level, 1)
+        self.assertIsInstance(cm.exception, InterpreterError)
+
+    def test_static_array_modify_length(self):
+        text = """\
+program ArranRange;
+var
+    arr: array [1..2] of integer;
+begin
+    setLength(arr,5);
+end.
+    """
+        with self.assertRaises(InterpreterError) as cm:
+            interpreter = makeInterpreter(text)
+            interpreter.interpret()
+
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar.nesting_level, 1)
+        self.assertIsInstance(cm.exception, InterpreterError)
+
+    def test_array_out_of_range(self):
+        text = """\
+program ArranRange;
+var
+    intArr: array [1..2] of integer;
+    boolArr: array [1..2] of boolean;
+    realArr: array [1..2] of real;
+    nestArr : array [1..2] of array of integer;
+    a , b , c, d : integer;
+begin
+    a := intArr[100];
+    b := boolArr[100];
+    c := realArr[100];
+    d := nestArr[100];
+end.
+    """
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"].value, 0)
         self.assertEqual(ar["b"].value, False)
-        self.assertEqual(ar["result"].value, 2)
+        self.assertEqual(ar["c"].value, 0.0)
+        self.assertEqual(ar["d"].value, {})
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_string(self):
+        text = """\
+program StringExample;
+var
+  str1: string[7]; {Declare a string wth a maximum size}
+  str2 : string; {Declare a string without a maximum size}
+  str3 : string; {will be used for setLength()}
+  concat1 : string; {will be used for s1 + s2}
+  concat2 : string[7]; {will be used for s1 + s2}
+  a, b : string; {will use subscript to extra char from string}
+  l1 , l2 , l3: integer;
+
+begin
+  str1 := 'abcdefghijklmnopqrstuvwxyz'; { will warn in sematic analyzer }
+  str2 := 'abcdefghijklmnopqrstuvwxyz';
+  str3 := str2;
+
+  l1 := length(str1);
+  l2 := length(str2);
+
+  setLength(str3,14);
+  l3 := length(str3);
+  a := str3[1];
+  b := str3[36];
+  concat1 := str1 + '123' + '456' + str2[1];
+  concat2 := str1 + '123' + '456' + str2[1]; { will warn in interpreter }
+end.
+    """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["str1"].value, "abcdefg")
+        self.assertEqual(ar["str2"].value, "abcdefghijklmnopqrstuvwxyz")
+        self.assertEqual(ar["str3"].value, "abcdefghijklmn")
+        self.assertEqual(ar["l1"].value, 7)
+        self.assertEqual(ar["l2"].value, 26)
+        self.assertEqual(ar["l3"].value, 14)
+        self.assertEqual(ar["a"].value, "a")
+        self.assertEqual(ar["b"].value, "")
+        self.assertEqual(ar["concat1"].value, "abcdefg123456a")
+        self.assertEqual(ar["concat2"].value, "abcdefg")
+        self.assertEqual(ar.nesting_level, 2)
+
+    def test_char_array(self):
+        text = """\
+PROGRAM TestCharArray;
+
+VAR
+    chars: array[1..3] of CHAR;
+    i: INTEGER;
+
+BEGIN
+    chars[1] := 'H';
+    chars[2] := #101;  { 'e' }
+    chars[3] := 'y';
+    
+    i := Ord(chars[2]);
+END.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["chars"].value[1].value, "H")
+        self.assertEqual(ar["chars"].value[2].value, "e")
+        self.assertEqual(ar["chars"].value[3].value, "y")
+        self.assertEqual(ar["i"].value, 101)
 
     def test_enum_types(self):
         """
@@ -1085,7 +936,7 @@ begin
   {标准做法是使用 Case 语句转换为字符串输出}
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -1183,7 +1034,7 @@ begin
     mark := person1.mark;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1244,7 +1095,7 @@ begin
     mark := person1.mark[4];
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1290,7 +1141,7 @@ begin
     city := person.address.city;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1333,7 +1184,7 @@ begin
     radius := shape1.radius;
 end.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1372,7 +1223,7 @@ BEGIN
   d := 40;
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1419,7 +1270,7 @@ BEGIN
   
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1453,7 +1304,7 @@ BEGIN
   i := arr[0];
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1481,7 +1332,7 @@ BEGIN
   s := 'ABC';
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1512,7 +1363,7 @@ BEGIN
   c3 := Blue;
 END.
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1585,7 +1436,7 @@ end.
 
 
 """
-        interpreter = self.makeInterpreter(text)
+        interpreter = makeInterpreter(text)
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -1601,6 +1452,170 @@ end.
         self.assertIsInstance(ar["testCharIndex"], IntegerObject)
         self.assertEqual(ar["testCharIndex"].value, 3)
         # In a more complete implementation, we would check the actual values
+
+
+class InterpreterLoopTestCase(unittest.TestCase):
+    def test_while_loop(self):
+        text = """\
+program whileLoop;
+var
+   a: integer;
+
+begin
+   a := 10;
+   while  a < 20  do
+   begin
+      {writeln('value of a: ', a);}
+      a := a + 1;
+   end;
+end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"].value, 20)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_for_loop(self):
+        text = """\
+program forLoop;
+var
+   a: integer;
+   b: integer;
+   sum : integer;
+
+begin
+   b := 10;
+   for a := 1 to b do
+   begin
+      sum := sum + a;
+   end;
+   {writeln(a);}
+   {writeln(b);}
+   {writeln(sum);}
+end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["a"].value, 10)
+        self.assertEqual(ar["sum"].value, 55)
+        self.assertEqual(ar.nesting_level, 1)
+
+
+class InterpreterFunctionInvokeTestCase(unittest.TestCase):
+    def test_procedure_call(self):
+        text = """\
+program Main;
+
+procedure Alpha(a : integer; b : integer);
+var x : integer;
+begin
+   x := (a + b ) * 2;
+end;
+
+begin { Main }
+
+   Alpha(3 + 5, 7);
+
+end.  { Main }
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["a"].value, 8)
+        self.assertEqual(ar["b"].value, 7)
+        self.assertEqual(ar["x"].value, 30)
+        self.assertEqual(ar.nesting_level, 2)
+
+    def test_function_call(self):
+        text = """\
+program SimpleFunction;
+var
+  sum: Integer;
+function Add(a, b: Integer): Integer;
+begin {ADD}
+  Add := a + b;
+end; {ADD}
+
+begin {Main}
+  sum := Add(5, 3);
+end. {Main}
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["sum"].value, 8)
+        self.assertEqual(ar.nesting_level, 2)
+
+    def test_inner_ref_outer_var(self):
+        text = """\
+program Main;
+var x : integer;
+procedure Alpha();
+   procedure Beta();
+   begin
+      x := x +  20;
+   end;
+begin
+   x := 10;
+   Beta();      { procedure call }
+end;
+begin { Main }
+   Alpha();  { procedure call }
+end.  { Main }
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["x"].value, 30)
+        self.assertEqual(ar.nesting_level, 3)
+
+
+class InterpreterTestCase(unittest.TestCase):
+    def test_program(self):
+        text = """\
+PROGRAM Part12;
+VAR
+   number : INTEGER;
+   a, b   : INTEGER;
+   y      : REAL;
+
+PROCEDURE P1;
+VAR
+   a : REAL;
+   k : INTEGER;
+   PROCEDURE P2;
+   VAR
+      a, z : INTEGER;
+   BEGIN {P2}
+      z := 777;
+   END;  {P2}
+BEGIN {P1}
+
+END;  {P1}
+
+BEGIN {Part12}
+   number := 2;
+   a := number ;
+   b := 10 * a + 10 * number DIV 4;
+   y := 20 / 7 + 3.14
+END.  {Part12}
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(len(ar.members.keys()), 4)
+        self.assertEqual(ar["number"].value, 2)
+        self.assertEqual(ar["a"].value, 2)
+        self.assertEqual(ar["b"].value, 25)
+        self.assertAlmostEqual(ar["y"].value, float(20) / 7 + 3.14)  # 5.9971...
 
 
 if __name__ == "__main__":
