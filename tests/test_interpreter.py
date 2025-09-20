@@ -1,6 +1,6 @@
 import unittest
 
-from spi.ast_and_symbol import Var
+from spi.ast import Var
 from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
 from spi.object import (

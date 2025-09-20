@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Callable, cast
 
-from spi.ast_and_symbol import (
+from spi.ast import (
     AccessExpression,
     ArrayType,
     Assign,

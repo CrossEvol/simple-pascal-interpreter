@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from spi.ast_and_symbol import (
+from spi.ast import (
     RecordType,
 )
 from spi.constants import ElementType

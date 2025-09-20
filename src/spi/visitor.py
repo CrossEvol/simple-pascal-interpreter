@@ -5,7 +5,7 @@
 ###############################################################################
 
 
-from spi.ast_and_symbol import AST
+from spi.ast import AST
 
 
 class NodeVisitor:

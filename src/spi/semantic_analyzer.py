@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from spi.ast_and_symbol import (
+from spi.ast import (
     AccessExpression,
     ArrayType,
     ArrayTypeSymbol,
