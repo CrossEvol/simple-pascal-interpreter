@@ -156,7 +156,7 @@ class TestFunctionObject(unittest.TestCase):
         """Test get_param_names method returns correct parameter names"""
         func_obj = FunctionObject(
             name="TestFunc",
-            formal_params=[self.param1, self.param2],
+            formal_params=[self.return_type, self.param1, self.param2],
             return_type=self.return_type,
             block_ast=self.block_ast
         )
@@ -180,7 +180,7 @@ class TestFunctionObject(unittest.TestCase):
         """Test get_param_count method returns correct count"""
         func_obj = FunctionObject(
             name="TestFunc",
-            formal_params=[self.param1, self.param2],
+            formal_params=[self.return_type,self.param1, self.param2],
             return_type=self.return_type,
             block_ast=self.block_ast
         )

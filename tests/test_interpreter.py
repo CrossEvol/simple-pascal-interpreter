@@ -1,7 +1,7 @@
 import unittest
 
 from spi.ast_and_symbol import Var
-from spi.interpreter import Interpreter
+from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
 from spi.object import (
     ArrayObject,
@@ -21,10 +21,15 @@ from spi.token import Token, TokenType
 
 
 class MockCallStack:
+    """
+    MockCallStack will not pop ActivationRecord, its nesting_level will only incr
+    """
+
     def __init__(self):
         self._records = []
 
-    def push(self, ar):
+    def push(self, ar: ActivationRecord):
+        ar.nesting_level = self.nesting_level + 1
         self._records.append(ar)
 
     def pop(self):
@@ -33,6 +38,10 @@ class MockCallStack:
 
     def peek(self):
         return self._records[-1]
+
+    @property
+    def nesting_level(self) -> int:
+        return len(self._records)
 
 
 def makeInterpreter(text):
@@ -202,7 +211,8 @@ end. {Main}
 
         self.assertEqual(ar["a"].value, 6)
         self.assertEqual(ar["flag"].value, True)
-        self.assertEqual(ar.nesting_level, 2)
+        # MockCallStack will not pop ActivationRecord
+        self.assertEqual(ar.nesting_level, 8)
 
     def test_write_and_writeln_inside_function(self):
         text = """\
@@ -226,7 +236,8 @@ end. {Main}
         ar = interpreter.call_stack.peek()
 
         self.assertEqual(ar["a"].value, 3)
-        self.assertEqual(ar.nesting_level, 2)
+        # MockCallStack will not pop ActivationRecord
+        self.assertEqual(ar.nesting_level, 3)
 
     def test_set_length_builtin_procedure(self):
         text = """\
@@ -252,7 +263,8 @@ end.
         self.assertEqual(ar["k"].value, 10)
         for i in range(0, 5):
             self.assertEqual(ar["arr"].value[i].value, i + 1)
-        self.assertEqual(ar.nesting_level, 2)
+        # MockCallStack will not pop ActivationRecord
+        self.assertEqual(ar.nesting_level, 5)
 
     def test_length_builtin_function(self):
         text = """\
@@ -855,7 +867,8 @@ end.
         self.assertEqual(ar["b"].value, "")
         self.assertEqual(ar["concat1"].value, "abcdefg123456a")
         self.assertEqual(ar["concat2"].value, "abcdefg")
-        self.assertEqual(ar.nesting_level, 2)
+        # MockCallStack will not pop ActivationRecord
+        self.assertEqual(ar.nesting_level, 5)
 
     def test_char_array(self):
         text = """\
@@ -1575,6 +1588,103 @@ end.  { Main }
 
         self.assertEqual(ar["x"].value, 30)
         self.assertEqual(ar.nesting_level, 3)
+
+    def test_procedure_registration(self):
+        """Test that procedures are properly registered during declaration visits"""
+        text = """\
+program Main;
+
+procedure Alpha(a : integer; b : integer);
+var x : integer;
+begin
+   x := (a + b ) * 2;
+end;
+
+procedure Beta();
+begin
+   { empty procedure }
+end;
+
+begin { Main }
+   { no procedure calls, just test registration }
+end.  { Main }
+"""
+        interpreter = makeInterpreter(text)
+
+        # Before interpretation, procedures should not be registered
+        self.assertEqual(len(interpreter.user_procedures), 0)
+
+        # Interpret the program (this should register procedures)
+        interpreter.interpret()
+
+        # After interpretation, procedures should be registered
+        self.assertEqual(len(interpreter.user_procedures), 2)
+        self.assertIn("ALPHA", interpreter.user_procedures)
+        self.assertIn("BETA", interpreter.user_procedures)
+
+        # Check Alpha procedure object
+        alpha_proc = interpreter.user_procedures["ALPHA"]
+        self.assertEqual(alpha_proc.name, "Alpha")
+        self.assertEqual(alpha_proc.get_param_count(), 2)
+        self.assertEqual(alpha_proc.get_param_names(), ["a", "b"])
+        self.assertIsNotNone(alpha_proc.block_ast)
+
+        # Check Beta procedure object
+        beta_proc = interpreter.user_procedures["BETA"]
+        self.assertEqual(beta_proc.name, "Beta")
+        self.assertEqual(beta_proc.get_param_count(), 0)
+        self.assertEqual(beta_proc.get_param_names(), [])
+        self.assertIsNotNone(beta_proc.block_ast)
+
+    def test_function_registration(self):
+        """Test that functions are properly registered during declaration visits"""
+        text = """\
+program Main;
+
+function Add(a : integer; b : integer) : integer;
+var result : integer;
+begin
+   result := a + b;
+   Add := result;
+end;
+
+function GetPi() : real;
+begin
+   GetPi := 3.14159;
+end;
+
+begin { Main }
+   { no function calls, just test registration }
+end.  { Main }
+"""
+        interpreter = makeInterpreter(text)
+
+        # Before interpretation, functions should not be registered
+        self.assertEqual(len(interpreter.user_functions), 0)
+
+        # Interpret the program (this should register functions)
+        interpreter.interpret()
+
+        # After interpretation, functions should be registered
+        self.assertEqual(len(interpreter.user_functions), 2)
+        self.assertIn("ADD", interpreter.user_functions)
+        self.assertIn("GETPI", interpreter.user_functions)
+
+        # Check Add function object
+        add_func = interpreter.user_functions["ADD"]
+        self.assertEqual(add_func.name, "Add")
+        self.assertEqual(add_func.get_param_count(), 2)
+        self.assertEqual(add_func.get_param_names(), ["a", "b"])
+        self.assertIsNotNone(add_func.block_ast)
+        self.assertIsNotNone(add_func.return_type)
+
+        # Check GetPi function object
+        getpi_func = interpreter.user_functions["GETPI"]
+        self.assertEqual(getpi_func.name, "GetPi")
+        self.assertEqual(getpi_func.get_param_count(), 0)
+        self.assertEqual(getpi_func.get_param_names(), [])
+        self.assertIsNotNone(getpi_func.block_ast)
+        self.assertIsNotNone(getpi_func.return_type)
 
 
 class InterpreterTestCase(unittest.TestCase):

@@ -873,8 +873,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return
         proc_symbol = self.current_scope.lookup(node.proc_name)
-        # accessed by the interpreter when executing procedure call
-        node.proc_symbol = cast(ProcedureSymbol, proc_symbol)
+        # Note: proc_symbol field removed from AST node for interpreter decoupling
 
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
         func_name = node.func_name
@@ -931,5 +930,4 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return
         func_symbol = self.current_scope.lookup(node.func_name)
-        # accessed by the interpreter when executing procedure call
-        node.func_symbol = cast(FunctionSymbol, func_symbol)
+        # Note: func_symbol field removed from AST node for interpreter decoupling

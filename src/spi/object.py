@@ -432,17 +432,19 @@ class FunctionObject(Object):
     def __init__(self, name: str, formal_params: list, return_type, block_ast):
         super().__init__()
         self.name = name
-        self.formal_params = formal_params  # List of Param AST nodes
+        self.formal_params = formal_params  # List of Param AST nodes (includes return variable as first param)
         self.return_type = return_type
         self.block_ast = block_ast
 
     def get_param_names(self) -> list[str]:
-        """Get list of formal parameter names"""
-        return [param.var_node.value for param in self.formal_params]
+        """Get list of formal parameter names (excluding return variable)"""
+        # Skip the first parameter which is the return variable
+        return [param.var_node.value for param in self.formal_params[1:]]
 
     def get_param_count(self) -> int:
-        """Get number of formal parameters"""
-        return len(self.formal_params)
+        """Get number of formal parameters (excluding return variable)"""
+        # Subtract 1 to exclude the return variable parameter
+        return len(self.formal_params) - 1 if len(self.formal_params) > 0 else 0
 
 
 class RecordObject(Object):

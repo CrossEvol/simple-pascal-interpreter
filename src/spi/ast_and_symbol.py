@@ -299,8 +299,6 @@ class ProcedureCall(Statement):
         self.proc_name = proc_name
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
-        # a reference to procedure declaration symbol
-        self.proc_symbol: ProcedureSymbol | None = None
 
 
 class FunctionCall(Expression):
@@ -310,8 +308,6 @@ class FunctionCall(Expression):
         self.func_name = func_name
         self.actual_params = actual_params  # a list of AST nodes
         self.token = token
-        # a reference to procedure declaration symbol
-        self.func_symbol: FunctionSymbol | None = None
 
 
 class RecordType(Type):

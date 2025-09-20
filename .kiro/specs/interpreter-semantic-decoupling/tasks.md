@@ -12,27 +12,50 @@
   - Write unit tests for object creation and method functionality
   - _Requirements: 1.1, 3.1, 3.2, 3.3_
 
-- [ ] 2. Add runtime registries to Interpreter class
+- [x] 2. Add runtime registries to Interpreter class
+
+
+
+
+
+
   - Add user_procedures and user_functions dictionaries to Interpreter.__init__
   - Initialize empty registries for storing runtime procedure and function objects
   - Ensure case-insensitive lookup by using uppercase keys
   - _Requirements: 1.1, 1.2, 6.3, 6.4_
 
-- [ ] 3. Implement visit_ProcedureDecl to create and register ProcedureObject
+- [x] 3. Implement visit_ProcedureDecl to create and register ProcedureObject
+
+
+
+
+
   - Modify visit_ProcedureDecl to create ProcedureObject from AST node
   - Register the procedure object in user_procedures registry with uppercase key
   - Store formal parameters, block AST, and procedure name in the object
   - Write tests to verify procedure registration during declaration visits
   - _Requirements: 1.1, 3.1_
 
-- [ ] 4. Implement visit_FunctionDecl to create and register FunctionObject
+- [x] 4. Implement visit_FunctionDecl to create and register FunctionObject
+
+
+
+
+
   - Modify visit_FunctionDecl to create FunctionObject from AST node
   - Register the function object in user_functions registry with uppercase key
   - Store formal parameters, return type, block AST, and function name in the object
   - Write tests to verify function registration during declaration visits
   - _Requirements: 1.2, 3.2_
 
-- [ ] 5. Remove proc_symbol field from ProcedureCall AST node
+- [x] 5. Remove proc_symbol field from ProcedureCall AST node
+
+
+
+
+
+
+
   - Remove proc_symbol field from ProcedureCall class constructor and attributes
   - Update any references to proc_symbol in the codebase to ensure no compilation errors
   - Verify that parser doesn't attempt to set proc_symbol field

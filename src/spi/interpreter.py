@@ -16,8 +16,6 @@ from spi.ast_and_symbol import (
     BinOp,
     Block,
     Bool,
-    BuiltinFunctionSymbol,
-    BuiltinProcedureSymbol,
     CaseStatement,
     Char,
     Compound,
@@ -31,6 +29,7 @@ from spi.ast_and_symbol import (
     MemberSuffix,
     NoOp,
     Num,
+    Param,
     PrimitiveType,
     ProcedureCall,
     ProcedureDecl,
@@ -58,15 +57,17 @@ from spi.object import (
     BooleanObject,
     CharObject,
     EnumObject,
+    FunctionObject,
     IntegerObject,
     NullObject,
     NumberObject,
     Object,
+    ProcedureObject,
     RealObject,
     RecordObject,
     StringObject,
 )
-from spi.token import TokenType
+from spi.token import Token, TokenType
 from spi.util import SpiUtil
 from spi.visitor import NodeVisitor
 
@@ -332,6 +333,7 @@ class CallStack:
         self._records: list[ActivationRecord] = []
 
     def push(self, ar: ActivationRecord) -> None:
+        ar.nesting_level = self.nesting_level + 1
         self._records.append(ar)
 
     def pop(self) -> ActivationRecord:
@@ -341,6 +343,10 @@ class CallStack:
 
     def peek(self) -> ActivationRecord:
         return self._records[-1]
+
+    @property
+    def nesting_level(self) -> int:
+        return len(self._records)
 
     def __str__(self) -> str:
         s = "\n".join(repr(ar) for ar in reversed(self._records))
@@ -394,6 +400,10 @@ class Interpreter(NodeVisitor):
     def __init__(self, tree: Program) -> None:
         self.tree = tree
         self.call_stack = CallStack()
+
+        # Runtime procedure and function registries
+        self.user_procedures: dict[str, ProcedureObject] = {}
+        self.user_functions: dict[str, FunctionObject] = {}
 
         # 枚举类型和值的注册表（模仿semantic analyzer的实现）
         self.enum_types: dict[
@@ -549,7 +559,7 @@ class Interpreter(NodeVisitor):
         ar = ActivationRecord(
             name=program_name,
             type=ARType.PROGRAM,
-            nesting_level=1,
+            nesting_level=self.call_stack.nesting_level,
         )
         self.call_stack.push(ar)
 
@@ -1195,155 +1205,192 @@ class Interpreter(NodeVisitor):
                     ar[var_name] = IntegerObject(var_value)
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
-        pass
+        """Create and register ProcedureObject for runtime use"""
+        proc_obj = ProcedureObject(
+            name=node.proc_name,
+            formal_params=node.formal_params,
+            block_ast=node.block_node,
+        )
+        self.user_procedures[node.proc_name.upper()] = proc_obj
 
     def visit_ProcedureCall(self, node: ProcedureCall) -> None:
         proc_name = node.proc_name
-        proc_symbol = node.proc_symbol
 
-        if proc_symbol is None:
-            raise InterpreterError(
-                error_code=ErrorCode.NULL_POINTER,
-                token=node.token,
-                message=f"{ErrorCode.NULL_POINTER.value} -> {node.token}",
+        self.log(f"ENTER: PROCEDURE {proc_name}")
+
+        # Check built-in procedures first
+        if proc_name.upper() in BUILTIN_PROCEDURES:
+            handler = BUILTIN_PROCEDURES[proc_name.upper()]
+
+            # Create activation record for built-in procedure
+            ar = ActivationRecord(
+                name=proc_name,
+                type=ARType.PROCEDURE,
+                nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
             )
 
-        ar = ActivationRecord(
-            name=proc_name,
-            type=ARType.PROCEDURE,
-            nesting_level=proc_symbol.scope_level + 1,
-        )
+            pre_ar = self.call_stack.peek()
+            if pre_ar is not None:
+                ar.copy_from(pre_ar, False)
 
-        pre_ar = self.call_stack.peek()
-        if pre_ar is not None:
-            ar.copy_from(pre_ar, False)
-
-        # deal with built-in procedure first
-        if isinstance(proc_symbol, BuiltinProcedureSymbol):
-            # Look up the built-in procedure in the registry
-            handler = BUILTIN_PROCEDURES.get(proc_symbol.name.upper())
-            if handler:
-                # Prepare parameters
-                actual_params = node.actual_params
-                for i in range(0, len(actual_params)):
-                    ar[i] = self.visit(actual_params[i])
-
-                self.call_stack.push(ar)
-
-                # Call the handler
-                handler(self, node)
-
-                self.call_stack.pop()
-                return
-            else:
-                raise InterpreterError(
-                    error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE,
-                    token=node.token,
-                    message=f"{ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE.value} -> {node.token}",
-                )
-        else:
-            formal_params = proc_symbol.formal_params
+            # Prepare parameters
             actual_params = node.actual_params
-
-            for param_symbol, argument_node in zip(formal_params, actual_params):
-                ar[param_symbol.name] = self.visit(argument_node)
+            for i in range(0, len(actual_params)):
+                ar[i] = self.visit(actual_params[i])
 
             self.call_stack.push(ar)
 
-            self.log(f"ENTER: PROCEDURE {proc_name}")
+            # Call the handler
+            handler(self, node)
+
+            self.call_stack.pop()
+            return
+
+        # Check user-defined procedures
+        if proc_name.upper() in self.user_procedures:
+            proc_obj = self.user_procedures[proc_name.upper()]
+
+            # Create activation record for user-defined procedure
+            ar = ActivationRecord(
+                name=proc_name,
+                type=ARType.PROCEDURE,
+                nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+            )
+
+            pre_ar = self.call_stack.peek()
+            if pre_ar is not None:
+                ar.copy_from(pre_ar, False)
+
+            # Map actual parameters to formal parameters
+            formal_params = proc_obj.formal_params
+            actual_params = node.actual_params
+
+            for param_node, argument_node in zip(formal_params, actual_params):
+                param_name = param_node.var_node.value
+                ar[param_name] = self.visit(argument_node)
+
+            self.call_stack.push(ar)
+
             self.log(str(self.call_stack))
 
-            # evaluate procedure body
-            if proc_symbol.block_ast is None:
-                raise InterpreterError(
-                    error_code=ErrorCode.NULL_POINTER,
-                    token=None,
-                    message=f"{ErrorCode.NULL_POINTER.value}",
-                )
-            self.visit(proc_symbol.block_ast)
+            # Execute procedure block
+            self.visit(proc_obj.block_ast)
 
             self.log(f"LEAVE: PROCEDURE {proc_name}")
             self.log(str(self.call_stack))
 
             self.call_stack.pop()
-            pass
+            return
+
+        # Unknown procedure
+        raise InterpreterError(
+            error_code=ErrorCode.INTERPRETER_UNKNOWN_PROCEDURE,
+            token=node.token,
+            message=f"Unknown procedure: {proc_name}",
+        )
 
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
-        pass
+        """Create and register FunctionObject for runtime use"""
+        # Create extended formal parameters list that includes return variable as first parameter
+        # This matches the semantic analyzer's approach for Pascal function semantics
+        extended_formal_params = []
+
+        # Create return variable parameter (same name as function, return type)
+        return_var_token = Token(type=None, value=node.func_name)
+        return_var_node = Var(return_var_token)
+        return_param = Param(var_node=return_var_node, type_node=node.return_type)
+        extended_formal_params.append(return_param)
+
+        # Add original formal parameters
+        extended_formal_params.extend(node.formal_params)
+
+        func_obj = FunctionObject(
+            name=node.func_name,
+            formal_params=extended_formal_params,
+            return_type=node.return_type,
+            block_ast=node.block_node,
+        )
+        self.user_functions[node.func_name.upper()] = func_obj
 
     def visit_FunctionCall(self, node: FunctionCall) -> Object:
         func_name = node.func_name
-        func_symbol = node.func_symbol
 
-        if func_symbol is None:
-            raise InterpreterError(
-                error_code=ErrorCode.NULL_POINTER,
-                token=None,
-                message=f"{ErrorCode.NULL_POINTER.value}",
+        self.log(f"ENTER: FUNCTION {func_name}")
+
+        # Check built-in functions first
+        if func_name.upper() in BUILTIN_FUNCTIONS:
+            handler = BUILTIN_FUNCTIONS[func_name.upper()]
+
+            # Create activation record for built-in function
+            ar = ActivationRecord(
+                name=func_name,
+                type=ARType.FUNCTION,
+                nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
             )
 
-        ar = ActivationRecord(
-            name=func_name,
-            type=ARType.FUNCTION,
-            nesting_level=func_symbol.scope_level + 1,
-        )
+            pre_ar = self.call_stack.peek()
+            if pre_ar is not None:
+                ar.copy_from(pre_ar, False)
 
-        pre_ar = self.call_stack.peek()
-        if pre_ar is not None:
-            ar.copy_from(pre_ar, False)
-
-        # deal with built-in function first
-        if isinstance(func_symbol, BuiltinFunctionSymbol):
-            # Look up the built-in function in the registry
-            handler = BUILTIN_FUNCTIONS.get(func_symbol.name.upper())
-            if handler:
-                # Prepare parameters
-                actual_params = node.actual_params
-                for i in range(0, len(actual_params)):
-                    ar[i] = self.visit(actual_params[i])
-
-                self.call_stack.push(ar)
-
-                # Call the handler and get the result
-                result = handler(self, node)
-
-                self.call_stack.pop()
-                return result
-            else:
-                raise InterpreterError(
-                    error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION,
-                    token=None,
-                    message=f"{ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_FUNCTION.value}",
-                )
-        else:
-            formal_params = func_symbol.formal_params
+            # Prepare parameters
             actual_params = node.actual_params
-
-            for param_symbol, argument_node in zip(formal_params, actual_params):
-                ar[param_symbol.name] = self.visit(argument_node)
+            for i in range(0, len(actual_params)):
+                ar[i] = self.visit(actual_params[i])
 
             self.call_stack.push(ar)
 
-            self.log(f"ENTER: FUNCTION {func_name}")
+            # Call the handler and get the result
+            result = handler(self, node)
+
+            self.call_stack.pop()
+            return result
+
+        # Check user-defined functions
+        if func_name.upper() in self.user_functions:
+            func_obj = self.user_functions[func_name.upper()]
+
+            # Create activation record for user-defined function
+            ar = ActivationRecord(
+                name=func_name,
+                type=ARType.FUNCTION,
+                nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+            )
+
+            pre_ar = self.call_stack.peek()
+            if pre_ar is not None:
+                ar.copy_from(pre_ar, False)
+
+            # Map actual parameters to formal parameters
+            formal_params = func_obj.formal_params
+            actual_params = node.actual_params
+
+            for param_node, argument_node in zip(formal_params, actual_params):
+                param_name = param_node.var_node.value
+                ar[param_name] = self.visit(argument_node)
+
+            self.call_stack.push(ar)
+
             self.log(str(self.call_stack))
 
-            # evaluate procedure body
-            if func_symbol.block_ast is None:
-                raise InterpreterError(
-                    error_code=ErrorCode.NULL_POINTER,
-                    token=None,
-                    message=f"{ErrorCode.NULL_POINTER.value}",
-                )
-            self.visit(func_symbol.block_ast)
+            # Execute function block
+            self.visit(func_obj.block_ast)
 
             self.log(f"LEAVE: FUNCTION {func_name}")
             self.log(str(self.call_stack))
 
+            # Get return value (function name is used as return variable)
             result = ar.get(func_name)
             self.call_stack.pop()
 
             return result if result is not None else NullObject()
-            
+
+        # Unknown function
+        raise InterpreterError(
+            error_code=ErrorCode.INTERPRETER_UNKNOWN_FUNCTION,
+            token=node.token,
+            message=f"Unknown function: {func_name}",
+        )
+
     def visit_IfStatement(self, node: IfStatement) -> None:
         flag = self.visit(node.condition).to_bool()
 
@@ -1392,7 +1439,6 @@ class Interpreter(NodeVisitor):
         # 如果没有匹配项且有else语句，则执行else语句
         if not matched and node.else_stmt:
             self.visit(node.else_stmt)
-
 
     def interpret(self):
         tree = self.tree

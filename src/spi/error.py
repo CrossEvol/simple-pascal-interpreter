@@ -42,7 +42,9 @@ class ErrorCode(Enum):
     # Interpreter errors
     INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
     INTERPRETER_UNKNOWN_BUILTIN_FUNCTION = "Interpreter unknown builtin function"
+    INTERPRETER_UNKNOWN_FUNCTION = "Interpreter unknown function"
     INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE = "Interpreter unknown builtin procedure"
+    INTERPRETER_UNKNOWN_PROCEDURE = "Interpreter unknown procedure"
     INTERPRETER_ARRAY_RANGE_INVALID = "Interpreter array range invalid"
     INTERPRETER_UNKNOWN_OPERATOR = "Interpreter unknown operator"
     INTERPRETER_UNKNOWN_ENUM = "Interpreter unknown enum"
