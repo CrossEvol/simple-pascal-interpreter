@@ -1,4 +1,4 @@
-from spi import runSpi
+from spi.run import runSpi
 
 
 def main():

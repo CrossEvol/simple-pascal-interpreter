@@ -176,6 +176,7 @@ cython_debug/
 
 #vscode
 .vscode/settings.json
+.vscode/bookmarks.json
 
 # IDE
 .idea

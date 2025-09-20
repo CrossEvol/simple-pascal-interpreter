@@ -42,27 +42,27 @@ interpret:
 # 运行测试
 .PHONY: test
 test: 
-	$(UV_PYTEST) tests/test_interpreter.py -v
+	$(UV_PYTEST) tests/* -v
 
 # Run only lexer tests
 .PHONY: test_lexer 
 test_lexer:
-	$(UV_PYTEST) tests/test_interpreter.py::LexerTestCase -v
+	$(UV_PYTEST) tests/test_lexer.py -v
 
 # Run only lexer tests
 .PHONY: test_parser
 test_parser:
-	$(UV_PYTEST) tests/test_interpreter.py::ParserTestCase -v
+	$(UV_PYTEST) tests/test_parser.py -v
 
 # Run only lexer tests
 .PHONY: test_semantic
 test_semantic:
-	$(UV_PYTEST) tests/test_interpreter.py::SemanticAnalyzerTestCase -v
+	$(UV_PYTEST) tests/test_semantic_analyzer.py -v
 
 # Run only interpreter tests  
 .PHONY: test_interpreter
 test_interpreter:
-	$(UV_PYTEST) tests/test_interpreter.py::InterpreterTestCase -v
+	$(UV_PYTEST) tests/test_interpreter.py -v
 
 
 # 生成AST可视化
