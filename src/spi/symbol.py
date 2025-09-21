@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+
 from spi.ast import Block, Type
 
 ###############################################################################
@@ -136,7 +137,7 @@ class IntegerTypeSymbol(PrimitiveTypeSymbol):
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
 
-        if operation in ["+", "-", "*"]:
+        if operation in ["+", "-", "*", "DIV", "MOD"]:
             if isinstance(other, IntegerTypeSymbol):
                 return INTEGER_TYPE_SYMBOL
             elif isinstance(other, RealTypeSymbol):
@@ -349,50 +350,58 @@ class VarSymbol(Symbol):
         """Check if this is a const variable"""
         return not self.is_mutable
 
-    def validate_assignment(self, is_initialization: bool = False) -> tuple[bool, str | None]:
+    def validate_assignment(
+        self, is_initialization: bool = False
+    ) -> tuple[bool, str | None]:
         """
         Validate if assignment to this variable is allowed.
-        
+
         Args:
             is_initialization: True if this is the initial assignment to a const variable
-            
+
         Returns:
             Tuple of (is_valid, error_message)
         """
         if self.is_mutable:
             # Mutable variables can always be assigned
             return True, None
-            
+
         # For const variables
         if is_initialization and not self.is_initialized:
             # Allow initialization-time assignment to const variables
             return True, None
         elif self.is_initialized:
             # Const variable already initialized, cannot be reassigned
-            return False, f"Cannot assign to const variable '{self.name}' - already initialized"
+            return (
+                False,
+                f"Cannot assign to const variable '{self.name}' - already initialized",
+            )
         else:
             # Const variable not yet initialized, but this is not an initialization
-            return False, f"Cannot assign to const variable '{self.name}' - must be initialized at declaration"
+            return (
+                False,
+                f"Cannot assign to const variable '{self.name}' - must be initialized at declaration",
+            )
 
     def validate_modification_permission(self) -> tuple[bool, str | None]:
         """
         Check if this variable has permission to be modified.
-        
+
         Returns:
             Tuple of (can_modify, error_message)
         """
         if self.is_mutable:
             return True, None
-            
+
         if not self.is_initialized:
             return True, None  # Can modify during initialization
-            
+
         return False, f"Cannot modify const variable '{self.name}'"
 
     def require_initialization_check(self) -> bool:
         """
         Check if this variable requires initialization validation.
-        
+
         Returns:
             True if this is a const variable that must be initialized
         """
@@ -401,7 +410,7 @@ class VarSymbol(Symbol):
     def is_initialization_required(self) -> bool:
         """
         Check if this const variable still needs to be initialized.
-        
+
         Returns:
             True if this is a const variable that hasn't been initialized yet
         """
@@ -420,112 +429,118 @@ class VarSymbol(Symbol):
 
 class MutabilityValidator:
     """Helper class for validating variable mutability and const assignment rules"""
-    
+
     @staticmethod
-    def validate_const_assignment(var_symbol: VarSymbol, is_initialization: bool = False) -> tuple[bool, str | None]:
+    def validate_const_assignment(
+        var_symbol: VarSymbol, is_initialization: bool = False
+    ) -> tuple[bool, str | None]:
         """
         Validate assignment to a const variable.
-        
+
         Args:
             var_symbol: The variable symbol being assigned to
             is_initialization: True if this is the initial assignment during declaration
-            
+
         Returns:
             Tuple of (is_valid, error_message)
         """
         if not isinstance(var_symbol, VarSymbol):
             return True, None  # Not a variable, no validation needed
-            
+
         return var_symbol.validate_assignment(is_initialization)
-    
+
     @staticmethod
-    def validate_variable_modification(var_symbol: VarSymbol) -> tuple[bool, str | None]:
+    def validate_variable_modification(
+        var_symbol: VarSymbol,
+    ) -> tuple[bool, str | None]:
         """
         Validate if a variable can be modified.
-        
+
         Args:
             var_symbol: The variable symbol being modified
-            
+
         Returns:
             Tuple of (is_valid, error_message)
         """
         if not isinstance(var_symbol, VarSymbol):
             return True, None  # Not a variable, no validation needed
-            
+
         return var_symbol.validate_modification_permission()
-    
+
     @staticmethod
-    def check_initialization_requirements(var_symbol: VarSymbol) -> tuple[bool, str | None]:
+    def check_initialization_requirements(
+        var_symbol: VarSymbol,
+    ) -> tuple[bool, str | None]:
         """
         Check if a const variable meets initialization requirements.
-        
+
         Args:
             var_symbol: The variable symbol to check
-            
+
         Returns:
             Tuple of (is_satisfied, error_message)
         """
         if not isinstance(var_symbol, VarSymbol):
             return True, None  # Not a variable, no requirements
-            
+
         if var_symbol.is_initialization_required():
             return False, f"Const variable '{var_symbol.name}' must be initialized"
-            
+
         return True, None
-    
+
     @staticmethod
     def mark_variable_initialized(var_symbol: VarSymbol) -> None:
         """
         Mark a variable as initialized (for const variables).
-        
+
         Args:
             var_symbol: The variable symbol to mark as initialized
         """
         if isinstance(var_symbol, VarSymbol):
             var_symbol.mark_initialized()
-    
+
     @staticmethod
     def is_const_variable(var_symbol: VarSymbol) -> bool:
         """
         Check if a variable is a const variable.
-        
+
         Args:
             var_symbol: The variable symbol to check
-            
+
         Returns:
             True if the variable is const, False otherwise
         """
         if not isinstance(var_symbol, VarSymbol):
             return False
-            
+
         return var_symbol.is_const
-    
+
     @staticmethod
     def get_mutability_info(var_symbol: VarSymbol) -> dict[str, bool]:
         """
         Get comprehensive mutability information for a variable.
-        
+
         Args:
             var_symbol: The variable symbol to analyze
-            
+
         Returns:
             Dictionary with mutability information
         """
         if not isinstance(var_symbol, VarSymbol):
             return {
-                'is_mutable': True,
-                'is_const': False,
-                'is_initialized': True,
-                'can_modify': True,
-                'requires_initialization': False
+                "is_mutable": True,
+                "is_const": False,
+                "is_initialized": True,
+                "can_modify": True,
+                "requires_initialization": False,
             }
-            
+
         return {
-            'is_mutable': var_symbol.is_mutable,
-            'is_const': var_symbol.is_const,
-            'is_initialized': var_symbol.is_initialized,
-            'can_modify': var_symbol.can_modify(),
-            'requires_initialization': var_symbol.require_initialization_check()
+            "is_mutable": var_symbol.is_mutable,
+            "is_const": var_symbol.is_const,
+            "is_initialized": var_symbol.is_initialized,
+            "can_modify": var_symbol.can_modify(),
+            "requires_initialization": var_symbol.require_initialization_check(),
         }
 
 
@@ -918,13 +933,53 @@ class RecordTypeSymbol(TypeSymbol):
         """Record <> Record → BOOLEAN (if compatible)"""
         return self.get_result_type("<>", other)
 
+    @property
+    def variant_fields(self) -> dict[str, Symbol]:
+        return self.variant_part.variant_fields
 
-class RecordFieldSymbol(Symbol):
+
+class RecordFieldSymbol(TypeSymbol):
     """表示记录字段符号"""
 
     def __init__(self, name: str, type_symbol: Symbol):
         super().__init__(name)
         self.type = type_symbol
+
+    def is_compatible_with(self, other: "TypeSymbol") -> bool:
+        """Check if this field type is compatible with another type"""
+        if isinstance(other, NeverSymbol):
+            return False
+
+        # Delegate to the actual field type
+        if isinstance(self.type, TypeSymbol):
+            return self.type.is_compatible_with(other)
+
+        # Fallback for non-TypeSymbol field types
+        return self.type.name == other.name if hasattr(other, "name") else False
+
+    def can_assign_from(self, other: "TypeSymbol") -> bool:
+        """Check if a value of other type can be assigned to this field"""
+        if isinstance(other, NeverSymbol):
+            return False
+
+        # Delegate to the actual field type
+        if isinstance(self.type, TypeSymbol):
+            return self.type.can_assign_from(other)
+
+        # Fallback for non-TypeSymbol field types
+        return self.type.name == other.name if hasattr(other, "name") else False
+
+    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+        """Get the result type of an operation with another type"""
+        if isinstance(other, NeverSymbol):
+            return NEVER_SYMBOL
+
+        # Delegate to the actual field type
+        if isinstance(self.type, TypeSymbol):
+            return self.type.get_result_type(operation, other)
+
+        # Fallback for non-TypeSymbol field types - no operations supported
+        return NEVER_SYMBOL
 
 
 class VariantPartSymbol:
@@ -939,6 +994,14 @@ class VariantPartSymbol:
         self.tag_field = tag_field  # 标签字段名
         self.tag_type = tag_type  # 标签字段类型（必须是枚举类型）
         self.variant_cases = variant_cases  # 标签值到变体字段符号的映射
+
+    @property
+    def variant_fields(self) -> dict[str, Symbol]:
+        variant_fields: dict[str, Symbol] = {}
+        for _, fields_dict in self.variant_cases.items():
+            for field_name, symbol in fields_dict.items():
+                variant_fields[field_name] = symbol
+        return variant_fields
 
 
 class TypeAliasSymbol(TypeSymbol):
@@ -956,12 +1019,13 @@ class TypeAliasSymbol(TypeSymbol):
         while isinstance(current, TypeAliasSymbol):
             if current.name in visited:
                 # Import here to avoid circular imports
-                from src.spi.error import SemanticError, ErrorCode
-                chain_str = ' -> '.join(visited) + f" -> {current.name}"
+                from src.spi.error import ErrorCode, SemanticError
+
+                chain_str = " -> ".join(visited) + f" -> {current.name}"
                 raise SemanticError(
                     error_code=ErrorCode.SEMANTIC_CIRCULAR_TYPE_ALIAS,
                     token=None,
-                    message=f"Circular type alias detected in chain: {chain_str}"
+                    message=f"Circular type alias detected in chain: {chain_str}",
                 )
             visited.add(current.name)
             current = current.target_type
@@ -972,49 +1036,51 @@ class TypeAliasSymbol(TypeSymbol):
         """Delegate to final resolved type"""
         if isinstance(other, NeverSymbol):
             return False
-        
+
         final_type = self.resolve_final_type()
-        
+
         # If other is also a type alias, resolve it too
         if isinstance(other, TypeAliasSymbol):
             other_final_type = other.resolve_final_type()
             return final_type.is_compatible_with(other_final_type)
-        
+
         return final_type.is_compatible_with(other)
 
     def can_assign_from(self, other: TypeSymbol) -> bool:
         """Delegate to final resolved type"""
         if isinstance(other, NeverSymbol):
             return False
-        
+
         final_type = self.resolve_final_type()
-        
+
         # If other is also a type alias, resolve it too
         if isinstance(other, TypeAliasSymbol):
             other_final_type = other.resolve_final_type()
             return final_type.can_assign_from(other_final_type)
-        
+
         return final_type.can_assign_from(other)
 
     def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
         """Delegate to final resolved type"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
-        
+
         final_type = self.resolve_final_type()
-        
+
         # If other is also a type alias, resolve it too
         if isinstance(other, TypeAliasSymbol):
             other_final_type = other.resolve_final_type()
             return final_type.get_result_type(operation, other_final_type)
-        
+
         return final_type.get_result_type(operation, other)
 
     def __str__(self) -> str:
         return f"{self.name} -> {self.target_type.name}"
 
     def __repr__(self) -> str:
-        return f"<TypeAliasSymbol(name='{self.name}', target='{self.target_type.name}')>"
+        return (
+            f"<TypeAliasSymbol(name='{self.name}', target='{self.target_type.name}')>"
+        )
 
 
 class ProcedureSymbol(Symbol):
@@ -1105,88 +1171,90 @@ class BuiltinFunctionSymbol(Symbol):
 
 class ProcedureTypeSymbol(TypeSymbol):
     """Type symbol for procedure types (for type checking procedure parameters)"""
-    
+
     def __init__(self, name: str, param_types: list[TypeSymbol]):
         super().__init__(name)
         self.param_types = param_types
-    
+
     def is_compatible_with(self, other: "TypeSymbol") -> bool:
         """Check if procedure signatures are compatible"""
         if isinstance(other, NeverSymbol):
             return False
         if not isinstance(other, ProcedureTypeSymbol):
             return False
-        
+
         if len(self.param_types) != len(other.param_types):
             return False
-        
+
         return all(
-            p1.is_compatible_with(p2) 
+            p1.is_compatible_with(p2)
             for p1, p2 in zip(self.param_types, other.param_types)
         )
-    
+
     def can_assign_from(self, other: "TypeSymbol") -> bool:
         """Check if a procedure of other type can be assigned to this procedure type"""
         if isinstance(other, NeverSymbol):
             return False
         if not isinstance(other, ProcedureTypeSymbol):
             return False
-        
+
         if len(self.param_types) != len(other.param_types):
             return False
-        
+
         # For procedure assignment, parameter types must be exactly compatible
         # (contravariant for input parameters)
         return all(
-            p1.can_assign_from(p2) 
+            p1.can_assign_from(p2)
             for p1, p2 in zip(self.param_types, other.param_types)
         )
-    
+
     def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
         """Get result type for operations with procedure types"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
-        
+
         if operation in ["=", "<>"]:
             # Procedure comparison operations
-            if isinstance(other, ProcedureTypeSymbol) and self.is_compatible_with(other):
+            if isinstance(other, ProcedureTypeSymbol) and self.is_compatible_with(
+                other
+            ):
                 return BOOLEAN_TYPE_SYMBOL
-        
+
         # Procedures don't support arithmetic operations
         return NEVER_SYMBOL
-    
+
     def validate_call_signature(self, arg_types: list[TypeSymbol]) -> bool:
         """Validate if the given argument types match this procedure's signature"""
         if len(arg_types) != len(self.param_types):
             return False
-        
+
         return all(
             param_type.can_assign_from(arg_type)
             for param_type, arg_type in zip(self.param_types, arg_types)
         )
-    
+
     def get_parameter_count(self) -> int:
         """Get the number of parameters this procedure expects"""
         return len(self.param_types)
-    
+
     def get_parameter_type(self, index: int) -> TypeSymbol:
         """Get the type of the parameter at the given index"""
         if 0 <= index < len(self.param_types):
             return self.param_types[index]
         return NEVER_SYMBOL
-    
+
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Procedure = Procedure → BOOLEAN (if compatible)"""
         return self.get_result_type("=", other)
-    
+
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Procedure <> Procedure → BOOLEAN (if compatible)"""
         return self.get_result_type("<>", other)
-    
+
     def __str__(self) -> str:
         param_names = [param.name for param in self.param_types]
         return f"PROCEDURE({', '.join(param_names)})"
-    
+
     def __repr__(self) -> str:
         return "<{class_name}(name='{name}', params={params})>".format(
             class_name=self.__class__.__name__,
@@ -1197,55 +1265,57 @@ class ProcedureTypeSymbol(TypeSymbol):
 
 class FunctionTypeSymbol(TypeSymbol):
     """Type symbol for function types (for type checking function parameters and return type)"""
-    
-    def __init__(self, name: str, param_types: list[TypeSymbol], return_type: TypeSymbol):
+
+    def __init__(
+        self, name: str, param_types: list[TypeSymbol], return_type: TypeSymbol
+    ):
         super().__init__(name)
         self.param_types = param_types
         self.return_type = return_type
-    
+
     def is_compatible_with(self, other: "TypeSymbol") -> bool:
         """Check if function signatures are compatible"""
         if isinstance(other, NeverSymbol):
             return False
         if not isinstance(other, FunctionTypeSymbol):
             return False
-        
+
         if len(self.param_types) != len(other.param_types):
             return False
-        
+
         if not self.return_type.is_compatible_with(other.return_type):
             return False
-        
+
         return all(
-            p1.is_compatible_with(p2) 
+            p1.is_compatible_with(p2)
             for p1, p2 in zip(self.param_types, other.param_types)
         )
-    
+
     def can_assign_from(self, other: "TypeSymbol") -> bool:
         """Check if a function of other type can be assigned to this function type"""
         if isinstance(other, NeverSymbol):
             return False
         if not isinstance(other, FunctionTypeSymbol):
             return False
-        
+
         if len(self.param_types) != len(other.param_types):
             return False
-        
+
         # Return type must be covariant (can assign from more specific to more general)
         if not self.return_type.can_assign_from(other.return_type):
             return False
-        
+
         # Parameter types must be contravariant (can assign from more general to more specific)
         return all(
-            p1.can_assign_from(p2) 
+            p1.can_assign_from(p2)
             for p1, p2 in zip(self.param_types, other.param_types)
         )
-    
+
     def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
         """Get result type for operations with function types"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
-        
+
         if operation in ["=", "<>"]:
             # Function comparison operations
             if isinstance(other, FunctionTypeSymbol) and self.is_compatible_with(other):
@@ -1253,46 +1323,46 @@ class FunctionTypeSymbol(TypeSymbol):
         elif operation == "CALL":
             # Function call operation returns the function's return type
             return self.return_type
-        
+
         # Functions don't support arithmetic operations
         return NEVER_SYMBOL
-    
+
     def validate_call_signature(self, arg_types: list[TypeSymbol]) -> bool:
         """Validate if the given argument types match this function's signature"""
         if len(arg_types) != len(self.param_types):
             return False
-        
+
         return all(
             param_type.can_assign_from(arg_type)
             for param_type, arg_type in zip(self.param_types, arg_types)
         )
-    
+
     def get_parameter_count(self) -> int:
         """Get the number of parameters this function expects"""
         return len(self.param_types)
-    
+
     def get_parameter_type(self, index: int) -> TypeSymbol:
         """Get the type of the parameter at the given index"""
         if 0 <= index < len(self.param_types):
             return self.param_types[index]
         return NEVER_SYMBOL
-    
+
     def get_return_type(self) -> TypeSymbol:
         """Get the return type of this function"""
         return self.return_type
-    
+
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Function = Function → BOOLEAN (if compatible)"""
         return self.get_result_type("=", other)
-    
+
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Function <> Function → BOOLEAN (if compatible)"""
         return self.get_result_type("<>", other)
-    
+
     def __str__(self) -> str:
         param_names = [param.name for param in self.param_types]
         return f"FUNCTION({', '.join(param_names)}) : {self.return_type.name}"
-    
+
     def __repr__(self) -> str:
         return "<{class_name}(name='{name}', params={params}, return_type='{return_type}')>".format(
             class_name=self.__class__.__name__,
@@ -1312,19 +1382,19 @@ STRING_TYPE_SYMBOL = StringTypeSymbol("STRING")
 
 class BuiltinTypeSymbol(TypeSymbol):
     """Builtin type symbol that delegates to appropriate TypeSymbol instances
-    
+
     This class serves as a bridge between the old type system and the new enhanced
     type system. It can delegate to primitive types or type aliases, providing
     backward compatibility while supporting the new type operations.
     """
-    
+
     def __init__(self, name: str, delegate_type: TypeSymbol = None) -> None:
         super().__init__(name)
         if delegate_type is not None:
             self._delegate_type = delegate_type
         else:
             self._delegate_type = self._get_delegate_type(name)
-    
+
     def _get_delegate_type(self, name: str) -> TypeSymbol:
         """Get the appropriate TypeSymbol delegate for the builtin type"""
         name_upper = name.upper()
@@ -1341,30 +1411,30 @@ class BuiltinTypeSymbol(TypeSymbol):
         else:
             # For unknown types, return NEVER_SYMBOL
             return NEVER_SYMBOL
-    
+
     def set_delegate_type(self, delegate_type: TypeSymbol) -> None:
         """Set the delegate type for this builtin type symbol
-        
+
         This method allows dynamic assignment of the delegate type,
         which is useful for type aliases and complex type scenarios.
         """
         self._delegate_type = delegate_type
-    
+
     @property
     def delegate_type(self) -> TypeSymbol:
         """Get the current delegate type"""
         return self._delegate_type
-    
+
     def resolve_final_type(self) -> TypeSymbol:
         """Resolve through type alias chain to get the final concrete type
-        
+
         This method handles complex type alias chains and ensures that
         we always get to the final concrete type, even through multiple
         levels of BuiltinTypeSymbol and TypeAliasSymbol indirection.
         """
         current = self._delegate_type
         visited = {self.name}  # Track visited types to detect cycles
-        
+
         while True:
             if isinstance(current, TypeAliasSymbol):
                 # Resolve through type alias
@@ -1380,37 +1450,39 @@ class BuiltinTypeSymbol(TypeSymbol):
             else:
                 # We've reached a concrete type
                 break
-        
+
         return current
-    
+
     def is_compatible_with(self, other: TypeSymbol) -> bool:
         """Delegate compatibility checking to the underlying type"""
         if isinstance(other, BuiltinTypeSymbol):
             return self._delegate_type.is_compatible_with(other._delegate_type)
         return self._delegate_type.is_compatible_with(other)
-    
+
     def can_assign_from(self, other: TypeSymbol) -> bool:
         """Delegate assignment compatibility to the underlying type"""
         if isinstance(other, BuiltinTypeSymbol):
             return self._delegate_type.can_assign_from(other._delegate_type)
         return self._delegate_type.can_assign_from(other)
-    
+
     def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
         """Delegate operation result type to the underlying type"""
         if isinstance(other, BuiltinTypeSymbol):
             return self._delegate_type.get_result_type(operation, other._delegate_type)
         return self._delegate_type.get_result_type(operation, other)
-    
+
     def is_builtin_primitive(self) -> bool:
         """Check if this builtin type represents a primitive type"""
         resolved = self.resolve_final_type()
-        return isinstance(resolved, (IntegerTypeSymbol, RealTypeSymbol, 
-                                   BooleanTypeSymbol, CharTypeSymbol))
-    
+        return isinstance(
+            resolved,
+            (IntegerTypeSymbol, RealTypeSymbol, BooleanTypeSymbol, CharTypeSymbol),
+        )
+
     def is_alias(self) -> bool:
         """Check if this builtin type is actually a type alias"""
         return isinstance(self._delegate_type, (TypeAliasSymbol, BuiltinTypeSymbol))
-    
+
     def get_primitive_name(self) -> str:
         """Get the name of the underlying primitive type, if any"""
         resolved = self.resolve_final_type()
@@ -1422,7 +1494,7 @@ class BuiltinTypeSymbol(TypeSymbol):
         return self.name
 
     def __repr__(self) -> str:
-        delegate_name = getattr(self._delegate_type, 'name', str(self._delegate_type))
+        delegate_name = getattr(self._delegate_type, "name", str(self._delegate_type))
         return "<{class_name}(name='{name}', delegate='{delegate}')>".format(
             class_name=self.__class__.__name__,
             name=self.name,

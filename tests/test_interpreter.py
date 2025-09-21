@@ -69,11 +69,11 @@ class InterpreterCalculusTestCase(unittest.TestCase):
             ("7 + (((3 + 2)))", 12),
             ("- 3", -3),
             ("+ 3", 3),
-            ("5 - - - + - 3", 8),
-            ("5 - - - + - (3 + 4) - +2", 10),
             ("17 MOD 5", 2),
             ("20 MOD 5", 0),
             ("10 MOD 3", 1),
+            ("5 - - - + - 3", 8),
+            ("5 - - - + - (3 + 4) - +2", 10),
         ):
             interpreter = makeInterpreter(
                 """PROGRAM Test;
@@ -807,12 +807,15 @@ var
     boolArr: array [1..2] of boolean;
     realArr: array [1..2] of real;
     nestArr : array [1..2] of array of integer;
-    a , b , c, d : integer;
+    a : integer;
+    b : boolean;
+    c : real;
+    d : integer;    
 begin
     a := intArr[100];
     b := boolArr[100];
     c := realArr[100];
-    d := nestArr[100];
+    d := nestArr[100][100];
 end.
     """
         interpreter = makeInterpreter(text)
@@ -822,7 +825,7 @@ end.
         self.assertEqual(ar["a"].value, 0)
         self.assertEqual(ar["b"].value, False)
         self.assertEqual(ar["c"].value, 0.0)
-        self.assertEqual(ar["d"].value, {})
+        self.assertEqual(ar["d"].value, 0)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_string(self):
@@ -1464,7 +1467,6 @@ end.
         self.assertEqual(ar["testString"].value, "Charlie")
         self.assertIsInstance(ar["testCharIndex"], IntegerObject)
         self.assertEqual(ar["testCharIndex"].value, 3)
-        # In a more complete implementation, we would check the actual values
 
 
 class InterpreterLoopTestCase(unittest.TestCase):
