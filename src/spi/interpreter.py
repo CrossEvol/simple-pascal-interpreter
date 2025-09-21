@@ -20,7 +20,6 @@ from spi.ast import (
     Char,
     Compound,
     EnumType,
-    EnumTypeSymbol,
     ForStatement,
     FunctionCall,
     FunctionDecl,
@@ -35,7 +34,6 @@ from spi.ast import (
     ProcedureDecl,
     Program,
     RecordType,
-    RecordTypeSymbol,
     String,
     StringType,
     Type,
@@ -67,6 +65,7 @@ from spi.object import (
     RecordObject,
     StringObject,
 )
+from spi.symbol import EnumTypeSymbol, RecordTypeSymbol
 from spi.token import Token, TokenType
 from spi.util import SpiUtil
 from spi.visitor import NodeVisitor
@@ -659,6 +658,7 @@ class Interpreter(NodeVisitor):
                 ar[var_name] = record_obj
                 return
 
+        # TODO: 这里没有完全解耦
         # 如果有type_symbol（从语义分析器传来），尝试使用它
         type_symbol = node.type_symbol
         if type_symbol is not None:

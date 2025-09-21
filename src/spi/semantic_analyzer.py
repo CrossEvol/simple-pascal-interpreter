@@ -11,23 +11,17 @@ from typing import cast
 from spi.ast import (
     AccessExpression,
     ArrayType,
-    ArrayTypeSymbol,
     Assign,
     BinOp,
     Block,
     Bool,
-    BuiltinFunctionSymbol,
-    BuiltinProcedureSymbol,
-    BuiltinTypeSymbol,
     CaseStatement,
     Char,
     Compound,
     EnumType,
-    EnumTypeSymbol,
     ForStatement,
     FunctionCall,
     FunctionDecl,
-    FunctionSymbol,
     IfStatement,
     IndexSuffix,
     MemberSuffix,
@@ -36,23 +30,16 @@ from spi.ast import (
     PrimitiveType,
     ProcedureCall,
     ProcedureDecl,
-    ProcedureSymbol,
     Program,
-    RecordFieldSymbol,
     RecordType,
-    RecordTypeSymbol,
     String,
     StringType,
-    StringTypeSymbol,
-    Symbol,
     Type,
     TypeDeclaration,
     UnaryOp,
     Var,
     VarDecl,
     VariantPart,
-    VariantPartSymbol,
-    VarSymbol,
     WhileStatement,
 )
 from spi.error import (
@@ -60,6 +47,34 @@ from spi.error import (
     SemanticError,
 )
 from spi.native import NativeMethod
+from spi.symbol import (
+    BOOLEAN_TYPE_SYMBOL,
+    CHAR_TYPE_SYMBOL,
+    INTEGER_TYPE_SYMBOL,
+    NEVER_SYMBOL,
+    REAL_TYPE_SYMBOL,
+    STRING_TYPE_SYMBOL,
+    ArrayTypeSymbol,
+    BooleanTypeSymbol,
+    BuiltinFunctionSymbol,
+    BuiltinProcedureSymbol,
+    BuiltinTypeSymbol,
+    CharTypeSymbol,
+    EnumTypeSymbol,
+    FunctionSymbol,
+    IntegerTypeSymbol,
+    MutabilityValidator,
+    ProcedureSymbol,
+    RealTypeSymbol,
+    RecordFieldSymbol,
+    RecordTypeSymbol,
+    StringTypeSymbol,
+    Symbol,
+    TypeAliasSymbol,
+    TypeSymbol,
+    VariantPartSymbol,
+    VarSymbol,
+)
 from spi.token import Token, TokenType
 from spi.visitor import NodeVisitor
 
@@ -181,7 +196,7 @@ class ScopedSymbolTable:
 
 
 class SemanticAnalyzer(NodeVisitor):
-    __string_type_limit: int = 255
+    __STRING_TYPE_LIMIT: int = 255
 
     def __init__(self) -> None:
         self.current_scope: ScopedSymbolTable | None = None
@@ -319,12 +334,24 @@ class SemanticAnalyzer(NodeVisitor):
                             error_code=ErrorCode.ID_NOT_FOUND, token=node.type_def.token
                         )
 
-                # Create a new type alias symbol
-                # For simplicity, we'll create a BuiltinTypeSymbol that points to the original type
-                alias_symbol = BuiltinTypeSymbol(type_name)
-                alias_symbol.type = (
-                    original_type_symbol  # Make it "point to" the actual type
-                )
+                # Create a proper type alias symbol using TypeAliasSymbol
+                if isinstance(original_type_symbol, TypeSymbol):
+                    alias_symbol = TypeAliasSymbol(type_name, original_type_symbol)
+
+                    # Check for circular reference detection
+                    try:
+                        alias_symbol.resolve_final_type()
+                    except Exception as e:
+                        if "Circular type alias detected" in str(e):
+                            self.error(
+                                ErrorCode.SEMANTIC_CIRCULAR_TYPE_ALIAS,
+                                token=node.type_name.token,
+                            )
+                        else:
+                            raise
+                else:
+                    # For backward compatibility, wrap non-TypeSymbol in BuiltinTypeSymbol
+                    alias_symbol = BuiltinTypeSymbol(type_name, original_type_symbol)
 
                 self.current_scope.insert(alias_symbol)
                 # 将类型映射添加到映射字典
@@ -335,8 +362,25 @@ class SemanticAnalyzer(NodeVisitor):
                 type_symbol = self.current_scope.lookup(type_name_str)
 
                 if type_symbol:
-                    alias_symbol = BuiltinTypeSymbol(type_name)
-                    alias_symbol.type = type_symbol
+                    # Create a proper type alias symbol
+                    if isinstance(type_symbol, TypeSymbol):
+                        alias_symbol = TypeAliasSymbol(type_name, type_symbol)
+
+                        # Check for circular reference detection
+                        try:
+                            alias_symbol.resolve_final_type()
+                        except Exception as e:
+                            if "Circular type alias detected" in str(e):
+                                self.error(
+                                    ErrorCode.SEMANTIC_CIRCULAR_TYPE_ALIAS,
+                                    token=node.type_name.token,
+                                )
+                            else:
+                                raise
+                    else:
+                        # For backward compatibility, wrap non-TypeSymbol in BuiltinTypeSymbol
+                        alias_symbol = BuiltinTypeSymbol(type_name, type_symbol)
+
                     self.current_scope.insert(alias_symbol)
                     # 将类型映射添加到映射字典
                     self.type_mappings[type_name] = alias_symbol
@@ -492,34 +536,100 @@ class SemanticAnalyzer(NodeVisitor):
 
         return current_symbol
 
-    def visit_BinOp(self, node: BinOp) -> None:
-        self.visit(node.left)
-        self.visit(node.right)
+    def _convert_to_type_symbol(self, symbol: Symbol) -> TypeSymbol:
+        """Convert a Symbol to TypeSymbol"""
+        if isinstance(symbol, TypeSymbol):
+            return symbol
+        elif hasattr(symbol, "name"):
+            name = symbol.name.upper()
+            if name == "INTEGER":
+                return INTEGER_TYPE_SYMBOL
+            elif name == "REAL":
+                return REAL_TYPE_SYMBOL
+            elif name == "BOOLEAN":
+                return BOOLEAN_TYPE_SYMBOL
+            elif name == "CHAR":
+                return CHAR_TYPE_SYMBOL
+            elif name == "STRING" or name.startswith("STRING["):
+                return STRING_TYPE_SYMBOL
+            else:
+                return NEVER_SYMBOL
+        else:
+            return NEVER_SYMBOL
 
-    def visit_Type(self, node: Type):
+    def _get_variable_type(self, var_symbol: Symbol) -> TypeSymbol:
+        """Get the TypeSymbol for a variable symbol"""
+        if var_symbol is None or var_symbol.type is None:
+            return NEVER_SYMBOL
+
+        # Convert to TypeSymbol if needed
+        if isinstance(var_symbol.type, TypeSymbol):
+            return var_symbol.type.resolve_final_type()
+        else:
+            return self._convert_to_type_symbol(var_symbol.type)
+
+    def visit_BinOp(self, node: BinOp) -> TypeSymbol:
+        # Visit operands and get their typedef
+        left_type = self.visit(node.left)
+        right_type = self.visit(node.right)
+
+        # Use TypeSymbol operations for type checking
+        if isinstance(left_type, TypeSymbol) and isinstance(right_type, TypeSymbol):
+            operation = node.op.value
+            result_type = left_type.get_result_type(operation, right_type)
+
+            # Check for incompatible type operations
+            if result_type is NEVER_SYMBOL:
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES, token=node.op
+                )
+
+            # Store result type for potential use by parent nodes
+            node.result_type = result_type
+            return result_type
+        else:
+            return NEVER_SYMBOL
+
+    def visit_Type(self, node: Type) -> TypeSymbol:
         return self.current_scope.lookup(node.value)
 
-    def visit_PrimitiveType(self, node: PrimitiveType):
-        pass
+    def visit_PrimitiveType(self, node: PrimitiveType) -> TypeSymbol:
+        """Visit a primitive type node and return the corresponding type symbol"""
+        type_name = node.value.upper()
 
-    def visit_StringType(self, node: StringType):
+        if type_name == "INTEGER":
+            return INTEGER_TYPE_SYMBOL
+        elif type_name == "REAL":
+            return REAL_TYPE_SYMBOL
+        elif type_name == "BOOLEAN":
+            return BOOLEAN_TYPE_SYMBOL
+        elif type_name == "CHAR":
+            return CHAR_TYPE_SYMBOL
+        else:
+            return NEVER_SYMBOL
+
+    def visit_StringType(self, node: StringType) -> TypeSymbol:
+        string_type_symbol = StringTypeSymbol(
+            name=SemanticAnalyzer.string_type_name(self.__STRING_TYPE_LIMIT),
+            limit=int(self.__STRING_TYPE_LIMIT),
+        )
         if isinstance(node.limit, Num):
             limit = int(node.limit.value)
-            self.__string_type_limit = limit
+            self.__STRING_TYPE_LIMIT = limit
             if self.current_scope is None:
                 raise SemanticError(
                     error_code=ErrorCode.MISSING_CURRENT_SCOPE,
                     token=node.token,
                     message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.token}",
                 )
-            self.current_scope.insert(
-                StringTypeSymbol(
-                    name=SemanticAnalyzer.string_type_name(limit), limit=int(limit)
-                )
+            string_type_symbol = StringTypeSymbol(
+                name=SemanticAnalyzer.string_type_name(limit),
+                limit=int(limit),
             )
-        pass
+            self.current_scope.insert(string_type_symbol)
+        return string_type_symbol
 
-    def visit_ArrayType(self, node: ArrayType) -> None:
+    def visit_ArrayType(self, node: ArrayType) -> TypeSymbol:
         if isinstance(node.element_type, ArrayType):
             self.visit_ArrayType(node.element_type)
         if self.current_scope is None:
@@ -559,8 +669,10 @@ class SemanticAnalyzer(NodeVisitor):
             self.current_scope.insert(array_type_symbol)
             # 将类型映射添加到映射字典
             self.type_mappings[type_name] = array_type_symbol
+            return array_type_symbol
+        return type_symbol
 
-    def visit_RecordType(self, node: RecordType) -> None:
+    def visit_RecordType(self, node: RecordType) -> RecordTypeSymbol:
         """访问记录类型定义节点"""
         # 创建记录类型符号
         type_name = f"record_{self._get_record_type_counter()}"
@@ -583,6 +695,7 @@ class SemanticAnalyzer(NodeVisitor):
         # 创建记录类型符号
         record_type_symbol = RecordTypeSymbol(type_name, fields, variant_part_symbol)
         self.current_type = record_type_symbol
+        return record_type_symbol
 
     def _process_variant_part(
         self, variant_part: VariantPart, existing_fields: dict[str, Symbol]
@@ -617,8 +730,7 @@ class SemanticAnalyzer(NodeVisitor):
             variant_fields = {}
             for field in variant_case.fields:
                 field_name = field.name.value
-                self.visit(field.type_node)
-                field_type = cast(Symbol, self.current_type)
+                field_type = cast(Symbol, self.visit(field.type_node))
 
                 # 创建字段符号并添加到变体字段中
                 field_symbol = RecordFieldSymbol(field_name, field_type)
@@ -667,7 +779,13 @@ class SemanticAnalyzer(NodeVisitor):
         # We have all the information we need to create a variable symbol.
         # Create the symbol and insert it into the symbol table.
         var_name = node.var_node.value
-        var_symbol = VarSymbol(var_name, resolved_type_symbol)
+
+        # Determine mutability - for now, all VAR declarations are mutable
+        # TODO: Add support for CONST declarations in parser
+        is_mutable = True  # All current declarations are VAR declarations
+
+        # Create VarSymbol with mutability information
+        var_symbol = VarSymbol(var_name, resolved_type_symbol, is_mutable=is_mutable)
 
         # Signal an error if the table already has a symbol
         # with the same name
@@ -682,19 +800,22 @@ class SemanticAnalyzer(NodeVisitor):
         node.type_symbol = resolved_type_symbol
 
     def visit_Assign(self, node: Assign) -> None:
-        # right-hand side
-        self.visit(node.right)
-        # left-hand side
+        # Visit right-hand side first and get its type
+        right_type = self.visit(node.right)
+
+        # Visit left-hand side
         if isinstance(node.left, Var):
             if node.left.value in self.unmodified_vars:
                 self.error(ErrorCode.MODIFY_LOOP_VAR_NOT_ALLOW, token=node.left.token)
-            self.visit(node.left)
+            left_type = self.visit(node.left)
+
             if self.current_scope is None:
                 raise SemanticError(
                     error_code=ErrorCode.MISSING_CURRENT_SCOPE,
                     token=node.left.token,
                     message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.left.token}",
                 )
+
             var_symbol = self.current_scope.lookup(node.left.value)
             if var_symbol is None:
                 raise SemanticError(
@@ -708,6 +829,17 @@ class SemanticAnalyzer(NodeVisitor):
                     token=node.left.token,
                     message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
                 )
+
+            # Validate const variable assignment
+            if hasattr(var_symbol, "is_const") and var_symbol.is_const:
+                is_valid, error_msg = MutabilityValidator.validate_const_assignment(
+                    var_symbol, is_initialization=False
+                )
+                if not is_valid:
+                    self.error(
+                        ErrorCode.SEMANTIC_CONST_ASSIGNMENT, token=node.left.token
+                    )
+
         elif isinstance(node.left, AccessExpression):
             # Handle access expressions (array/member access)
             self.visit(node.left)
@@ -743,50 +875,125 @@ class SemanticAnalyzer(NodeVisitor):
                                 message=f"String literal has too many characters for CHAR variable: '{string_value}'",
                             )
 
-    def visit_Var(self, node: Var) -> None:
+                # Enhanced type compatibility checking (after specific validations)
+                left_type = self._get_variable_type(var_symbol)
+
+                # Use TypeSymbol compatibility checking for general type mismatches
+                if isinstance(left_type, TypeSymbol) and isinstance(
+                    right_type, TypeSymbol
+                ):
+                    # Only check for basic primitive type incompatibilities
+                    # Skip enum types and complex types - let existing logic handle them
+                    if isinstance(
+                        left_type,
+                        (IntegerTypeSymbol, RealTypeSymbol, BooleanTypeSymbol),
+                    ) and isinstance(
+                        right_type,
+                        (
+                            IntegerTypeSymbol,
+                            RealTypeSymbol,
+                            BooleanTypeSymbol,
+                            StringTypeSymbol,
+                            CharTypeSymbol,
+                        ),
+                    ):
+                        if not left_type.can_assign_from(right_type):
+                            # Skip if this is a CHAR assignment that was already validated above
+                            if not (
+                                left_type == CHAR_TYPE_SYMBOL
+                                and isinstance(node.right, String)
+                            ):
+                                self.error(
+                                    ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES,
+                                    token=node.left.token,
+                                )
+
+    def visit_Var(self, node: Var) -> TypeSymbol:
         var_name = node.value
         if self.current_scope is None:
             self.error(error_code=ErrorCode.NULL_POINTER, token=node.token)
-            return
+            return NEVER_SYMBOL
 
         var_symbol = self.current_scope.lookup(var_name)
         if var_symbol is None:
             self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.token)
-            return
+            return NEVER_SYMBOL
 
-    def visit_AccessExpression(self, node: AccessExpression) -> None:
-        # Visit the base expression
-        self.visit(node.base)
+        # Check if this is an enum value
+        if var_name in self.enum_values:
+            enum_info = self.enum_values[var_name]
+            enum_type_name = enum_info["type"]
+            # Look up the enum type symbol
+            enum_type_symbol = self.current_scope.lookup(enum_type_name)
+            if isinstance(enum_type_symbol, EnumTypeSymbol):
+                return enum_type_symbol
 
-        # Validate each suffix
+        # Convert to TypeSymbol if needed
+        if var_symbol.type is None:
+            return NEVER_SYMBOL
+        elif isinstance(var_symbol.type, TypeSymbol):
+            return var_symbol.type.resolve_final_type()
+        else:
+            # Convert builtin types to TypeSymbol
+            return self._convert_to_type_symbol(var_symbol.type)
+
+    def visit_AccessExpression(self, node: AccessExpression) -> TypeSymbol:
+        # Start with the base expression type
+        current_type = self.visit(node.base)
+
+        # Process each suffix to determine the final type
         for suffix in node.suffixes:
             if isinstance(suffix, IndexSuffix):
-                # Check if base supports indexing (arrays, strings)
-                if isinstance(node.base, Var):
-                    var_name = node.base.value
-                    if self.current_scope is None:
-                        self.error(
-                            error_code=ErrorCode.NULL_POINTER, token=node.base.token
-                        )
-                        return
-
-                    var_symbol = self.current_scope.lookup(var_name)
-                    if var_symbol is None:
-                        self.error(
-                            error_code=ErrorCode.ID_NOT_FOUND, token=node.base.token
-                        )
-                        return
-
-                    # TODO: Add type checking to ensure variable supports indexing
-
                 # Visit the index expression
                 self.visit(suffix.index)
 
+                # Array indexing: return element type
+                if isinstance(current_type, ArrayTypeSymbol):
+                    # Get the element type from the array
+                    if isinstance(current_type.element_type, TypeSymbol):
+                        current_type = current_type.element_type.resolve_final_type()
+                    else:
+                        current_type = self._convert_to_type_symbol(
+                            current_type.element_type
+                        )
+                elif current_type == STRING_TYPE_SYMBOL:
+                    # String indexing returns CHAR
+                    current_type = CHAR_TYPE_SYMBOL
+                else:
+                    # Invalid indexing operation
+                    return NEVER_SYMBOL
+
             elif isinstance(suffix, MemberSuffix):
-                # Member access - check if base supports member access (records, enums)
-                # For records, we need to check if the field exists
-                # For now, we'll allow member access without strict validation
-                pass  # Allow member access for records
+                # Record field access: return field type
+                if isinstance(current_type, RecordTypeSymbol):
+                    field_name = suffix.member.value
+                    if field_name in current_type.fields:
+                        field_symbol = current_type.fields[field_name]
+                        if isinstance(field_symbol.type, TypeSymbol):
+                            current_type = field_symbol.type.resolve_final_type()
+                        else:
+                            current_type = self._convert_to_type_symbol(
+                                field_symbol.type
+                            )
+                    elif field_name in current_type.variant_fields:
+                        field_symbol = current_type.variant_fields[field_name]
+                        if isinstance(field_symbol.type, TypeSymbol):
+                            current_type = field_symbol.type.resolve_final_type()
+                        else:
+                            current_type = self._convert_to_type_symbol(
+                                field_symbol.type
+                            )
+                    else:
+                        # Field not found in record
+                        return NEVER_SYMBOL
+                else:
+                    # Invalid member access operation
+                    return NEVER_SYMBOL
+            else:
+                # Unknown suffix type
+                return NEVER_SYMBOL
+
+        return current_type
 
     def visit_IndexSuffix(self, node: IndexSuffix) -> None:
         self.visit(node.index)
@@ -795,16 +1002,16 @@ class SemanticAnalyzer(NodeVisitor):
         # Nothing to validate for the member token itself
         pass
 
-    def visit_Num(self, node: Num) -> None:
-        pass
+    def visit_Num(self, node: Num) -> TypeSymbol:
+        return INTEGER_TYPE_SYMBOL
 
-    def visit_Bool(self, node: Bool) -> None:
-        pass
+    def visit_Bool(self, node: Bool) -> TypeSymbol:
+        return BOOLEAN_TYPE_SYMBOL
 
-    def visit_String(self, node: String) -> None:
-        pass
+    def visit_String(self, node: String) -> TypeSymbol:
+        return STRING_TYPE_SYMBOL
 
-    def visit_Char(self, node: Char) -> None:
+    def visit_Char(self, node: Char) -> TypeSymbol:
         # Validate character value
         char_value = node.value
         if len(char_value) > 1:
@@ -824,8 +1031,50 @@ class SemanticAnalyzer(NodeVisitor):
                     message=f"Character ASCII value {ascii_value} is out of range (0-255)",
                 )
 
-    def visit_UnaryOp(self, node: UnaryOp) -> None:
-        pass
+        return CHAR_TYPE_SYMBOL
+
+    def visit_UnaryOp(self, node: UnaryOp) -> TypeSymbol:
+        # Visit the operand and get its type
+        operand_type = self.visit(node.expr)
+
+        # Use TypeSymbol operations for type checking
+        if isinstance(operand_type, TypeSymbol):
+            operation = node.op.value
+
+            # Determine result type based on operation and operand type
+            if operation == "-":
+                # Unary minus: valid for INTEGER and REAL
+                if operand_type in [INTEGER_TYPE_SYMBOL, REAL_TYPE_SYMBOL]:
+                    result_type = operand_type
+                else:
+                    result_type = NEVER_SYMBOL
+            elif operation == "+":
+                # Unary plus: valid for INTEGER and REAL
+                if operand_type in [INTEGER_TYPE_SYMBOL, REAL_TYPE_SYMBOL]:
+                    result_type = operand_type
+                else:
+                    result_type = NEVER_SYMBOL
+            elif operation == "NOT":
+                # Logical NOT: valid only for BOOLEAN
+                if operand_type == BOOLEAN_TYPE_SYMBOL:
+                    result_type = BOOLEAN_TYPE_SYMBOL
+                else:
+                    result_type = NEVER_SYMBOL
+            else:
+                # Unknown unary operation
+                result_type = NEVER_SYMBOL
+
+            # Check for incompatible type operations
+            if result_type == NEVER_SYMBOL:
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES, token=node.op
+                )
+
+            # Store result type for potential use by parent nodes
+            node.result_type = result_type
+            return result_type
+        else:
+            return NEVER_SYMBOL
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         proc_name = node.proc_name
@@ -872,8 +1121,6 @@ class SemanticAnalyzer(NodeVisitor):
         if self.current_scope is None:
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return
-        proc_symbol = self.current_scope.lookup(node.proc_name)
-        # Note: proc_symbol field removed from AST node for interpreter decoupling
 
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
         func_name = node.func_name
@@ -922,12 +1169,21 @@ class SemanticAnalyzer(NodeVisitor):
         # accessed by the interpreter when executing procedure call
         func_symbol.block_ast = node.block_node
 
-    def visit_FunctionCall(self, node: FunctionCall) -> None:
+    def visit_FunctionCall(self, node: FunctionCall) -> TypeSymbol:
         for param_node in node.actual_params:
             self.visit(param_node)
 
         if self.current_scope is None:
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
-            return
+            return NEVER_SYMBOL
         func_symbol = self.current_scope.lookup(node.func_name)
         # Note: func_symbol field removed from AST node for interpreter decoupling
+
+        # Return the function's return type
+        if func_symbol and hasattr(func_symbol, "return_type"):
+            if isinstance(func_symbol.return_type, TypeSymbol):
+                return func_symbol.return_type
+            else:
+                return self._convert_to_type_symbol(func_symbol.return_type)
+        else:
+            return NEVER_SYMBOL
