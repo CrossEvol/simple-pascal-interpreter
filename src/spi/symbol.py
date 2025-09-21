@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from spi.ast import Block, Type
 
 ###############################################################################
@@ -18,15 +19,121 @@ class Symbol:
         self.scope_level: int = 0
 
 
+###############################################################################
+#                                                                             #
+#  TYPE SYMBOL INFRASTRUCTURE                                                #
+#                                                                             #
+###############################################################################
+
+
+class TypeSymbol(Symbol, ABC):
+    """Abstract base class for all type symbols"""
+    
+    def __init__(self, name: str):
+        super().__init__(name)
+    
+    @abstractmethod
+    def is_compatible_with(self, other: 'TypeSymbol') -> bool:
+        """Check if this type is compatible with another type"""
+        pass
+    
+    @abstractmethod
+    def can_assign_from(self, other: 'TypeSymbol') -> bool:
+        """Check if a value of other type can be assigned to this type"""
+        pass
+    
+    @abstractmethod
+    def get_result_type(self, operation: str, other: 'TypeSymbol') -> 'TypeSymbol':
+        """Get the result type of an operation with another type"""
+        pass
+    
+    def resolve_final_type(self) -> 'TypeSymbol':
+        """Resolve through type alias chain to get the final concrete type"""
+        return self
+
+
+class NeverSymbol(TypeSymbol):
+    """Special symbol representing 'never' type (replacement for None)"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        if not hasattr(self, '_initialized'):
+            super().__init__("NEVER")
+            self._initialized = True
+    
+    def is_compatible_with(self, other: TypeSymbol) -> bool:
+        """Never type is compatible with nothing"""
+        return False
+    
+    def can_assign_from(self, other: TypeSymbol) -> bool:
+        """Never type cannot be assigned from anything"""
+        return False
+    
+    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
+        """Never type operations always result in Never type"""
+        return self
+    
+    def __str__(self) -> str:
+        return "NEVER"
+    
+    def __repr__(self) -> str:
+        return "<NeverSymbol(name='NEVER')>"
+
+
+# Singleton instance
+NEVER_SYMBOL = NeverSymbol()
+
+
+class PrimitiveTypeSymbol(TypeSymbol, ABC):
+    """Abstract base class for primitive types (INTEGER, REAL, BOOLEAN, CHAR)"""
+    
+    def __init__(self, name: str):
+        super().__init__(name)
+    
+    def __str__(self) -> str:
+        return self.name
+    
+    def __repr__(self) -> str:
+        return "<{class_name}(name='{name}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+        )
+
+
 class VarSymbol(Symbol):
-    def __init__(self, name: str, type: Symbol | None) -> None:
-        super().__init__(name, type)
+    def __init__(self, name: str, type: Symbol | None, is_mutable: bool = True) -> None:
+        super().__init__(name, type or NEVER_SYMBOL)
+        self.is_mutable = is_mutable
+        self.is_initialized = False  # Track if const has been initialized
+    
+    def can_modify(self) -> bool:
+        """Check if this variable can be modified"""
+        if not self.is_mutable:
+            # Const variables can only be modified if not yet initialized
+            return not self.is_initialized
+        return True
+    
+    def mark_initialized(self):
+        """Mark const variable as initialized"""
+        self.is_initialized = True
+    
+    @property
+    def is_const(self) -> bool:
+        """Check if this is a const variable"""
+        return not self.is_mutable
 
     def __str__(self) -> str:
-        return "<{class_name}(name='{name}', type='{type}')>".format(
+        return "<{class_name}(name='{name}', type='{type}', mutable={mutable})>".format(
             class_name=self.__class__.__name__,
             name=self.name,
             type=self.type,
+            mutable=self.is_mutable,
         )
 
     __repr__ = __str__
