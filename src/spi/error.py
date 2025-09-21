@@ -38,6 +38,16 @@ class ErrorCode(Enum):
     SEMANTIC_CHAR_TOO_MANY_CHARS = "Semantic char too many characters"
     SEMANTIC_CHAR_INVALID_ASCII = "Semantic char invalid ASCII value"
     SEMANTIC_DUPLICATE_CASE_LABEL = "Semantic duplicate case label"
+    
+    # Enhanced type system errors
+    SEMANTIC_TYPE_MISMATCH = "Type mismatch in operation"
+    SEMANTIC_INCOMPATIBLE_TYPES = "Incompatible types for operation"
+    SEMANTIC_CONST_ASSIGNMENT = "Cannot assign to const variable"
+    SEMANTIC_CONST_NOT_INITIALIZED = "Const variable must be initialized"
+    SEMANTIC_INVALID_TYPE_OPERATION = "Invalid operation for type"
+    SEMANTIC_CIRCULAR_TYPE_ALIAS = "Circular type alias detected"
+    SEMANTIC_PROCEDURE_TYPE_MISMATCH = "Procedure signature mismatch"
+    SEMANTIC_FUNCTION_TYPE_MISMATCH = "Function signature mismatch"
 
     # Interpreter errors
     INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
