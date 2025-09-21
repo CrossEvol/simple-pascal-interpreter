@@ -509,9 +509,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             )
         the_exception = cm.exception
         # Currently raises ID_NOT_FOUND because B is not defined when A is processed
-        self.assertEqual(
-            the_exception.error_code, ErrorCode.ID_NOT_FOUND
-        )
+        self.assertEqual(the_exception.error_code, ErrorCode.ID_NOT_FOUND)
 
     def test_unary_op_integer_valid(self):
         """Test that unary operations on INTEGER are valid"""
@@ -660,6 +658,54 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         """
         )
         # Test passes if no exception is raised
+
+    def test_record_variant_tag_should_be_type_symbol(self):
+        """Test that NOT operation on INTEGER raises error"""
+        self.runSemanticAnalyzer(
+            """
+        program SimpleVariantRecordExample;
+
+        type
+            TShapeType = (Circle, Rectangle);
+            
+            TShape = record
+                shapeType: TShapeType;
+                case TShapeType of
+                    Circle: (radius: Real);
+                    Rectangle: (width, height: Real);
+            end;
+
+        begin
+        end.
+        """
+        )
+
+    def test_record_variant_tag_should__not_be_field_name(self):
+        """Test that NOT operation on INTEGER raises error"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program SimpleVariantRecordExample;
+
+            type
+                TShapeType = (Circle, Rectangle);
+                
+                TShape = record
+                    shapeType: TShapeType;
+                    case shapeType of
+                        Circle: (radius: Real);
+                        Rectangle: (width, height: Real);
+                end;
+
+            begin
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code,
+            ErrorCode.SEMANTIC_RECORD_VARIANT_INVALID_TAG_ERROR,
+        )
 
     def test_nested_array_access(self):
         """Test that nested array access works correctly"""

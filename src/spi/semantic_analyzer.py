@@ -703,13 +703,19 @@ class SemanticAnalyzer(NodeVisitor):
         """处理记录的变体部分"""
         tag_field_name = variant_part.tag_field.value
 
+        tag_field_symbol: TypeSymbol = NEVER_SYMBOL
+        for field_type_symbol in existing_fields.values():
+            if tag_field_name == field_type_symbol.type.name:
+                tag_field_symbol = field_type_symbol
+                break
+
         # 检查标签字段是否是已定义的枚举类型
-        if tag_field_name not in existing_fields:
+        if tag_field_symbol is NEVER_SYMBOL:
             self.error(
-                error_code=ErrorCode.SEMANTIC_ERROR, token=variant_part.tag_field.token
+                error_code=ErrorCode.SEMANTIC_RECORD_VARIANT_INVALID_TAG_ERROR,
+                token=variant_part.tag_field.token,
             )
 
-        tag_field_symbol = cast(Symbol, existing_fields[tag_field_name])
         if not isinstance(tag_field_symbol.type, EnumTypeSymbol):
             self.error(
                 error_code=ErrorCode.SEMANTIC_ERROR, token=variant_part.tag_field.token

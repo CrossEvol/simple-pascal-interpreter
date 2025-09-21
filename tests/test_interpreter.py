@@ -1182,7 +1182,7 @@ type
     
     TShape = record
         shapeType: TShapeType;
-        case shapeType of
+        case TShapeType of
             Circle: (radius: Real);
             Rectangle: (width, height: Real);
     end;

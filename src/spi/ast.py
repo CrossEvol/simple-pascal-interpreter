@@ -344,7 +344,7 @@ class RecordField(AST):
 class VariantPart(AST):
     """表示记录的变体部分"""
 
-    def __init__(self, tag_field: Var, variant_cases: list[VariantCase]):
+    def __init__(self, tag_field: Type, variant_cases: list[VariantCase]):
         self.tag_field = tag_field  # 标签字段（必须是枚举类型）
         self.variant_cases = variant_cases  # 变体情况列表
 

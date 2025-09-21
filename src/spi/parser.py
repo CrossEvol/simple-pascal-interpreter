@@ -431,7 +431,7 @@ class Parser:
         self.eat(TokenType.CASE)
 
         # 解析标签字段（必须是枚举类型）
-        tag_field = Var(self.current_token)
+        tag_field = Type(token=self.current_token)
         self.eat(TokenType.ID)
 
         self.eat(TokenType.OF)

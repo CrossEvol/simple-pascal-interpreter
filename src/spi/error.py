@@ -38,7 +38,8 @@ class ErrorCode(Enum):
     SEMANTIC_CHAR_TOO_MANY_CHARS = "Semantic char too many characters"
     SEMANTIC_CHAR_INVALID_ASCII = "Semantic char invalid ASCII value"
     SEMANTIC_DUPLICATE_CASE_LABEL = "Semantic duplicate case label"
-    
+    SEMANTIC_RECORD_VARIANT_INVALID_TAG_ERROR = "Semantic record variant invalid tag"
+
     # Enhanced type system errors
     SEMANTIC_TYPE_MISMATCH = "Type mismatch in operation"
     SEMANTIC_INCOMPATIBLE_TYPES = "Incompatible types for operation"
