@@ -373,14 +373,35 @@ class Symbol:
 
 
 class VarSymbol(Symbol):
-    def __init__(self, name: str, type: Symbol | None) -> None:
-        super().__init__(name, type)
+    def __init__(self, name: str, type: Symbol | None, is_mutable: bool = True) -> None:
+        # Import here to avoid circular imports
+        from src.spi.symbol import NEVER_SYMBOL
+        super().__init__(name, type or NEVER_SYMBOL)
+        self.is_mutable = is_mutable
+        self.is_initialized = False  # Track if const has been initialized
+
+    def can_modify(self) -> bool:
+        """Check if this variable can be modified"""
+        if not self.is_mutable:
+            # Const variables can only be modified if not yet initialized
+            return not self.is_initialized
+        return True
+
+    def mark_initialized(self):
+        """Mark const variable as initialized"""
+        self.is_initialized = True
+
+    @property
+    def is_const(self) -> bool:
+        """Check if this is a const variable"""
+        return not self.is_mutable
 
     def __str__(self) -> str:
-        return "<{class_name}(name='{name}', type='{type}')>".format(
+        return "<{class_name}(name='{name}', type='{type}', mutable={mutable})>".format(
             class_name=self.__class__.__name__,
             name=self.name,
             type=self.type,
+            mutable=self.is_mutable,
         )
 
     __repr__ = __str__

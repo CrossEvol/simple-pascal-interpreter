@@ -349,6 +349,64 @@ class VarSymbol(Symbol):
         """Check if this is a const variable"""
         return not self.is_mutable
 
+    def validate_assignment(self, is_initialization: bool = False) -> tuple[bool, str | None]:
+        """
+        Validate if assignment to this variable is allowed.
+        
+        Args:
+            is_initialization: True if this is the initial assignment to a const variable
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if self.is_mutable:
+            # Mutable variables can always be assigned
+            return True, None
+            
+        # For const variables
+        if is_initialization and not self.is_initialized:
+            # Allow initialization-time assignment to const variables
+            return True, None
+        elif self.is_initialized:
+            # Const variable already initialized, cannot be reassigned
+            return False, f"Cannot assign to const variable '{self.name}' - already initialized"
+        else:
+            # Const variable not yet initialized, but this is not an initialization
+            return False, f"Cannot assign to const variable '{self.name}' - must be initialized at declaration"
+
+    def validate_modification_permission(self) -> tuple[bool, str | None]:
+        """
+        Check if this variable has permission to be modified.
+        
+        Returns:
+            Tuple of (can_modify, error_message)
+        """
+        if self.is_mutable:
+            return True, None
+            
+        if not self.is_initialized:
+            return True, None  # Can modify during initialization
+            
+        return False, f"Cannot modify const variable '{self.name}'"
+
+    def require_initialization_check(self) -> bool:
+        """
+        Check if this variable requires initialization validation.
+        
+        Returns:
+            True if this is a const variable that must be initialized
+        """
+        return self.is_const
+
+    def is_initialization_required(self) -> bool:
+        """
+        Check if this const variable still needs to be initialized.
+        
+        Returns:
+            True if this is a const variable that hasn't been initialized yet
+        """
+        return self.is_const and not self.is_initialized
+
     def __str__(self) -> str:
         return "<{class_name}(name='{name}', type='{type}', mutable={mutable})>".format(
             class_name=self.__class__.__name__,
@@ -358,6 +416,117 @@ class VarSymbol(Symbol):
         )
 
     __repr__ = __str__
+
+
+class MutabilityValidator:
+    """Helper class for validating variable mutability and const assignment rules"""
+    
+    @staticmethod
+    def validate_const_assignment(var_symbol: VarSymbol, is_initialization: bool = False) -> tuple[bool, str | None]:
+        """
+        Validate assignment to a const variable.
+        
+        Args:
+            var_symbol: The variable symbol being assigned to
+            is_initialization: True if this is the initial assignment during declaration
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not isinstance(var_symbol, VarSymbol):
+            return True, None  # Not a variable, no validation needed
+            
+        return var_symbol.validate_assignment(is_initialization)
+    
+    @staticmethod
+    def validate_variable_modification(var_symbol: VarSymbol) -> tuple[bool, str | None]:
+        """
+        Validate if a variable can be modified.
+        
+        Args:
+            var_symbol: The variable symbol being modified
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not isinstance(var_symbol, VarSymbol):
+            return True, None  # Not a variable, no validation needed
+            
+        return var_symbol.validate_modification_permission()
+    
+    @staticmethod
+    def check_initialization_requirements(var_symbol: VarSymbol) -> tuple[bool, str | None]:
+        """
+        Check if a const variable meets initialization requirements.
+        
+        Args:
+            var_symbol: The variable symbol to check
+            
+        Returns:
+            Tuple of (is_satisfied, error_message)
+        """
+        if not isinstance(var_symbol, VarSymbol):
+            return True, None  # Not a variable, no requirements
+            
+        if var_symbol.is_initialization_required():
+            return False, f"Const variable '{var_symbol.name}' must be initialized"
+            
+        return True, None
+    
+    @staticmethod
+    def mark_variable_initialized(var_symbol: VarSymbol) -> None:
+        """
+        Mark a variable as initialized (for const variables).
+        
+        Args:
+            var_symbol: The variable symbol to mark as initialized
+        """
+        if isinstance(var_symbol, VarSymbol):
+            var_symbol.mark_initialized()
+    
+    @staticmethod
+    def is_const_variable(var_symbol: VarSymbol) -> bool:
+        """
+        Check if a variable is a const variable.
+        
+        Args:
+            var_symbol: The variable symbol to check
+            
+        Returns:
+            True if the variable is const, False otherwise
+        """
+        if not isinstance(var_symbol, VarSymbol):
+            return False
+            
+        return var_symbol.is_const
+    
+    @staticmethod
+    def get_mutability_info(var_symbol: VarSymbol) -> dict[str, bool]:
+        """
+        Get comprehensive mutability information for a variable.
+        
+        Args:
+            var_symbol: The variable symbol to analyze
+            
+        Returns:
+            Dictionary with mutability information
+        """
+        if not isinstance(var_symbol, VarSymbol):
+            return {
+                'is_mutable': True,
+                'is_const': False,
+                'is_initialized': True,
+                'can_modify': True,
+                'requires_initialization': False
+            }
+            
+        return {
+            'is_mutable': var_symbol.is_mutable,
+            'is_const': var_symbol.is_const,
+            'is_initialized': var_symbol.is_initialized,
+            'can_modify': var_symbol.can_modify(),
+            'requires_initialization': var_symbol.require_initialization_check()
+        }
 
 
 class StringTypeSymbol(TypeSymbol):
