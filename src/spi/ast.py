@@ -275,6 +275,7 @@ class ProcedureDecl(Declaration):
         self.proc_name = proc_name
         self.formal_params = formal_params  # a list of Param nodes
         self.block_node = block_node
+        self.is_forward = False
 
 
 class FunctionDecl(Declaration):

@@ -762,6 +762,49 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         )
         # Test passes - the current implementation allows this but returns NEVER type
 
+    def test_duplicate_procedure_declaration_without_forward(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program ForwardInvalidExample;
+
+            procedure Proc1();
+            begin
+            end;
+
+            procedure Proc1();
+            begin
+            end;
+
+            { 主程序 }
+            begin
+                Proc1();
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION
+        )
+
+    def test_forward_procedure_declaration(self):
+        self.runSemanticAnalyzer(
+            """
+            program ForwardSafeExample;
+
+            procedure Proc1(); forward;
+
+            procedure Proc1();
+            begin
+            end;
+
+            { 主程序 }
+            begin
+                Proc1();
+            end.
+            """
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

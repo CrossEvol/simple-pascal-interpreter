@@ -231,7 +231,7 @@ class Parser:
 
     def procedure_declaration(self) -> ProcedureDecl:
         """procedure_declaration :
-        PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? SEMI block SEMI
+        PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? (FORWARD;?) (SEMI block SEMI)?
         """
         self.eat(TokenType.PROCEDURE)
         proc_name = self.current_token.value
@@ -242,11 +242,28 @@ class Parser:
             self.eat(TokenType.LPAREN)
             formal_params = self.formal_parameter_list()
             self.eat(TokenType.RPAREN)
+        self.eat(TokenType.SEMI)
 
-        self.eat(TokenType.SEMI)
-        block_node = self.block()
-        proc_decl = ProcedureDecl(proc_name, formal_params, block_node)
-        self.eat(TokenType.SEMI)
+        is_forward = False
+        if self.current_token.type == TokenType.FORWARD:
+            self.eat(TokenType.FORWARD)
+            self.eat(TokenType.SEMI)
+            is_forward = True
+
+        if not is_forward:
+            block_node = self.block()
+            proc_decl = ProcedureDecl(proc_name, formal_params, block_node)
+            proc_decl.is_forward = is_forward
+            self.eat(TokenType.SEMI)
+        else:
+            if self.current_token.type == TokenType.BEGIN:
+                raise ParserError(
+                    error_code=ErrorCode.PARSER_UNEXPECTED_TOKEN,
+                    token=self.current_token,
+                    message=f"{ErrorCode.PARSER_UNEXPECTED_TOKEN.value} -> {self.current_token}",
+                )
+            proc_decl = ProcedureDecl(proc_name, formal_params, NoOp())
+            proc_decl.is_forward = is_forward
         return proc_decl
 
     def function_declaration(self) -> FunctionDecl:
@@ -700,7 +717,7 @@ class Parser:
             return CaseLabel(token.value)
         else:
             self.error(
-                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                error_code=ErrorCode.PARSER_UNEXPECTED_TOKEN,
                 token=token,
             )
             raise
@@ -1079,7 +1096,7 @@ class Parser:
         node = self.program()
         if self.current_token.type != TokenType.EOF:
             self.error(
-                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                error_code=ErrorCode.PARSER_UNEXPECTED_TOKEN,
                 token=self.current_token,
             )
 

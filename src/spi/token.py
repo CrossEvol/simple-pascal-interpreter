@@ -53,6 +53,7 @@ class TokenType(Enum):
     OF = "OF"
     CASE = "CASE"
     PROCEDURE = "PROCEDURE"
+    FORWARD = "FORWARD"
     TYPE = "TYPE"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block

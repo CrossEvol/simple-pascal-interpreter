@@ -1179,6 +1179,7 @@ class ProcedureSymbol(Symbol):
         )
         # a reference to procedure's body (AST sub-tree)
         self.block_ast: Block | None = None
+        self.is_forward = False
 
     def __str__(self) -> str:
         return "<{class_name}(name={name}, parameters={params})>".format(

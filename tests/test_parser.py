@@ -130,6 +130,47 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.value, "END")
         self.assertEqual(the_exception.token.lineno, 10)
 
+    def test_forward_procedure_decl_should_not_have_block(self):
+        parser = self.makeParser(
+            """
+            program ForwardInvalidExample;
+
+            procedure Proc1(); forward;
+            begin
+            end;
+            
+            begin
+            end;
+
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.PARSER_UNEXPECTED_TOKEN)
+        self.assertEqual(the_exception.token.value, "BEGIN")
+        self.assertEqual(the_exception.token.lineno, 5)
+
+    def test_forward_valid(self):
+        parser = self.makeParser(
+            """
+        program ForwardSafeExample;
+
+        procedure Proc1(); forward;
+
+        procedure Proc1();
+        begin
+        end;
+
+        { 主程序 }
+        begin
+            Proc1();
+        end.
+
+            """
+        )
+        parser.parse()
+
 
 if __name__ == "__main__":
     unittest.main()

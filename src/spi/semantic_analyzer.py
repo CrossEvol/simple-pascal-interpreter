@@ -1084,13 +1084,22 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         proc_name = node.proc_name
-        proc_symbol = ProcedureSymbol(proc_name)
         if self.current_scope is None:
             raise SemanticError(
                 error_code=ErrorCode.MISSING_CURRENT_SCOPE,
                 token=None,
                 message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value}",
             )
+        proc_symbol = self.current_scope.lookup(proc_name)
+        if proc_symbol is not None and not proc_symbol.is_forward:
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION,
+                token=None,
+                message=f"{ErrorCode.SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION.value}",
+            )
+        proc_symbol = ProcedureSymbol(proc_name)
+        proc_symbol.is_forward = node.is_forward
+
         self.current_scope.insert(proc_symbol)
 
         self.log(f"ENTER scope: {proc_name}")

@@ -1688,6 +1688,37 @@ end.  { Main }
         self.assertIsNotNone(getpi_func.block_ast)
         self.assertIsNotNone(getpi_func.return_type)
 
+    def test_forward_procedure_call(self):
+        text = """\
+        program ForwardSafeExample;
+
+        var 
+            count:integer;
+
+        procedure Proc2();
+        begin
+            Proc1();
+        end;
+
+        procedure Proc1(); forward;
+
+        procedure Proc1();
+        begin   
+            count := 10;
+        end;
+
+        { 主程序 }
+        begin
+            Proc2();
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["count"].value, 10)
+        self.assertEqual(ar.nesting_level, 3)
+
 
 class InterpreterTestCase(unittest.TestCase):
     def test_program(self):
