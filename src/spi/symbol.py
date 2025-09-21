@@ -934,6 +934,205 @@ class BuiltinFunctionSymbol(Symbol):
     __repr__ = __str__
 
 
+class ProcedureTypeSymbol(TypeSymbol):
+    """Type symbol for procedure types (for type checking procedure parameters)"""
+    
+    def __init__(self, name: str, param_types: list[TypeSymbol]):
+        super().__init__(name)
+        self.param_types = param_types
+    
+    def is_compatible_with(self, other: "TypeSymbol") -> bool:
+        """Check if procedure signatures are compatible"""
+        if isinstance(other, NeverSymbol):
+            return False
+        if not isinstance(other, ProcedureTypeSymbol):
+            return False
+        
+        if len(self.param_types) != len(other.param_types):
+            return False
+        
+        return all(
+            p1.is_compatible_with(p2) 
+            for p1, p2 in zip(self.param_types, other.param_types)
+        )
+    
+    def can_assign_from(self, other: "TypeSymbol") -> bool:
+        """Check if a procedure of other type can be assigned to this procedure type"""
+        if isinstance(other, NeverSymbol):
+            return False
+        if not isinstance(other, ProcedureTypeSymbol):
+            return False
+        
+        if len(self.param_types) != len(other.param_types):
+            return False
+        
+        # For procedure assignment, parameter types must be exactly compatible
+        # (contravariant for input parameters)
+        return all(
+            p1.can_assign_from(p2) 
+            for p1, p2 in zip(self.param_types, other.param_types)
+        )
+    
+    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+        """Get result type for operations with procedure types"""
+        if isinstance(other, NeverSymbol):
+            return NEVER_SYMBOL
+        
+        if operation in ["=", "<>"]:
+            # Procedure comparison operations
+            if isinstance(other, ProcedureTypeSymbol) and self.is_compatible_with(other):
+                return BOOLEAN_TYPE_SYMBOL
+        
+        # Procedures don't support arithmetic operations
+        return NEVER_SYMBOL
+    
+    def validate_call_signature(self, arg_types: list[TypeSymbol]) -> bool:
+        """Validate if the given argument types match this procedure's signature"""
+        if len(arg_types) != len(self.param_types):
+            return False
+        
+        return all(
+            param_type.can_assign_from(arg_type)
+            for param_type, arg_type in zip(self.param_types, arg_types)
+        )
+    
+    def get_parameter_count(self) -> int:
+        """Get the number of parameters this procedure expects"""
+        return len(self.param_types)
+    
+    def get_parameter_type(self, index: int) -> TypeSymbol:
+        """Get the type of the parameter at the given index"""
+        if 0 <= index < len(self.param_types):
+            return self.param_types[index]
+        return NEVER_SYMBOL
+    
+    def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
+        """Procedure = Procedure → BOOLEAN (if compatible)"""
+        return self.get_result_type("=", other)
+    
+    def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
+        """Procedure <> Procedure → BOOLEAN (if compatible)"""
+        return self.get_result_type("<>", other)
+    
+    def __str__(self) -> str:
+        param_names = [param.name for param in self.param_types]
+        return f"PROCEDURE({', '.join(param_names)})"
+    
+    def __repr__(self) -> str:
+        return "<{class_name}(name='{name}', params={params})>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            params=[param.name for param in self.param_types],
+        )
+
+
+class FunctionTypeSymbol(TypeSymbol):
+    """Type symbol for function types (for type checking function parameters and return type)"""
+    
+    def __init__(self, name: str, param_types: list[TypeSymbol], return_type: TypeSymbol):
+        super().__init__(name)
+        self.param_types = param_types
+        self.return_type = return_type
+    
+    def is_compatible_with(self, other: "TypeSymbol") -> bool:
+        """Check if function signatures are compatible"""
+        if isinstance(other, NeverSymbol):
+            return False
+        if not isinstance(other, FunctionTypeSymbol):
+            return False
+        
+        if len(self.param_types) != len(other.param_types):
+            return False
+        
+        if not self.return_type.is_compatible_with(other.return_type):
+            return False
+        
+        return all(
+            p1.is_compatible_with(p2) 
+            for p1, p2 in zip(self.param_types, other.param_types)
+        )
+    
+    def can_assign_from(self, other: "TypeSymbol") -> bool:
+        """Check if a function of other type can be assigned to this function type"""
+        if isinstance(other, NeverSymbol):
+            return False
+        if not isinstance(other, FunctionTypeSymbol):
+            return False
+        
+        if len(self.param_types) != len(other.param_types):
+            return False
+        
+        # Return type must be covariant (can assign from more specific to more general)
+        if not self.return_type.can_assign_from(other.return_type):
+            return False
+        
+        # Parameter types must be contravariant (can assign from more general to more specific)
+        return all(
+            p1.can_assign_from(p2) 
+            for p1, p2 in zip(self.param_types, other.param_types)
+        )
+    
+    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+        """Get result type for operations with function types"""
+        if isinstance(other, NeverSymbol):
+            return NEVER_SYMBOL
+        
+        if operation in ["=", "<>"]:
+            # Function comparison operations
+            if isinstance(other, FunctionTypeSymbol) and self.is_compatible_with(other):
+                return BOOLEAN_TYPE_SYMBOL
+        elif operation == "CALL":
+            # Function call operation returns the function's return type
+            return self.return_type
+        
+        # Functions don't support arithmetic operations
+        return NEVER_SYMBOL
+    
+    def validate_call_signature(self, arg_types: list[TypeSymbol]) -> bool:
+        """Validate if the given argument types match this function's signature"""
+        if len(arg_types) != len(self.param_types):
+            return False
+        
+        return all(
+            param_type.can_assign_from(arg_type)
+            for param_type, arg_type in zip(self.param_types, arg_types)
+        )
+    
+    def get_parameter_count(self) -> int:
+        """Get the number of parameters this function expects"""
+        return len(self.param_types)
+    
+    def get_parameter_type(self, index: int) -> TypeSymbol:
+        """Get the type of the parameter at the given index"""
+        if 0 <= index < len(self.param_types):
+            return self.param_types[index]
+        return NEVER_SYMBOL
+    
+    def get_return_type(self) -> TypeSymbol:
+        """Get the return type of this function"""
+        return self.return_type
+    
+    def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
+        """Function = Function → BOOLEAN (if compatible)"""
+        return self.get_result_type("=", other)
+    
+    def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
+        """Function <> Function → BOOLEAN (if compatible)"""
+        return self.get_result_type("<>", other)
+    
+    def __str__(self) -> str:
+        param_names = [param.name for param in self.param_types]
+        return f"FUNCTION({', '.join(param_names)}) : {self.return_type.name}"
+    
+    def __repr__(self) -> str:
+        return "<{class_name}(name='{name}', params={params}, return_type='{return_type}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            params=[param.name for param in self.param_types],
+            return_type=self.return_type.name,
+        )
+
+
 # Initialize singleton type symbol instances
 INTEGER_TYPE_SYMBOL = IntegerTypeSymbol()
 REAL_TYPE_SYMBOL = RealTypeSymbol()

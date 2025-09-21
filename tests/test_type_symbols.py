@@ -10,6 +10,8 @@ from spi.symbol import (
     NEVER_SYMBOL,
     TypeAliasSymbol,
     BuiltinTypeSymbol,
+    ProcedureTypeSymbol,
+    FunctionTypeSymbol,
     INTEGER_TYPE_SYMBOL,
     REAL_TYPE_SYMBOL,
     BOOLEAN_TYPE_SYMBOL,
@@ -747,6 +749,385 @@ class TestBuiltinTypeSymbol(unittest.TestCase):
         builtin_mock = BuiltinTypeSymbol("MOCK", mock_type)
         repr_str = repr(builtin_mock)
         self.assertIn("MockType", repr_str)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestProcedureTypeSymbol(unittest.TestCase):
+    """Test ProcedureTypeSymbol signature compatibility and validation"""
+
+    def setUp(self):
+        self.integer_type = INTEGER_TYPE_SYMBOL
+        self.real_type = REAL_TYPE_SYMBOL
+        self.boolean_type = BOOLEAN_TYPE_SYMBOL
+        self.char_type = CHAR_TYPE_SYMBOL
+        self.never_type = NEVER_SYMBOL
+
+    def test_procedure_type_creation(self):
+        """Test ProcedureTypeSymbol creation"""
+        proc_type = ProcedureTypeSymbol("TestProc", [self.integer_type, self.real_type])
+        self.assertEqual(proc_type.name, "TestProc")
+        self.assertEqual(len(proc_type.param_types), 2)
+        self.assertIs(proc_type.param_types[0], self.integer_type)
+        self.assertIs(proc_type.param_types[1], self.real_type)
+
+    def test_procedure_type_empty_params(self):
+        """Test ProcedureTypeSymbol with no parameters"""
+        proc_type = ProcedureTypeSymbol("EmptyProc", [])
+        self.assertEqual(proc_type.name, "EmptyProc")
+        self.assertEqual(len(proc_type.param_types), 0)
+
+    def test_procedure_type_compatibility_same_signature(self):
+        """Test procedure type compatibility with same signature"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type, self.real_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.integer_type, self.real_type])
+
+        self.assertTrue(proc1.is_compatible_with(proc2))
+        self.assertTrue(proc2.is_compatible_with(proc1))
+
+    def test_procedure_type_compatibility_different_param_count(self):
+        """Test procedure type compatibility with different parameter count"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.integer_type, self.real_type])
+
+        self.assertFalse(proc1.is_compatible_with(proc2))
+        self.assertFalse(proc2.is_compatible_with(proc1))
+
+    def test_procedure_type_compatibility_different_param_types(self):
+        """Test procedure type compatibility with different parameter types"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type, self.boolean_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.integer_type, self.real_type])
+
+        self.assertFalse(proc1.is_compatible_with(proc2))
+        self.assertFalse(proc2.is_compatible_with(proc1))
+
+    def test_procedure_type_compatibility_compatible_param_types(self):
+        """Test procedure type compatibility with compatible parameter types"""
+        # INTEGER is compatible with REAL
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.real_type])
+
+        self.assertTrue(proc1.is_compatible_with(proc2))
+        self.assertTrue(proc2.is_compatible_with(proc1))
+
+    def test_procedure_type_compatibility_with_never_type(self):
+        """Test procedure type compatibility with NEVER type"""
+        proc_type = ProcedureTypeSymbol("Proc", [self.integer_type])
+
+        self.assertFalse(proc_type.is_compatible_with(self.never_type))
+        self.assertFalse(self.never_type.is_compatible_with(proc_type))
+
+    def test_procedure_type_compatibility_with_non_procedure(self):
+        """Test procedure type compatibility with non-procedure types"""
+        proc_type = ProcedureTypeSymbol("Proc", [self.integer_type])
+
+        self.assertFalse(proc_type.is_compatible_with(self.integer_type))
+        self.assertFalse(proc_type.is_compatible_with(self.boolean_type))
+
+    def test_procedure_type_assignment_compatibility(self):
+        """Test procedure type assignment compatibility"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type, self.real_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.integer_type, self.real_type])
+
+        self.assertTrue(proc1.can_assign_from(proc2))
+        self.assertTrue(proc2.can_assign_from(proc1))
+
+    def test_procedure_type_assignment_different_signatures(self):
+        """Test procedure type assignment with different signatures"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.real_type])
+
+        # For procedure assignment, parameter types must be exactly assignable
+        # INTEGER param can accept INTEGER, REAL param can accept INTEGER and REAL
+        self.assertFalse(proc1.can_assign_from(proc2))  # INTEGER param cannot accept REAL arg
+        self.assertTrue(proc2.can_assign_from(proc1))   # REAL param can accept INTEGER arg
+
+    def test_procedure_type_assignment_incompatible_params(self):
+        """Test procedure type assignment with incompatible parameters"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.boolean_type])
+
+        self.assertFalse(proc1.can_assign_from(proc2))
+        self.assertFalse(proc2.can_assign_from(proc1))
+
+    def test_procedure_type_comparison_operations(self):
+        """Test procedure type comparison operations"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.integer_type])
+
+        # Procedure = Procedure → BOOLEAN (if compatible)
+        result = proc1.get_result_type("=", proc2)
+        self.assertIs(result, BOOLEAN_TYPE_SYMBOL)
+
+        # Procedure <> Procedure → BOOLEAN (if compatible)
+        result = proc1.get_result_type("<>", proc2)
+        self.assertIs(result, BOOLEAN_TYPE_SYMBOL)
+
+    def test_procedure_type_comparison_incompatible(self):
+        """Test procedure type comparison with incompatible procedures"""
+        proc1 = ProcedureTypeSymbol("Proc1", [self.integer_type])
+        proc2 = ProcedureTypeSymbol("Proc2", [self.boolean_type])
+
+        # Incompatible procedures should return NEVER for comparison
+        result = proc1.get_result_type("=", proc2)
+        self.assertIs(result, NEVER_SYMBOL)
+
+    def test_procedure_type_arithmetic_operations(self):
+        """Test procedure type arithmetic operations (should be invalid)"""
+        proc_type = ProcedureTypeSymbol("Proc", [self.integer_type])
+
+        # Procedures don't support arithmetic operations
+        result = proc_type.get_result_type("+", proc_type)
+        self.assertIs(result, NEVER_SYMBOL)
+
+        result = proc_type.get_result_type("-", self.integer_type)
+        self.assertIs(result, NEVER_SYMBOL)
+
+        result = proc_type.get_result_type("*", proc_type)
+        self.assertIs(result, NEVER_SYMBOL)
+
+    def test_procedure_type_validate_call_signature(self):
+        """Test procedure type call signature validation"""
+        proc_type = ProcedureTypeSymbol("Proc", [self.integer_type, self.real_type])
+
+        # Valid call with exact types
+        self.assertTrue(proc_type.validate_call_signature([self.integer_type, self.real_type]))
+
+        # Valid call with compatible types (INTEGER can be passed to REAL param)
+        self.assertTrue(proc_type.validate_call_signature([self.integer_type, self.integer_type]))
+
+        # Invalid call with wrong number of arguments
+        self.assertFalse(proc_type.validate_call_signature([self.integer_type]))
+        self.assertFalse(proc_type.validate_call_signature([self.integer_type, self.real_type, self.boolean_type]))
+
+        # Invalid call with incompatible types
+        self.assertFalse(proc_type.validate_call_signature([self.boolean_type, self.real_type]))
+
+    def test_procedure_type_parameter_access(self):
+        """Test procedure type parameter access methods"""
+        proc_type = ProcedureTypeSymbol("Proc", [self.integer_type, self.real_type, self.boolean_type])
+
+        # Test parameter count
+        self.assertEqual(proc_type.get_parameter_count(), 3)
+
+        # Test parameter type access
+        self.assertIs(proc_type.get_parameter_type(0), self.integer_type)
+        self.assertIs(proc_type.get_parameter_type(1), self.real_type)
+        self.assertIs(proc_type.get_parameter_type(2), self.boolean_type)
+
+        # Test out-of-bounds access
+        self.assertIs(proc_type.get_parameter_type(-1), NEVER_SYMBOL)
+        self.assertIs(proc_type.get_parameter_type(3), NEVER_SYMBOL)
+
+    def test_procedure_type_string_representation(self):
+        """Test ProcedureTypeSymbol string representation"""
+        proc_type = ProcedureTypeSymbol("TestProc", [self.integer_type, self.real_type])
+
+        self.assertEqual(str(proc_type), "PROCEDURE(INTEGER, REAL)")
+        self.assertIn("ProcedureTypeSymbol", repr(proc_type))
+        self.assertIn("TestProc", repr(proc_type))
+        self.assertIn("INTEGER", repr(proc_type))
+        self.assertIn("REAL", repr(proc_type))
+
+    def test_procedure_type_empty_params_string(self):
+        """Test ProcedureTypeSymbol string representation with no parameters"""
+        proc_type = ProcedureTypeSymbol("EmptyProc", [])
+
+        self.assertEqual(str(proc_type), "PROCEDURE()")
+        self.assertIn("ProcedureTypeSymbol", repr(proc_type))
+        self.assertIn("EmptyProc", repr(proc_type))
+
+
+class TestFunctionTypeSymbol(unittest.TestCase):
+    """Test FunctionTypeSymbol signature compatibility and validation"""
+
+    def setUp(self):
+        self.integer_type = INTEGER_TYPE_SYMBOL
+        self.real_type = REAL_TYPE_SYMBOL
+        self.boolean_type = BOOLEAN_TYPE_SYMBOL
+        self.char_type = CHAR_TYPE_SYMBOL
+        self.never_type = NEVER_SYMBOL
+
+    def test_function_type_creation(self):
+        """Test FunctionTypeSymbol creation"""
+        func_type = FunctionTypeSymbol("TestFunc", [self.integer_type, self.real_type], self.boolean_type)
+        self.assertEqual(func_type.name, "TestFunc")
+        self.assertEqual(len(func_type.param_types), 2)
+        self.assertIs(func_type.param_types[0], self.integer_type)
+        self.assertIs(func_type.param_types[1], self.real_type)
+        self.assertIs(func_type.return_type, self.boolean_type)
+
+    def test_function_type_empty_params(self):
+        """Test FunctionTypeSymbol with no parameters"""
+        func_type = FunctionTypeSymbol("EmptyFunc", [], self.integer_type)
+        self.assertEqual(func_type.name, "EmptyFunc")
+        self.assertEqual(len(func_type.param_types), 0)
+        self.assertIs(func_type.return_type, self.integer_type)
+
+    def test_function_type_compatibility_same_signature(self):
+        """Test function type compatibility with same signature"""
+        func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.real_type)
+        func2 = FunctionTypeSymbol("Func2", [self.integer_type], self.real_type)
+
+        self.assertTrue(func1.is_compatible_with(func2))
+        self.assertTrue(func2.is_compatible_with(func1))
+
+    def test_function_type_compatibility_different_param_count(self):
+        """Test function type compatibility with different parameter count"""
+        func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.real_type)
+        func2 = FunctionTypeSymbol("Func2", [self.integer_type, self.real_type], self.real_type)
+
+        self.assertFalse(func1.is_compatible_with(func2))
+        self.assertFalse(func2.is_compatible_with(func1))
+
+    def test_function_type_compatibility_different_return_type(self):
+        """Test function type compatibility with different return type"""
+        func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.real_type)
+        func2 = FunctionTypeSymbol("Func2", [self.integer_type], self.boolean_type)
+
+        self.assertFalse(func1.is_compatible_with(func2))
+        self.assertFalse(func2.is_compatible_with(func1))
+
+    def test_function_type_compatibility_compatible_return_type(self):
+        """Test function type compatibility with compatible return type"""
+        # INTEGER return is compatible with REAL return
+        func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.integer_type)
+        func2 = FunctionTypeSymbol("Func2", [self.integer_type], self.real_type)
+
+        self.assertTrue(func1.is_compatible_with(func2))
+        self.assertTrue(func2.is_compatible_with(func1))
+
+    def test_function_type_compatibility_with_never_type(self):
+        """Test function type compatibility with NEVER type"""
+        func_type = FunctionTypeSymbol("Func", [self.integer_type], self.real_type)
+
+        self.assertFalse(func_type.is_compatible_with(self.never_type))
+        self.assertFalse(self.never_type.is_compatible_with(func_type))
+
+    def test_function_type_compatibility_with_non_function(self):
+        """Test function type compatibility with non-function types"""
+        func_type = FunctionTypeSymbol("Func", [self.integer_type], self.real_type)
+
+        self.assertFalse(func_type.is_compatible_with(self.integer_type))
+        self.assertFalse(func_type.is_compatible_with(self.boolean_type))
+
+    def test_function_type_assignment_compatibility(self):
+        """Test function type assignment compatibility"""
+        func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.real_type)
+        func2 = FunctionTypeSymbol("Func2", [self.integer_type], self.real_type)
+
+        self.assertTrue(func1.can_assign_from(func2))
+        self.assertTrue(func2.can_assign_from(func1))
+
+    def test_function_type_assignment_covariant_return(self):
+        """Test function type assignment with covariant return types"""
+        # Function returning INTEGER can be assigned to function returning REAL
+        func_int_ret = FunctionTypeSymbol("FuncInt", [self.integer_type], self.integer_type)
+        func_real_ret = FunctionTypeSymbol("FuncReal", [self.integer_type], self.real_type)
+
+        # REAL can accept INTEGER (covariant)
+        self.assertTrue(func_real_ret.can_assign_from(func_int_ret))
+        # But INTEGER cannot accept REAL
+        self.assertFalse(func_int_ret.can_assign_from(func_real_ret))
+
+    def test_function_type_assignment_contravariant_params(self):
+        """Test function type assignment with contravariant parameters"""
+        # Function taking REAL param can be assigned to function taking INTEGER param
+        func_int_param = FunctionTypeSymbol("FuncInt", [self.integer_type], self.boolean_type)
+        func_real_param = FunctionTypeSymbol("FuncReal", [self.real_type], self.boolean_type)
+
+        # For function assignment, parameter types must be exactly assignable
+        # INTEGER param can accept INTEGER, REAL param can accept INTEGER and REAL
+        self.assertFalse(func_int_param.can_assign_from(func_real_param))  # INTEGER param cannot accept REAL arg
+        self.assertTrue(func_real_param.can_assign_from(func_int_param))   # REAL param can accept INTEGER arg
+
+    def test_function_type_comparison_operations(self):
+        """Test function type comparison operations"""
+        func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.real_type)
+        func2 = FunctionTypeSymbol("Func2", [self.integer_type], self.real_type)
+
+        # Function = Function → BOOLEAN (if compatible)
+        result = func1.get_result_type("=", func2)
+        self.assertIs(result, BOOLEAN_TYPE_SYMBOL)
+
+        # Function <> Function → BOOLEAN (if compatible)
+        result = func1.get_result_type("<>", func2)
+        self.assertIs(result, BOOLEAN_TYPE_SYMBOL)
+
+    def test_function_type_call_operation(self):
+        """Test function type call operation"""
+        func_type = FunctionTypeSymbol("Func", [self.integer_type], self.real_type)
+
+        # Function call should return the function's return type
+        result = func_type.get_result_type("CALL", func_type)
+        self.assertIs(result, self.real_type)
+
+    def test_function_type_arithmetic_operations(self):
+        """Test function type arithmetic operations (should be invalid)"""
+        func_type = FunctionTypeSymbol("Func", [self.integer_type], self.real_type)
+
+        # Functions don't support arithmetic operations
+        result = func_type.get_result_type("+", func_type)
+        self.assertIs(result, NEVER_SYMBOL)
+
+        result = func_type.get_result_type("-", self.integer_type)
+        self.assertIs(result, NEVER_SYMBOL)
+
+    def test_function_type_validate_call_signature(self):
+        """Test function type call signature validation"""
+        func_type = FunctionTypeSymbol("Func", [self.integer_type, self.real_type], self.boolean_type)
+
+        # Valid call with exact types
+        self.assertTrue(func_type.validate_call_signature([self.integer_type, self.real_type]))
+
+        # Valid call with compatible types
+        self.assertTrue(func_type.validate_call_signature([self.integer_type, self.integer_type]))
+
+        # Invalid call with wrong number of arguments
+        self.assertFalse(func_type.validate_call_signature([self.integer_type]))
+        self.assertFalse(func_type.validate_call_signature([self.integer_type, self.real_type, self.boolean_type]))
+
+        # Invalid call with incompatible types
+        self.assertFalse(func_type.validate_call_signature([self.boolean_type, self.real_type]))
+
+    def test_function_type_parameter_access(self):
+        """Test function type parameter access methods"""
+        func_type = FunctionTypeSymbol("Func", [self.integer_type, self.real_type], self.boolean_type)
+
+        # Test parameter count
+        self.assertEqual(func_type.get_parameter_count(), 2)
+
+        # Test parameter type access
+        self.assertIs(func_type.get_parameter_type(0), self.integer_type)
+        self.assertIs(func_type.get_parameter_type(1), self.real_type)
+
+        # Test out-of-bounds access
+        self.assertIs(func_type.get_parameter_type(-1), NEVER_SYMBOL)
+        self.assertIs(func_type.get_parameter_type(2), NEVER_SYMBOL)
+
+        # Test return type access
+        self.assertIs(func_type.get_return_type(), self.boolean_type)
+
+    def test_function_type_string_representation(self):
+        """Test FunctionTypeSymbol string representation"""
+        func_type = FunctionTypeSymbol("TestFunc", [self.integer_type, self.real_type], self.boolean_type)
+
+        self.assertEqual(str(func_type), "FUNCTION(INTEGER, REAL) : BOOLEAN")
+        self.assertIn("FunctionTypeSymbol", repr(func_type))
+        self.assertIn("TestFunc", repr(func_type))
+        self.assertIn("INTEGER", repr(func_type))
+        self.assertIn("REAL", repr(func_type))
+        self.assertIn("BOOLEAN", repr(func_type))
+
+    def test_function_type_empty_params_string(self):
+        """Test FunctionTypeSymbol string representation with no parameters"""
+        func_type = FunctionTypeSymbol("EmptyFunc", [], self.integer_type)
+
+        self.assertEqual(str(func_type), "FUNCTION() : INTEGER")
+        self.assertIn("FunctionTypeSymbol", repr(func_type))
+        self.assertIn("EmptyFunc", repr(func_type))
 
 
 if __name__ == "__main__":
