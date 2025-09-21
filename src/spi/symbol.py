@@ -360,20 +360,6 @@ class VarSymbol(Symbol):
     __repr__ = __str__
 
 
-class BuiltinTypeSymbol(Symbol):
-    def __init__(self, name: str) -> None:
-        super().__init__(name)
-
-    def __str__(self) -> str:
-        return self.name
-
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-        )
-
-
 class StringTypeSymbol(TypeSymbol):
     def __init__(self, name: str, limit: int = 255) -> None:
         super().__init__(name)
@@ -786,6 +772,82 @@ class VariantPartSymbol:
         self.variant_cases = variant_cases  # 标签值到变体字段符号的映射
 
 
+class TypeAliasSymbol(TypeSymbol):
+    """Symbol for type aliases that can chain to other types"""
+
+    def __init__(self, name: str, target_type: TypeSymbol):
+        super().__init__(name)
+        self.target_type = target_type
+
+    def resolve_final_type(self) -> TypeSymbol:
+        """Resolve through alias chain to get final concrete type"""
+        visited = {self.name}
+        current = self.target_type
+
+        while isinstance(current, TypeAliasSymbol):
+            if current.name in visited:
+                # Import here to avoid circular imports
+                from src.spi.error import SemanticError, ErrorCode
+                chain_str = ' -> '.join(visited) + f" -> {current.name}"
+                raise SemanticError(
+                    error_code=ErrorCode.SEMANTIC_CIRCULAR_TYPE_ALIAS,
+                    token=None,
+                    message=f"Circular type alias detected in chain: {chain_str}"
+                )
+            visited.add(current.name)
+            current = current.target_type
+
+        return current
+
+    def is_compatible_with(self, other: TypeSymbol) -> bool:
+        """Delegate to final resolved type"""
+        if isinstance(other, NeverSymbol):
+            return False
+        
+        final_type = self.resolve_final_type()
+        
+        # If other is also a type alias, resolve it too
+        if isinstance(other, TypeAliasSymbol):
+            other_final_type = other.resolve_final_type()
+            return final_type.is_compatible_with(other_final_type)
+        
+        return final_type.is_compatible_with(other)
+
+    def can_assign_from(self, other: TypeSymbol) -> bool:
+        """Delegate to final resolved type"""
+        if isinstance(other, NeverSymbol):
+            return False
+        
+        final_type = self.resolve_final_type()
+        
+        # If other is also a type alias, resolve it too
+        if isinstance(other, TypeAliasSymbol):
+            other_final_type = other.resolve_final_type()
+            return final_type.can_assign_from(other_final_type)
+        
+        return final_type.can_assign_from(other)
+
+    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
+        """Delegate to final resolved type"""
+        if isinstance(other, NeverSymbol):
+            return NEVER_SYMBOL
+        
+        final_type = self.resolve_final_type()
+        
+        # If other is also a type alias, resolve it too
+        if isinstance(other, TypeAliasSymbol):
+            other_final_type = other.resolve_final_type()
+            return final_type.get_result_type(operation, other_final_type)
+        
+        return final_type.get_result_type(operation, other)
+
+    def __str__(self) -> str:
+        return f"{self.name} -> {self.target_type.name}"
+
+    def __repr__(self) -> str:
+        return f"<TypeAliasSymbol(name='{self.name}', target='{self.target_type.name}')>"
+
+
 class ProcedureSymbol(Symbol):
     def __init__(self, name: str, formal_params: list[Symbol] | None = None) -> None:
         super().__init__(name)
@@ -878,3 +940,123 @@ REAL_TYPE_SYMBOL = RealTypeSymbol()
 BOOLEAN_TYPE_SYMBOL = BooleanTypeSymbol()
 CHAR_TYPE_SYMBOL = CharTypeSymbol()
 STRING_TYPE_SYMBOL = StringTypeSymbol("STRING")
+
+
+class BuiltinTypeSymbol(TypeSymbol):
+    """Builtin type symbol that delegates to appropriate TypeSymbol instances
+    
+    This class serves as a bridge between the old type system and the new enhanced
+    type system. It can delegate to primitive types or type aliases, providing
+    backward compatibility while supporting the new type operations.
+    """
+    
+    def __init__(self, name: str, delegate_type: TypeSymbol = None) -> None:
+        super().__init__(name)
+        if delegate_type is not None:
+            self._delegate_type = delegate_type
+        else:
+            self._delegate_type = self._get_delegate_type(name)
+    
+    def _get_delegate_type(self, name: str) -> TypeSymbol:
+        """Get the appropriate TypeSymbol delegate for the builtin type"""
+        name_upper = name.upper()
+        if name_upper == "INTEGER":
+            return INTEGER_TYPE_SYMBOL
+        elif name_upper == "REAL":
+            return REAL_TYPE_SYMBOL
+        elif name_upper == "BOOLEAN":
+            return BOOLEAN_TYPE_SYMBOL
+        elif name_upper == "CHAR":
+            return CHAR_TYPE_SYMBOL
+        elif name_upper == "STRING":
+            return STRING_TYPE_SYMBOL
+        else:
+            # For unknown types, return NEVER_SYMBOL
+            return NEVER_SYMBOL
+    
+    def set_delegate_type(self, delegate_type: TypeSymbol) -> None:
+        """Set the delegate type for this builtin type symbol
+        
+        This method allows dynamic assignment of the delegate type,
+        which is useful for type aliases and complex type scenarios.
+        """
+        self._delegate_type = delegate_type
+    
+    @property
+    def delegate_type(self) -> TypeSymbol:
+        """Get the current delegate type"""
+        return self._delegate_type
+    
+    def resolve_final_type(self) -> TypeSymbol:
+        """Resolve through type alias chain to get the final concrete type
+        
+        This method handles complex type alias chains and ensures that
+        we always get to the final concrete type, even through multiple
+        levels of BuiltinTypeSymbol and TypeAliasSymbol indirection.
+        """
+        current = self._delegate_type
+        visited = {self.name}  # Track visited types to detect cycles
+        
+        while True:
+            if isinstance(current, TypeAliasSymbol):
+                # Resolve through type alias
+                current = current.resolve_final_type()
+                break
+            elif isinstance(current, BuiltinTypeSymbol):
+                # Handle nested BuiltinTypeSymbol delegation
+                if current.name in visited:
+                    # Circular reference detected
+                    return NEVER_SYMBOL
+                visited.add(current.name)
+                current = current._delegate_type
+            else:
+                # We've reached a concrete type
+                break
+        
+        return current
+    
+    def is_compatible_with(self, other: TypeSymbol) -> bool:
+        """Delegate compatibility checking to the underlying type"""
+        if isinstance(other, BuiltinTypeSymbol):
+            return self._delegate_type.is_compatible_with(other._delegate_type)
+        return self._delegate_type.is_compatible_with(other)
+    
+    def can_assign_from(self, other: TypeSymbol) -> bool:
+        """Delegate assignment compatibility to the underlying type"""
+        if isinstance(other, BuiltinTypeSymbol):
+            return self._delegate_type.can_assign_from(other._delegate_type)
+        return self._delegate_type.can_assign_from(other)
+    
+    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
+        """Delegate operation result type to the underlying type"""
+        if isinstance(other, BuiltinTypeSymbol):
+            return self._delegate_type.get_result_type(operation, other._delegate_type)
+        return self._delegate_type.get_result_type(operation, other)
+    
+    def is_builtin_primitive(self) -> bool:
+        """Check if this builtin type represents a primitive type"""
+        resolved = self.resolve_final_type()
+        return isinstance(resolved, (IntegerTypeSymbol, RealTypeSymbol, 
+                                   BooleanTypeSymbol, CharTypeSymbol))
+    
+    def is_alias(self) -> bool:
+        """Check if this builtin type is actually a type alias"""
+        return isinstance(self._delegate_type, (TypeAliasSymbol, BuiltinTypeSymbol))
+    
+    def get_primitive_name(self) -> str:
+        """Get the name of the underlying primitive type, if any"""
+        resolved = self.resolve_final_type()
+        if resolved == NEVER_SYMBOL:
+            return "NEVER"
+        return resolved.name
+
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        delegate_name = getattr(self._delegate_type, 'name', str(self._delegate_type))
+        return "<{class_name}(name='{name}', delegate='{delegate}')>".format(
+            class_name=self.__class__.__name__,
+            name=self.name,
+            delegate=delegate_name,
+        )

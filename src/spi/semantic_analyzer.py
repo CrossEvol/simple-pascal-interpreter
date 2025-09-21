@@ -18,7 +18,6 @@ from spi.ast import (
     Bool,
     BuiltinFunctionSymbol,
     BuiltinProcedureSymbol,
-    BuiltinTypeSymbol,
     CaseStatement,
     Char,
     Compound,
@@ -60,6 +59,7 @@ from spi.error import (
     SemanticError,
 )
 from spi.native import NativeMethod
+from spi.symbol import BuiltinTypeSymbol, TypeAliasSymbol, TypeSymbol
 from spi.token import Token, TokenType
 from spi.visitor import NodeVisitor
 
@@ -319,12 +319,12 @@ class SemanticAnalyzer(NodeVisitor):
                             error_code=ErrorCode.ID_NOT_FOUND, token=node.type_def.token
                         )
 
-                # Create a new type alias symbol
-                # For simplicity, we'll create a BuiltinTypeSymbol that points to the original type
-                alias_symbol = BuiltinTypeSymbol(type_name)
-                alias_symbol.type = (
-                    original_type_symbol  # Make it "point to" the actual type
-                )
+                # Create a proper type alias symbol using TypeAliasSymbol
+                if isinstance(original_type_symbol, TypeSymbol):
+                    alias_symbol = TypeAliasSymbol(type_name, original_type_symbol)
+                else:
+                    # For backward compatibility, wrap non-TypeSymbol in BuiltinTypeSymbol
+                    alias_symbol = BuiltinTypeSymbol(type_name, original_type_symbol)
 
                 self.current_scope.insert(alias_symbol)
                 # 将类型映射添加到映射字典
@@ -335,8 +335,13 @@ class SemanticAnalyzer(NodeVisitor):
                 type_symbol = self.current_scope.lookup(type_name_str)
 
                 if type_symbol:
-                    alias_symbol = BuiltinTypeSymbol(type_name)
-                    alias_symbol.type = type_symbol
+                    # Create a proper type alias symbol
+                    if isinstance(type_symbol, TypeSymbol):
+                        alias_symbol = TypeAliasSymbol(type_name, type_symbol)
+                    else:
+                        # For backward compatibility, wrap non-TypeSymbol in BuiltinTypeSymbol
+                        alias_symbol = BuiltinTypeSymbol(type_name, type_symbol)
+                    
                     self.current_scope.insert(alias_symbol)
                     # 将类型映射添加到映射字典
                     self.type_mappings[type_name] = alias_symbol

@@ -386,19 +386,6 @@ class VarSymbol(Symbol):
     __repr__ = __str__
 
 
-class BuiltinTypeSymbol(Symbol):
-    def __init__(self, name: str) -> None:
-        super().__init__(name)
-
-    def __str__(self) -> str:
-        return self.name
-
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-        )
-
 
 class StringTypeSymbol(Symbol):
     def __init__(self, name: str, limit: int = 255) -> None:
