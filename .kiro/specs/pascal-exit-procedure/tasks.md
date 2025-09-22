@@ -90,7 +90,7 @@
   - Add tests for proper call stack behavior with Exit
   - _Requirements: 1.1, 1.2, 2.1, 2.2, 4.4_
 
-- [ ] 7. Add ExitSignal handling to main program execution
+- [x] 7. Add ExitSignal handling to main program execution
   - this project use uv 
   - use `make test` to ensure do not break
   - Modify visit_Program() method to catch ExitSignal for program-level Exit calls

@@ -44,7 +44,7 @@ class MockCallStack:
         return len(self._records)
 
 
-class MockCallStackForFunction:
+class MockFunctionCallStack:
     def __init__(self) -> None:
         self._records: list[ActivationRecord] = []
 
@@ -421,7 +421,7 @@ END.
         end.
 """
         interpreter = makeInterpreter(
-            text=text, mock_call_stack=MockCallStackForFunction()
+            text=text, mock_call_stack=MockFunctionCallStack()
         )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
@@ -508,7 +508,7 @@ END.
         end.
 """
         interpreter = makeInterpreter(
-            text=text, mock_call_stack=MockCallStackForFunction()
+            text=text, mock_call_stack=MockFunctionCallStack()
         )
         interpreter.interpret()
 
@@ -576,7 +576,7 @@ END.
             result2 := SetBeforeAndAfterExit(5);
         end.
 """
-        interpreter = makeInterpreter(text, MockCallStackForFunction())
+        interpreter = makeInterpreter(text, MockFunctionCallStack())
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["result1"].value, 42)
@@ -633,10 +633,69 @@ END.
             result := MultiAssign(5);  { Should return 15 (5 * 3) }
         end.
 """
-        interpreter = makeInterpreter(text, MockCallStackForFunction())
+        interpreter = makeInterpreter(text, MockFunctionCallStack())
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["result"].value, 15)
+
+    def test_program_with_simple_early_exit(self):
+        """Test Exit with multiple return value assignments in functions"""
+        text = """\
+        program ProgramEarlyExit;
+
+        var 
+            i : Integer;
+
+        begin
+            i := 100;
+            Exit();
+            i := 999;
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 100)
+
+    def test_program_with_nested_early_exit(self):
+        """Test Exit with multiple return value assignments in functions"""
+        text = """\
+        program ProgramEarlyExit;
+
+        var 
+            i : Integer;
+            result : Integer;
+
+        procedure TestProc();
+        begin
+            i := i + 200;  {  在过程内修改 i，测试是否影响主程序 }
+            Exit();      {  提前退出 TestProc，不会执行下面的代码 }
+            i := 999;  {  这行不会执行 }
+        end;
+
+        function TestFunc(): Integer;
+        begin
+            TestFunc := 50;  {  设置返回值 }
+            if i > 150 then  {  模拟条件，使用 Exit 提前返回 }
+                Exit();        {  提前退出 TestFunc，返回 50，不会执行下面的代码 }
+            TestFunc := 75;  {  这行不会执行（因为 i=100 <150? 等下，i=100后调用Proc改成200，所以>150，Exit） }
+        end;
+
+        begin
+            i := 100;
+            TestProc();  {  调用过程，内部有 Exit，但只退出过程，主程序继续 }
+            result := i +  TestFunc();  {  调用函数，内部有 Exit，但只退出函数，返回值正常 }
+            Exit();  {  主程序的 Exit 提前终止整个程序，不会执行下面的代码 }
+            i := 999 + i;
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["i"].value, 300)
+        self.assertEqual(ar["result"].value, 350)
 
 
 class InterpreterConditionalTestCase(unittest.TestCase):
@@ -2037,7 +2096,7 @@ end.  { Main }
             end.
 """
         interpreter = makeInterpreter(
-            text=text, mock_call_stack=MockCallStackForFunction()
+            text=text, mock_call_stack=MockFunctionCallStack()
         )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()

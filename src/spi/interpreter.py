@@ -611,8 +611,16 @@ class Interpreter(NodeVisitor):
         self.call_stack.push(ar)
 
         self.log(str(self.call_stack))
-
-        self.visit(node.block)
+        try:
+            self.visit(node.block)
+        except ExitSignal as exit_signal:
+            # Only catch ExitSignal for procedure exits, let function exits propagate
+            if exit_signal.exit_type == "program":
+                # Exit was called in this procedure, terminate normally
+                self.log(f"EXIT called in PROGRAM {program_name}")
+            else:
+                # Re-raise if it's a function exit signal (shouldn't happen in procedure)
+                raise
 
         self.log(f"LEAVE: PROGRAM {program_name}")
         self.log(str(self.call_stack))
