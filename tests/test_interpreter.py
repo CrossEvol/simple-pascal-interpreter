@@ -44,7 +44,38 @@ class MockCallStack:
         return len(self._records)
 
 
-def makeInterpreter(text):
+class MockCallStackForFunction:
+    def __init__(self) -> None:
+        self._records: list[ActivationRecord] = []
+
+    def push(self, ar: ActivationRecord) -> None:
+        ar.nesting_level = self.nesting_level + 1
+        self._records.append(ar)
+
+    def pop(self) -> ActivationRecord:
+        if len(self._records) >= 2:
+            self._records[-2].copy_from(self._records[-1], True)
+            return self._records.pop()
+        else:
+            pass
+
+    def peek(self) -> ActivationRecord:
+        return self._records[-1]
+
+    @property
+    def nesting_level(self) -> int:
+        return len(self._records)
+
+    def __str__(self) -> str:
+        s = "\n".join(repr(ar) for ar in reversed(self._records))
+        s = f"CALL STACK\n{s}\n\n"
+        return s
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+def makeInterpreter(text: str, mock_call_stack=None):
     lexer = Lexer(text)
     parser = Parser(lexer)
     tree = parser.parse()
@@ -53,7 +84,9 @@ def makeInterpreter(text):
     semantic_analyzer.visit(tree)
 
     interpreter = Interpreter(tree)
-    interpreter.call_stack = MockCallStack()
+    interpreter.call_stack = (
+        MockCallStack() if mock_call_stack is None else mock_call_stack
+    )
     return interpreter
 
 
@@ -386,6 +419,7 @@ END.
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["count"].value, 6)
+        self.assertEqual(ar.nesting_level, 5)
 
     def test_exit_for_function(self):
         text = """\
@@ -422,11 +456,14 @@ END.
         sum := Sum1();
         end.
 """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockCallStackForFunction()
+        )
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["sum"].value, 6)
+        self.assertEqual(ar.nesting_level, 1)
 
 
 class InterpreterConditionalTestCase(unittest.TestCase):
@@ -1803,7 +1840,6 @@ end.  { Main }
         self.assertEqual(ar["count"].value, 10)
         self.assertEqual(ar.nesting_level, 3)
 
-    @unittest.skip("out of MockCallStack impl, can not test function call")
     def test_forward_function_call(self):
         text = """\
             program ForwardFunction;
@@ -1827,12 +1863,14 @@ end.  { Main }
                 sum := DoubleAdd(3,4);
             end.
 """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockCallStackForFunction()
+        )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
         self.assertEqual(ar["sum"].value, 14)
-        self.assertEqual(ar.nesting_level, 3)
+        self.assertEqual(ar.nesting_level, 1)
 
 
 class InterpreterTestCase(unittest.TestCase):

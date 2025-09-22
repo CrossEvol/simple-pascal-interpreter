@@ -46,6 +46,7 @@ from spi.ast import (
 from spi.constants import ElementType
 from spi.error import (
     ErrorCode,
+    ExitSignal,
     InterpreterError,
     SemanticError,
 )
@@ -90,7 +91,7 @@ def register_builtin_function(name, handler):
 
 
 # Built-in procedure handlers
-def handle_write(interpreter, node):
+def handle_write(interpreter: Interpreter, node: ProcedureCall):
     """Handle WRITE built-in procedure"""
     proc_name = node.proc_name
     actual_params = node.actual_params
@@ -113,7 +114,7 @@ def handle_write(interpreter, node):
     interpreter.log(str(interpreter.call_stack))
 
 
-def handle_writeln(interpreter, node):
+def handle_writeln(interpreter: Interpreter, node: ProcedureCall):
     """Handle WRITELN built-in procedure"""
     proc_name = node.proc_name
     actual_params = node.actual_params
@@ -136,11 +137,53 @@ def handle_writeln(interpreter, node):
     interpreter.log(str(interpreter.call_stack))
 
 
-def handle_exit(interpreter, node):
-    pass
+def handle_exit(interpreter: Interpreter, node: ProcedureCall):
+    """Handle EXIT built-in procedure"""
+    proc_name = node.proc_name
+    actual_params = node.actual_params
+
+    ar = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Validate that Exit() is called without parameters (Pascal standard behavior)
+    if len(actual_params) > 0:
+        raise InterpreterError(
+            error_code=ErrorCode.INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE,
+            token=node.token,
+            message="Exit procedure does not accept parameters",
+        )
+
+    # Determine current context (procedure, function, or program) for appropriate ExitSignal type
+    # We need to look at the calling context (the procedure/function that called Exit)
+    # The last record is Exit itself, so we need the second-to-last record
+    if len(interpreter.call_stack._records) >= 2:
+        calling_ar = interpreter.call_stack._records[
+            -2
+        ]  # The procedure/function that called Exit
+        if calling_ar.type == ARType.PROCEDURE:
+            exit_type = "procedure"
+        elif calling_ar.type == ARType.FUNCTION:
+            exit_type = "function"
+        elif calling_ar.type == ARType.PROGRAM:
+            exit_type = "program"
+        else:
+            exit_type = "procedure"  # Default fallback
+    else:
+        # Fallback if call stack is too shallow
+        exit_type = "procedure"
+
+    interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    # Exit直接跳回到上一个函数， 因此要在 handle_exit 中弹出 EXIT() 对应的栈帧
+    interpreter.call_stack.pop()
+    # Raise ExitSignal to trigger control flow termination
+    raise ExitSignal(exit_type)
 
 
-def handle_setlength(interpreter, node):
+def handle_setlength(interpreter: Interpreter, node: ProcedureCall):
     """Handle SETLENGTH built-in procedure"""
     proc_name = node.proc_name
     actual_params = node.actual_params
@@ -171,7 +214,7 @@ def handle_setlength(interpreter, node):
     interpreter.log(str(interpreter.call_stack))
 
 
-def handle_inc(interpreter, node):
+def handle_inc(interpreter: Interpreter, node: ProcedureCall):
     """Handle INC built-in procedure - increment a variable"""
     proc_name = node.proc_name
     actual_params = node.actual_params
@@ -203,7 +246,7 @@ def handle_inc(interpreter, node):
     interpreter.log(str(interpreter.call_stack))
 
 
-def handle_dec(interpreter, node):
+def handle_dec(interpreter: Interpreter, node: ProcedureCall):
     """Handle DEC built-in procedure - decrement a variable"""
     proc_name = node.proc_name
     actual_params = node.actual_params
@@ -236,7 +279,7 @@ def handle_dec(interpreter, node):
 
 
 # Built-in function handlers
-def handle_length(interpreter, node):
+def handle_length(interpreter: Interpreter, node: FunctionCall):
     """Handle LENGTH built-in function"""
     func_name = node.func_name
     actual_params = node.actual_params
@@ -262,7 +305,7 @@ def handle_length(interpreter, node):
     return result
 
 
-def handle_ord(interpreter, node):
+def handle_ord(interpreter: Interpreter, node: FunctionCall):
     """Handle ORD built-in function - returns ASCII code of a character or ordinal of an enum"""
     func_name = node.func_name
     actual_params = node.actual_params
@@ -294,7 +337,7 @@ def handle_ord(interpreter, node):
     return result
 
 
-def handle_chr(interpreter, node):
+def handle_chr(interpreter: Interpreter, node: FunctionCall):
     """Handle CHR built-in function - converts ASCII code to character"""
     func_name = node.func_name
     actual_params = node.actual_params
@@ -1278,8 +1321,17 @@ class Interpreter(NodeVisitor):
 
             self.log(str(self.call_stack))
 
-            # Execute procedure block
-            self.visit(proc_obj.block_ast)
+            # Execute procedure block with ExitSignal handling
+            try:
+                self.visit(proc_obj.block_ast)
+            except ExitSignal as exit_signal:
+                # Only catch ExitSignal for procedure exits, let function exits propagate
+                if exit_signal.exit_type == "procedure":
+                    # Exit was called in this procedure, terminate normally
+                    self.log(f"EXIT called in PROCEDURE {proc_name}")
+                else:
+                    # Re-raise if it's a function exit signal (shouldn't happen in procedure)
+                    raise
 
             self.log(f"LEAVE: PROCEDURE {proc_name}")
             self.log(str(self.call_stack))
@@ -1377,8 +1429,17 @@ class Interpreter(NodeVisitor):
 
             self.log(str(self.call_stack))
 
-            # Execute function block
-            self.visit(func_obj.block_ast)
+            # Execute function block with ExitSignal handling
+            try:
+                self.visit(func_obj.block_ast)
+            except ExitSignal as exit_signal:
+                # Only catch ExitSignal for function exits, let procedure exits propagate
+                if exit_signal.exit_type == "function":
+                    # Exit was called in this function, terminate normally
+                    self.log(f"EXIT called in FUNCTION {func_name}")
+                else:
+                    # Re-raise if it's a procedure exit signal (shouldn't happen in function)
+                    raise
 
             self.log(f"LEAVE: FUNCTION {func_name}")
             self.log(str(self.call_stack))

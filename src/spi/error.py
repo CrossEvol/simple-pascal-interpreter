@@ -116,3 +116,28 @@ class SemanticError(Error):
 
 class InterpreterError(Error):
     pass
+
+
+###############################################################################
+#                                                                             #
+#  ExitSignal                                                                 #
+#                                                                             #
+###############################################################################
+
+
+class ExitSignal(Exception):
+    """Special signal used for Pascal Exit procedure control flow.
+
+    This exception is used to implement Pascal's Exit procedure, which allows
+    early termination from procedures and functions. It inherits directly from
+    Exception (not from Error) to avoid being treated as an error condition.
+    """
+
+    def __init__(self, exit_type: str = "procedure"):
+        """Initialize ExitSignal with the type of context being exited.
+
+        Args:
+            exit_type: Either "procedure" or "function" to distinguish the context
+        """
+        self.exit_type = exit_type
+        super().__init__(f"Exit from {exit_type}")
