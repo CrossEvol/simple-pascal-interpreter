@@ -805,6 +805,94 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             """
         )
 
+    def test_duplicate_function_declaration_without_forward(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program ForwardFunction;
+
+            function Add(a, b: Integer): Integer; 
+            begin
+            end;
+
+            function Add(a, b: Integer): Integer;
+            begin
+            Add := a + b;
+            end;
+
+            begin
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION
+        )
+
+    def test_forward_function_declaration(self):
+        self.runSemanticAnalyzer(
+            """
+            program ForwardFunction;
+
+            function Add(a, b: Integer): Integer; forward;
+
+            function Add(a, b: Integer): Integer;
+            begin
+            Add := a + b;
+            end;
+
+            begin
+            end.
+            """
+        )
+
+    def test_function_invoker_should__not_decl_before(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program ForwardFunction;
+
+            function DoubleAdd(a,b:Integer):Integer;
+            begin
+            DoubleAdd := Add(a,b) + Add(a,b);
+            end;
+
+            function Add(a, b: Integer): Integer; forward;
+
+            function Add(a, b: Integer): Integer;
+            begin
+            Add := a + b;
+            end;
+
+            begin
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.ID_NOT_FOUND)
+
+    def test_function_invoker_should__decl_after(self):
+        self.runSemanticAnalyzer(
+            """
+            program ForwardFunction;
+
+            function Add(a, b: Integer): Integer; forward;
+
+            function DoubleAdd(a,b:Integer):Integer;
+            begin
+            DoubleAdd := Add(a,b) + Add(a,b);
+            end;
+
+            function Add(a, b: Integer): Integer;
+            begin
+            Add := a + b;
+            end;
+
+            begin
+            end.
+            """
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

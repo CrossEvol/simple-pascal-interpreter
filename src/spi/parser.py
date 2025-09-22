@@ -268,7 +268,7 @@ class Parser:
 
     def function_declaration(self) -> FunctionDecl:
         """function_declaration :
-        FUNCTION ID LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI block SEMI
+        FUNCTION ID LPAREN (formal_parameter_list)? RPAREN COLON type_spec SEMI (FORWARD)? block SEMI
         """
         self.eat(TokenType.FUNCTION)
         func_name = self.current_token.value
@@ -279,13 +279,29 @@ class Parser:
         formal_params = self.formal_parameter_list()
         self.eat(TokenType.RPAREN)
         self.eat(TokenType.COLON)
-
         return_type = self.type_spec()
+        self.eat(TokenType.SEMI)
 
-        self.eat(TokenType.SEMI)
-        block_node = self.block()
-        func_decl = FunctionDecl(func_name, formal_params, return_type, block_node)
-        self.eat(TokenType.SEMI)
+        is_forward = False
+        if self.current_token.type == TokenType.FORWARD:
+            self.eat(TokenType.FORWARD)
+            self.eat(TokenType.SEMI)
+            is_forward = True
+
+        if not is_forward:
+            block_node = self.block()
+            func_decl = FunctionDecl(func_name, formal_params, return_type, block_node)
+            self.eat(TokenType.SEMI)
+            return func_decl
+        else:
+            if self.current_token.type == TokenType.BEGIN:
+                raise ParserError(
+                    error_code=ErrorCode.PARSER_UNEXPECTED_TOKEN,
+                    token=self.current_token,
+                    message=f"{ErrorCode.PARSER_UNEXPECTED_TOKEN.value} -> {self.current_token}",
+                )
+            func_decl = FunctionDecl(func_name, formal_params, return_type, NoOp())
+            func_decl.is_forward = is_forward  # True
         return func_decl
 
     def type_spec(self) -> Type:

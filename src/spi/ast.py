@@ -290,6 +290,7 @@ class FunctionDecl(Declaration):
         self.formal_params = formal_params  # a list of Param nodes
         self.return_type = return_type
         self.block_node = block_node
+        self.is_forward = False
 
 
 class ProcedureCall(Statement):

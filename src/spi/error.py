@@ -41,6 +41,7 @@ class ErrorCode(Enum):
     SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION = (
         "Semantic duplicate procedure declaration"
     )
+    SEMANTIC_DUPLICATE_FUNCTION_DECLARATION = "Semantic duplicate function declaration"
     SEMANTIC_RECORD_VARIANT_INVALID_TAG_ERROR = "Semantic record variant invalid tag"
 
     # Enhanced type system errors

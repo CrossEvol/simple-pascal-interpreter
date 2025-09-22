@@ -1221,6 +1221,7 @@ class FunctionSymbol(Symbol):
         self.return_type = return_type
         # a reference to procedure's body (AST sub-tree)
         self.block_ast: Block | None = None
+        self.is_forward = False
 
     def __str__(self) -> str:
         return "<{class_name}(name={name},return_type={return_type} parameters={params})>".format(

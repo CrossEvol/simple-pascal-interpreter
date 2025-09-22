@@ -1719,6 +1719,37 @@ end.  { Main }
         self.assertEqual(ar["count"].value, 10)
         self.assertEqual(ar.nesting_level, 3)
 
+    @unittest.skip("out of MockCallStack impl, can not test function call")
+    def test_forward_function_call(self):
+        text = """\
+            program ForwardFunction;
+
+            var 
+                sum : Integer;
+
+            function Add(a, b: Integer): Integer; forward;
+
+            function DoubleAdd(a,b:Integer):Integer;
+                begin
+                DoubleAdd := Add(a,b) + Add(a,b);
+                end;
+
+            function Add(a, b: Integer): Integer;
+                begin
+                Add := a + b;
+                end;
+
+            begin
+                sum := DoubleAdd(3,4);
+            end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["sum"].value, 14)
+        self.assertEqual(ar.nesting_level, 3)
+
 
 class InterpreterTestCase(unittest.TestCase):
     def test_program(self):

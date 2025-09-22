@@ -540,6 +540,8 @@ class SemanticAnalyzer(NodeVisitor):
         """Convert a Symbol to TypeSymbol"""
         if isinstance(symbol, TypeSymbol):
             return symbol
+        elif isinstance(symbol, PrimitiveType):
+            return self.visit_PrimitiveType(symbol)
         elif hasattr(symbol, "name"):
             name = symbol.name.upper()
             if name == "INTEGER":
@@ -1140,13 +1142,21 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_FunctionDecl(self, node: FunctionDecl) -> None:
         func_name = node.func_name
         return_type = node.return_type
-        func_symbol = FunctionSymbol(func_name, return_type)
         if self.current_scope is None:
             raise SemanticError(
                 error_code=ErrorCode.MISSING_CURRENT_SCOPE,
                 token=None,
                 message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value}",
             )
+        func_symbol = self.current_scope.lookup(func_name)
+        if func_symbol is not None and not func_symbol.is_forward:
+            raise SemanticError(
+                error_code=ErrorCode.SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION,
+                token=None,
+                message=f"{ErrorCode.SEMANTIC_DUPLICATE_PROCEDURE_DECLARATION.value}",
+            )
+        func_symbol = FunctionSymbol(func_name, return_type)
+        func_symbol.is_forward = node.is_forward
         self.current_scope.insert(func_symbol)
 
         self.log(f"ENTER scope: {func_name}")
@@ -1192,12 +1202,13 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return NEVER_SYMBOL
         func_symbol = self.current_scope.lookup(node.func_name)
-        # Note: func_symbol field removed from AST node for interpreter decoupling
 
         # Return the function's return type
         if func_symbol and hasattr(func_symbol, "return_type"):
             if isinstance(func_symbol.return_type, TypeSymbol):
                 return func_symbol.return_type
+            elif isinstance(func_symbol.return_type, PrimitiveType):
+                return self.visit_PrimitiveType(func_symbol.return_type)
             else:
                 return self._convert_to_type_symbol(func_symbol.return_type)
         else:

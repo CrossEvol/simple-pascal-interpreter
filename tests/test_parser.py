@@ -151,7 +151,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.value, "BEGIN")
         self.assertEqual(the_exception.token.lineno, 5)
 
-    def test_forward_valid(self):
+    def test_forward_procedure_valid(self):
         parser = self.makeParser(
             """
         program ForwardSafeExample;
@@ -166,6 +166,51 @@ class ParserTestCase(unittest.TestCase):
         begin
             Proc1();
         end.
+
+            """
+        )
+        parser.parse()
+
+    def test_forward_function_decl_should_not_have_block(self):
+        parser = self.makeParser(
+            """
+            program ForwardFunction;
+
+            function Add(a, b: Integer): Integer; forward; 
+            begin
+            end;
+
+            function Add(a, b: Integer): Integer;
+            begin
+            Add := a + b;
+            end;
+
+            begin
+            end.
+
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.PARSER_UNEXPECTED_TOKEN)
+        self.assertEqual(the_exception.token.value, "BEGIN")
+        self.assertEqual(the_exception.token.lineno, 5)
+
+    def test_forward_function_valid(self):
+        parser = self.makeParser(
+            """
+            program ForwardFunction;
+
+            function Add(a, b: Integer): Integer; forward; 
+
+            function Add(a, b: Integer): Integer;
+            begin
+            Add := a + b;
+            end;
+
+            begin
+            end.
 
             """
         )
