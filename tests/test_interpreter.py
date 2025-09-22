@@ -344,6 +344,90 @@ END.
         self.assertEqual(ar["n2"].value, 66)
         self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
 
+    def test_exit_for_procedure(self):
+        text = """\
+        program ExitExample;
+
+        var 
+            count : Integer;
+
+        procedure Proc4;
+        begin
+        count := count + 4;
+        end;
+
+        procedure Proc3;
+        begin
+        count := count + 3;
+        {模拟某种条件，这里直接使用Exit提前退出}
+        if true then  {可以替换为实际条件}
+            Exit();  {提前退出Proc3，不会执行下面的代码}
+        Proc4();
+        end;
+
+        procedure Proc2;
+        begin
+        count := count + 2;
+        Proc3();
+        end;
+
+        procedure Proc1;
+        begin
+        count := count + 1;
+        Proc2();
+        end;
+
+        begin
+        Proc1();
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["count"].value, 6)
+
+    def test_exit_for_function(self):
+        text = """\
+        program SumExample;
+
+        var 
+            sum : Integer;
+
+        function Sum4(): integer;
+        begin
+        Sum4 := 4;
+        end;
+
+        function Sum3(): integer;
+        begin
+        Sum3 := 3;
+        {模拟条件，这里直接提前返回}
+        if true then  {可以替换为实际条件}
+            Exit();  {提前退出Sum3，不会执行下面的加法}
+        Sum3 := Sum3 + Sum4();  {这行不会执行}
+        end;
+
+        function Sum2(): integer;
+        begin
+        Sum2 := 2 + Sum3();
+        end;
+
+        function Sum1(): integer;
+        begin
+        Sum1 := 1 + Sum2();
+        end;
+
+        begin
+        sum := Sum1();
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["sum"].value, 6)
+
 
 class InterpreterConditionalTestCase(unittest.TestCase):
     def test_if_then(self):

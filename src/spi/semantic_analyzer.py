@@ -116,6 +116,9 @@ class ScopedSymbolTable:
             BuiltinProcedureSymbol(name=NativeMethod.DEC.name, output_params=[])
         )
         self.insert(
+            BuiltinProcedureSymbol(name=NativeMethod.EXIT.name, output_params=[])
+        )
+        self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.LENGTH.name,
                 return_type=Type(

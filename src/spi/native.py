@@ -10,3 +10,4 @@ class NativeMethod(Enum):
     CHR = "CHR"
     INC = "INC"
     DEC = "DEC"
+    EXIT = "EXIT"

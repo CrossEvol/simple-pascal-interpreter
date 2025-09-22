@@ -136,6 +136,10 @@ def handle_writeln(interpreter, node):
     interpreter.log(str(interpreter.call_stack))
 
 
+def handle_exit(interpreter, node):
+    pass
+
+
 def handle_setlength(interpreter, node):
     """Handle SETLENGTH built-in procedure"""
     proc_name = node.proc_name
@@ -422,6 +426,7 @@ class Interpreter(NodeVisitor):
         register_builtin_procedure(NativeMethod.SETLENGTH.name, handle_setlength)
         register_builtin_procedure(NativeMethod.INC.name, handle_inc)
         register_builtin_procedure(NativeMethod.DEC.name, handle_dec)
+        register_builtin_procedure(NativeMethod.EXIT.name, handle_exit)
         register_builtin_function(NativeMethod.LENGTH.name, handle_length)
         register_builtin_function(NativeMethod.ORD.name, handle_ord)
         register_builtin_function(NativeMethod.CHR.name, handle_chr)
