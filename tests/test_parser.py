@@ -216,6 +216,117 @@ class ParserTestCase(unittest.TestCase):
         )
         parser.parse()
 
+    def test_const_declaration_parsing(self):
+        """Test that const declarations are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM TestConst;
+            CONST
+                PI = 3.14159;
+                MAX_SIZE = 100;
+            VAR
+                x : INTEGER;
+            BEGIN
+                x := MAX_SIZE;
+            END.
+            """
+        )
+        # Should parse without errors
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_const_and_var_declarations_together(self):
+        """Test that const and var declarations can coexist"""
+        parser = self.makeParser(
+            """
+            PROGRAM TestConstVar;
+            CONST
+                PI = 3.14159;
+            VAR
+                radius : REAL;
+                area : REAL;
+            BEGIN
+                radius := 5.0;
+                area := PI * radius * radius;
+            END.
+            """
+        )
+        # Should parse without errors
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_const_parameter_parsing(self):
+        """Test that const parameters are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM TestConstParams;
+            VAR
+                x, y : INTEGER;
+            
+            PROCEDURE TestProc(CONST a : INTEGER; VAR b : INTEGER; c : INTEGER);
+            BEGIN
+                b := a + c;
+            END;
+            
+            BEGIN
+                TestProc(x, y, 5);
+            END.
+            """
+        )
+        # Should parse without errors
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_function_const_parameter_parsing(self):
+        """Test that const parameters in functions are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM TestFuncConstParams;
+            VAR
+                result : INTEGER;
+            
+            FUNCTION TestFunc(CONST a : INTEGER; b : INTEGER) : INTEGER;
+            BEGIN
+                TestFunc := a * b;
+            END;
+            
+            BEGIN
+                result := TestFunc(5, 10);
+            END.
+            """
+        )
+        # Should parse without errors
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_mixed_parameter_modes_parsing(self):
+        """Test that mixed parameter modes (const, var, value) are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM TestMixedParams;
+            VAR
+                x, y, z : INTEGER;
+            
+            PROCEDURE MixedProc(CONST param1 : INTEGER; VAR param2 : INTEGER; param3 : INTEGER);
+            BEGIN
+                param2 := param1 + param3;
+            END;
+            
+            FUNCTION MixedFunc(CONST a : INTEGER; VAR b : INTEGER) : INTEGER;
+            BEGIN
+                b := a * 2;
+                MixedFunc := a + b;
+            END;
+            
+            BEGIN
+                MixedProc(x, y, z);
+            END.
+            """
+        )
+        # Should parse without errors
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
 
 if __name__ == "__main__":
     unittest.main()

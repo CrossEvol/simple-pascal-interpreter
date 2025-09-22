@@ -19,6 +19,7 @@ from spi.ast import (
     CaseStatement,
     Char,
     Compound,
+    ConstDecl,
     EnumType,
     ForStatement,
     FunctionCall,
@@ -747,6 +748,12 @@ class Interpreter(NodeVisitor):
         else:
             # 如果没有type_symbol，默认创建Null对象
             ar[var_name] = NullObject()
+
+    def visit_ConstDecl(self, node: ConstDecl) -> None:
+        # Evaluate the const value expression and store it
+        ar = self.call_stack.peek()
+        const_value = self.visit(node.value_expr)
+        ar[node.var_node.value] = const_value
 
     def __initArray(self, node: Type) -> ArrayObject:
         if isinstance(node, ArrayType):

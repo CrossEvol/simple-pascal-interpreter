@@ -262,10 +262,17 @@ class VarDecl(Declaration):
         self.type_node = type_node
 
 
+class ConstDecl(Declaration):
+    def __init__(self, var_node: Var, value_expr: Expression) -> None:
+        self.var_node = var_node
+        self.value_expr = value_expr
+
+
 class Param(Expression):
-    def __init__(self, var_node: Var, type_node: Type) -> None:
+    def __init__(self, var_node: Var, type_node: Type, param_mode: str = "value") -> None:
         self.var_node = var_node
         self.type_node = type_node
+        self.param_mode = param_mode  # "value", "var", or "const"
 
 
 class ProcedureDecl(Declaration):

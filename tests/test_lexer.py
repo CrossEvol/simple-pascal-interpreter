@@ -32,6 +32,7 @@ class LexerTestCase(unittest.TestCase):
             ("PROCEDURE", TokenType.PROCEDURE, "PROCEDURE"),
             ("FUNCTION", TokenType.FUNCTION, "FUNCTION"),
             ("FORWARD", TokenType.FORWARD, "FORWARD"),
+            ("CONST", TokenType.CONST, "CONST"),
             ("true", TokenType.TRUE, "TRUE"),
             ("false", TokenType.FALSE, "FALSE"),
             ("and", TokenType.AND, "AND"),

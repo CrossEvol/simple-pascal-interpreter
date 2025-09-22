@@ -72,6 +72,11 @@ var
   FreeValueCount: Integer; { 可用的JSON值索引数量}
   FreeHashNodeCount: Integer; { 可用的哈希节点索引数量}
 
+  { 主程序入口点}
+  TestJSON: String;
+  ParsedValueIndex: Integer;
+  
+
 { 初始化内存管理}
 procedure InitMemoryManager();
 var
@@ -1126,11 +1131,7 @@ begin
   end;
 end;
 
-{ 主程序入口点}
-var
-  TestJSON: String;
-  ParsedValueIndex: Integer;
-  
+
 begin
   { 初始化内存管理器}
   InitMemoryManager;

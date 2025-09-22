@@ -42,6 +42,7 @@ class TokenType(Enum):
     OR = "OR"
     NOT = "NOT"
     VAR = "VAR"
+    CONST = "CONST"
     IF = "IF"
     THEN = "THEN"
     ELSE = "ELSE"

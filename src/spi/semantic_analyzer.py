@@ -18,6 +18,7 @@ from spi.ast import (
     CaseStatement,
     Char,
     Compound,
+    ConstDecl,
     EnumType,
     ForStatement,
     FunctionCall,
@@ -810,6 +811,36 @@ class SemanticAnalyzer(NodeVisitor):
         # Set the resolved type symbol in the node for the interpreter
         node.type_symbol = resolved_type_symbol
 
+    def visit_ConstDecl(self, node: ConstDecl) -> None:
+        if self.current_scope is None:
+            raise SemanticError(
+                error_code=ErrorCode.MISSING_CURRENT_SCOPE,
+                token=node.var_node.token,
+                message=f"{ErrorCode.MISSING_CURRENT_SCOPE.value} -> {node.var_node.token}",
+            )
+
+        # Visit the value expression to get its type
+        value_type = self.visit(node.value_expr)
+        
+        # Infer the type from the value expression
+        type_symbol = value_type if isinstance(value_type, TypeSymbol) else NEVER_SYMBOL
+
+        # Create const variable symbol (immutable)
+        var_name = node.var_node.value
+        var_symbol = VarSymbol(var_name, type_symbol, is_mutable=False)
+
+        # Signal an error if the table already has a symbol
+        # with the same name
+        if self.current_scope.lookup(var_name, current_scope_only=True):
+            self.error(
+                error_code=ErrorCode.DUPLICATE_ID,
+                token=node.var_node.token,
+            )
+
+        self.current_scope.insert(var_symbol)
+        # Store the value expression for the interpreter
+        node.type_symbol = type_symbol
+
     def visit_Assign(self, node: Assign) -> None:
         # Visit right-hand side first and get its type
         right_type = self.visit(node.right)
@@ -841,15 +872,11 @@ class SemanticAnalyzer(NodeVisitor):
                     message=f"{ErrorCode.SEMANTIC_UNKNOWN_SYMBOL.value} -> {node.left.token}",
                 )
 
-            # Validate const variable assignment
-            if hasattr(var_symbol, "is_const") and var_symbol.is_const:
-                is_valid, error_msg = MutabilityValidator.validate_const_assignment(
-                    var_symbol, is_initialization=False
+            # Check if trying to assign to a const variable
+            if hasattr(var_symbol, "is_mutable") and not var_symbol.is_mutable:
+                self.error(
+                    ErrorCode.SEMANTIC_CONST_ASSIGNMENT, token=node.left.token
                 )
-                if not is_valid:
-                    self.error(
-                        ErrorCode.SEMANTIC_CONST_ASSIGNMENT, token=node.left.token
-                    )
 
         elif isinstance(node.left, AccessExpression):
             # Handle access expressions (array/member access)
@@ -1120,7 +1147,9 @@ class SemanticAnalyzer(NodeVisitor):
         for param in node.formal_params:
             param_type = self.current_scope.lookup(param.type_node.value)
             param_name = param.var_node.value
-            var_symbol = VarSymbol(param_name, param_type)
+            # Determine mutability based on parameter mode
+            is_mutable = param.param_mode != "const"
+            var_symbol = VarSymbol(param_name, param_type, is_mutable=is_mutable)
             self.current_scope.insert(var_symbol)
             proc_symbol.formal_params.append(var_symbol)
 
@@ -1183,7 +1212,9 @@ class SemanticAnalyzer(NodeVisitor):
         for param in node.formal_params:
             param_type = self.current_scope.lookup(param.type_node.value)
             param_name = param.var_node.value
-            var_symbol = VarSymbol(param_name, param_type)
+            # Determine mutability based on parameter mode
+            is_mutable = param.param_mode != "const"
+            var_symbol = VarSymbol(param_name, param_type, is_mutable=is_mutable)
             self.current_scope.insert(var_symbol)
             func_symbol.formal_params.append(var_symbol)
 

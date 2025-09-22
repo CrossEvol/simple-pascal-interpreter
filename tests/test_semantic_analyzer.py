@@ -893,6 +893,184 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             """
         )
 
+    def test_const_declaration_semantic_analysis(self):
+        """Test that const declarations are semantically analyzed correctly"""
+        # This should not raise an exception
+        analyzer = self.runSemanticAnalyzer(
+            """
+            PROGRAM TestConst;
+            CONST
+                PI = 3.14159;
+                MAX_SIZE = 100;
+            VAR
+                radius : REAL;
+                area : REAL;
+            BEGIN
+                radius := 5.0;
+                area := PI * radius * radius;
+            END.
+            """
+        )
+        # Test passes if no exception is raised
+
+    def test_const_variable_assignment_error(self):
+        """Test that assigning to const variables raises an error"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM TestConstError;
+                CONST
+                    PI = 3.14159;
+                BEGIN
+                    PI := 2.71828;  { This should cause an error }
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_CONST_ASSIGNMENT)
+        self.assertEqual(the_exception.token.value, "PI")
+
+    def test_const_parameter_assignment_error(self):
+        """Test that assigning to const parameters raises an error"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM TestConstParamError;
+                VAR
+                    x : INTEGER;
+                
+                PROCEDURE TestProc(CONST a : INTEGER);
+                BEGIN
+                    a := 10;  { This should cause an error }
+                END;
+                
+                BEGIN
+                    x := 5;
+                    TestProc(x);
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_CONST_ASSIGNMENT)
+        self.assertEqual(the_exception.token.value, "a")
+
+    def test_const_parameter_in_function_assignment_error(self):
+        """Test that assigning to const parameters in functions raises an error"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM TestConstFuncParamError;
+                VAR
+                    result : INTEGER;
+                
+                FUNCTION TestFunc(CONST a : INTEGER) : INTEGER;
+                BEGIN
+                    a := 20;  { This should cause an error }
+                    TestFunc := a;
+                END;
+                
+                BEGIN
+                    result := TestFunc(10);
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_CONST_ASSIGNMENT)
+        self.assertEqual(the_exception.token.value, "a")
+
+    def test_const_parameter_valid_usage(self):
+        """Test that const parameters can be used in expressions without error"""
+        # This should not raise an exception
+        analyzer = self.runSemanticAnalyzer(
+            """
+            PROGRAM TestConstParamValid;
+            VAR
+                x, y : INTEGER;
+                result : INTEGER;
+            
+            PROCEDURE TestProc(CONST a : INTEGER; VAR b : INTEGER; c : INTEGER);
+            BEGIN
+                b := a + c;  { Using const parameter in expression - should be valid }
+                c := 5;      { Modifying value parameter - should be valid }
+            END;
+            
+            FUNCTION TestFunc(CONST a : INTEGER; b : INTEGER) : INTEGER;
+            BEGIN
+                b := a * 2;           { Modifying value parameter - should be valid }
+                TestFunc := a + b;    { Using const parameter in expression - should be valid }
+            END;
+            
+            BEGIN
+                x := 10;
+                y := 0;
+                TestProc(x, y, 5);
+                result := TestFunc(x, 3);
+            END.
+            """
+        )
+        # Test passes if no exception is raised
+
+    def test_mixed_parameter_modes_semantic_analysis(self):
+        """Test semantic analysis of mixed parameter modes"""
+        # This should not raise an exception
+        analyzer = self.runSemanticAnalyzer(
+            """
+            PROGRAM TestMixedParams;
+            VAR
+                x, y, z : INTEGER;
+            
+            PROCEDURE MixedProc(CONST param1 : INTEGER; VAR param2 : INTEGER; param3 : INTEGER);
+            BEGIN
+                param2 := param1 + param3;  { const + value -> var assignment }
+                param3 := param1 * 2;       { modifying value parameter }
+                { param1 := 5; would cause error }
+            END;
+            
+            BEGIN
+                x := 10;
+                y := 0;
+                z := 5;
+                MixedProc(x, y, z);
+            END.
+            """
+        )
+        # Test passes if no exception is raised
+
+    def test_const_declaration_duplicate_id_error(self):
+        """Test that duplicate const declarations raise an error"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM TestConstDuplicate;
+                CONST
+                    PI = 3.14159;
+                    PI = 2.71828;  { Duplicate const declaration }
+                BEGIN
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.DUPLICATE_ID)
+        self.assertEqual(the_exception.token.value, "PI")
+
+    def test_const_and_var_name_conflict_error(self):
+        """Test that const and var declarations with same name raise an error"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM TestConstVarConflict;
+                CONST
+                    VALUE = 100;
+                VAR
+                    VALUE : INTEGER;  { Conflicts with const declaration }
+                BEGIN
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.DUPLICATE_ID)
+        self.assertEqual(the_exception.token.value, "VALUE")
+
 
 if __name__ == "__main__":
     unittest.main()

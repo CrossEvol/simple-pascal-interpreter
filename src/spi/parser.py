@@ -20,6 +20,7 @@ from spi.ast import (
     CaseStatement,
     Char,
     Compound,
+    ConstDecl,
     Declaration,
     EnumType,
     Expression,
@@ -116,13 +117,20 @@ class Parser:
 
     def declarations(self) -> list[Declaration]:
         """
-        declarations : type_declarations? (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        declarations : type_declarations? (CONST (const_declaration SEMI)+)? (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
         """
         declarations: list[Declaration] = []
 
         if self.current_token.type == TokenType.TYPE:
             type_decls = self.type_declarations()
             declarations.extend(type_decls)
+
+        if self.current_token.type == TokenType.CONST:
+            self.eat(TokenType.CONST)
+            while self.current_token.type == TokenType.ID:
+                const_decl = self.const_declaration()
+                declarations.extend(const_decl)
+                self.eat(TokenType.SEMI)
 
         if self.current_token.type == TokenType.VAR:
             self.eat(TokenType.VAR)
@@ -178,8 +186,19 @@ class Parser:
         )
 
     def formal_parameters(self) -> list[Param]:
-        """formal_parameters : ID (COMMA ID)* COLON type_spec"""
+        """
+        formal_parameters : (CONST | VAR)? ID (COMMA ID)* COLON type_spec
+        """
         param_nodes: list[Param] = []
+        param_mode = "value"  # default parameter mode
+
+        # Check for parameter mode keywords
+        if self.current_token.type == TokenType.CONST:
+            param_mode = "const"
+            self.eat(TokenType.CONST)
+        elif self.current_token.type == TokenType.VAR:
+            param_mode = "var"
+            self.eat(TokenType.VAR)
 
         param_tokens = [self.current_token]
         self.eat(TokenType.ID)
@@ -192,7 +211,7 @@ class Parser:
         type_node = self.type_spec()
 
         for param_token in param_tokens:
-            param_node = Param(Var(param_token), type_node)
+            param_node = Param(Var(param_token), type_node, param_mode)
             param_nodes.append(param_node)
 
         return param_nodes
@@ -201,17 +220,42 @@ class Parser:
         """formal_parameter_list : formal_parameters
         | formal_parameters SEMI formal_parameter_list
         """
-        # procedure Foo();
-        if not self.current_token.type == TokenType.ID:
+        # Check if we have any parameters at all
+        if not (
+            self.current_token.type == TokenType.ID
+            or self.current_token.type == TokenType.VAR
+            or self.current_token.type == TokenType.CONST
+        ):
             return []
 
         param_nodes = self.formal_parameters()
 
         while self.current_token.type == TokenType.SEMI:
             self.eat(TokenType.SEMI)
-            param_nodes.extend(self.formal_parameters())
+            # Check if there are more parameters after semicolon
+            if (
+                self.current_token.type == TokenType.ID
+                or self.current_token.type == TokenType.VAR
+                or self.current_token.type == TokenType.CONST
+            ):
+                param_nodes.extend(self.formal_parameters())
+            else:
+                break
 
         return param_nodes
+
+    def const_declaration(self) -> list[ConstDecl]:
+        """const_declaration : ID EQ expr"""
+        const_declarations = []
+
+        # Parse first const declaration
+        var_node = Var(self.current_token)
+        self.eat(TokenType.ID)
+        self.eat(TokenType.EQ)
+        value_expr = self.expr()
+        const_declarations.append(ConstDecl(var_node, value_expr))
+
+        return const_declarations
 
     def variable_declaration(self) -> list[VarDecl]:
         """variable_declaration : ID (COMMA ID)* COLON type_spec"""
@@ -1015,7 +1059,9 @@ class Parser:
 
         block : declarations compound_statement
 
-        declarations : type_declarations? (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        declarations : type_declarations? (CONST (const_declaration SEMI)+)? (VAR (variable_declaration SEMI)+)?
+                       procedure_declaration*
+                       function_declaration*
 
         type_declarations : TYPE (type_declaration SEMI)+
 
@@ -1032,7 +1078,7 @@ class Parser:
         formal_params_list : formal_parameters
                            | formal_parameters SEMI formal_parameter_list
 
-        formal_parameters : ID (COMMA ID)* COLON type_spec
+        formal_parameters : (CONST | VAR)? ID (COMMA ID)* COLON type_spec
 
         type_spec : primitive_type_spec | string_type_spec | array_type_spec
 

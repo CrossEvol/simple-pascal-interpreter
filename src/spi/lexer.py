@@ -185,7 +185,7 @@ class Lexer:
         token = Token(type=None, value=None, lineno=self.lineno, column=self.column)
 
         value = ""
-        while self.current_char is not None and self.current_char.isalnum():
+        while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
             value += self.current_char
             self.advance()
 

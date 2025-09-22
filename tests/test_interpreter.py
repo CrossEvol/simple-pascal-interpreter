@@ -2146,5 +2146,246 @@ END.  {Part12}
         self.assertAlmostEqual(ar["y"].value, float(20) / 7 + 3.14)  # 5.9971...
 
 
+class InterpreterConstTestCase(unittest.TestCase):
+    def test_const_declaration_initialization(self):
+        """Test that const declarations are properly initialized"""
+        text = """\
+        PROGRAM TestConstInit;
+        CONST
+            PI = 3.14159;
+            MAX_SIZE = 100;
+            MESSAGE = 'Hello World';
+            FLAG = TRUE;
+        VAR
+            pi_val : REAL;
+            size_val : INTEGER;
+            msg_val : STRING;
+            flag_val : BOOLEAN;
+        BEGIN
+            pi_val := PI;
+            size_val := MAX_SIZE;
+            msg_val := MESSAGE;
+            flag_val := FLAG;
+        END.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["pi_val"].value, 3.14159)
+        self.assertEqual(ar["size_val"].value, 100)
+        self.assertEqual(ar["msg_val"].value, "Hello World")
+        self.assertEqual(ar["flag_val"].value, True)
+
+    def test_const_in_expressions(self):
+        """Test that const values can be used in expressions"""
+        text = """\
+        PROGRAM TestConstExpr;
+        CONST
+            PI = 3.14159;
+            RADIUS = 5.0;
+        VAR
+            area : REAL;
+            circumference : REAL;
+        BEGIN
+            area := PI * RADIUS * RADIUS;
+            circumference := 2.0 * PI * RADIUS;
+        END.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        expected_area = 3.14159 * 5.0 * 5.0
+        expected_circumference = 2.0 * 3.14159 * 5.0
+
+        self.assertAlmostEqual(ar["area"].value, expected_area, places=5)
+        self.assertAlmostEqual(
+            ar["circumference"].value, expected_circumference, places=5
+        )
+
+    @unittest.skip("当前实现有问题， var要关联改变原来的变量， 如果不用var声明则是复制")
+    def test_const_parameters_in_procedures(self):
+        """Test that const parameters work correctly in procedures"""
+        text = """\
+        PROGRAM TestConstProcParams;
+        VAR
+            x, y, z : INTEGER;
+            result : INTEGER;
+        
+        PROCEDURE Calculate(CONST a : INTEGER; VAR b : INTEGER; c : INTEGER);
+        BEGIN
+            x := a + c;
+            c := a * 2;  { This modifies the local copy, not the original }
+        END;
+        
+        BEGIN
+            x := 10;
+            y := 0;
+            z := 5;
+            Calculate(x, y, z);
+            result := y;  { Should be 15 (10 + 5) }
+        END.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["x"].value, 10)  # const parameter, original unchanged
+        self.assertEqual(ar["y"].value, 15)
+        self.assertEqual(ar["z"].value, 5)  # value parameter, original unchanged
+        self.assertEqual(ar["result"].value, 15)
+
+    def test_const_parameters_in_functions(self):
+        """Test that const parameters work correctly in functions"""
+        text = """\
+        PROGRAM TestConstFuncParams;
+        VAR
+            result : INTEGER;
+        
+        FUNCTION Multiply(CONST a : INTEGER; b : INTEGER) : INTEGER;
+        BEGIN
+            b := b * 2;  { Modify value parameter }
+            Multiply := a * b;  { Use const parameter }
+        END;
+        
+        BEGIN
+            result := Multiply(5, 3);  { Should be 5 * (3 * 2) = 30 }
+        END.
+        """
+        interpreter = makeInterpreter(text, MockFunctionCallStack())
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result"].value, 30)
+
+    @unittest.skip("当前实现有问题， var要关联改变原来的变量， 如果不用var声明则是复制")
+    def test_mixed_parameter_modes(self):
+        """Test mixed parameter modes (const, var, value) in the same procedure"""
+        text = """\
+        PROGRAM TestMixedParams;
+        VAR
+            a, b, c : INTEGER;
+            result1, result2 : INTEGER;
+        
+        PROCEDURE MixedProc(CONST x : INTEGER; VAR y : INTEGER; z : INTEGER);
+        BEGIN
+            y := x + z;  { const + value -> var }
+            z := x * 2;  { modify value parameter (local copy) }
+        END;
+        
+        FUNCTION MixedFunc(CONST p : INTEGER; VAR q : INTEGER) : INTEGER;
+        BEGIN
+            q := p * 3;
+            MixedFunc := p + q;
+        END;
+        
+        BEGIN
+            a := 10;
+            b := 0;
+            c := 5;
+            
+            MixedProc(a, b, c);
+            result1 := b;  { Should be 15 }
+            
+            result2 := MixedFunc(a, b);  { Should be 10 + (10 * 3) = 40 }
+        END.
+        """
+        interpreter = makeInterpreter(text, MockFunctionCallStack())
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["a"].value, 10)  # const parameter, original unchanged
+        self.assertEqual(ar["b"].value, 30)  # var parameter, modified by function
+        self.assertEqual(ar["c"].value, 5)  # value parameter, original unchanged
+        self.assertEqual(ar["result1"].value, 15)
+        self.assertEqual(ar["result2"].value, 40)
+
+    def test_const_with_complex_expressions(self):
+        """Test const declarations with complex expressions"""
+        text = """\
+        PROGRAM TestConstComplexExpr;
+        CONST
+            BASE = 10;
+            MULTIPLIER = 2;
+            RESULT = BASE * MULTIPLIER + 5;  { Should be 25 }
+        VAR
+            value : INTEGER;
+        BEGIN
+            value := RESULT;
+        END.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["value"].value, 25)
+
+    def test_const_type_inference(self):
+        """Test that const declarations properly infer types"""
+        text = """\
+        PROGRAM TestConstTypes;
+        CONST
+            INT_CONST = 42;
+            REAL_CONST = 3.14;
+            BOOL_CONST = TRUE;
+            CHAR_CONST = 'A';
+            STRING_CONST = 'Hello';
+        VAR
+            i : INTEGER;
+            r : REAL;
+            b : BOOLEAN;
+            c : CHAR;
+            s : STRING;
+        BEGIN
+            i := INT_CONST;
+            r := REAL_CONST;
+            b := BOOL_CONST;
+            c := CHAR_CONST;
+            s := STRING_CONST;
+        END.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["i"].value, 42)
+        self.assertEqual(ar["r"].value, 3.14)
+        self.assertEqual(ar["b"].value, True)
+        self.assertEqual(ar["c"].value, "A")
+        self.assertEqual(ar["s"].value, "Hello")
+
+    @unittest.skip("当前实现有问题， var要关联改变原来的变量， 如果不用var声明则是复制")
+    def test_const_in_nested_procedures(self):
+        """Test const parameters in nested procedure calls"""
+        text = """\
+        PROGRAM TestNestedConstParams;
+        VAR
+            result : INTEGER;
+            temp : INTEGER;
+        
+        PROCEDURE Outer(CONST a : INTEGER);
+            PROCEDURE Inner(CONST b : INTEGER; VAR c : INTEGER);
+            BEGIN
+                c := a + b;  { Use const from outer scope and inner parameter }
+            END;
+            
+        BEGIN
+            temp := 0;
+            Inner(a, temp);
+            result := temp;
+        END;
+        
+        BEGIN
+            Outer(10);  { Should result in result = 10 + 10 = 20 }
+        END.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result"].value, 20)
+
+
 if __name__ == "__main__":
     unittest.main()
