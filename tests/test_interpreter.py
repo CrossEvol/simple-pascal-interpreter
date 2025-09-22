@@ -377,7 +377,58 @@ END.
         self.assertEqual(ar["n2"].value, 66)
         self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
 
-    def test_exit_for_procedure(self):
+    def test_exit_in_simple_procedure(self):
+        """Test Exit in a simple procedure without nested structures"""
+        text = """\
+        program SimpleExitTest;
+        var
+            executed: Boolean;
+            
+        procedure TestProc();
+        begin
+            executed := True;
+            Exit();
+            executed := False;  { This should not execute }
+        end;
+        
+        begin
+            executed := False;
+            TestProc();
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["executed"].value, True)
+        self.assertEqual(ar.nesting_level, 3)
+
+    def test_exit_in_simple_function(self):
+        """Test Exit in a simple function without nested structures"""
+        text = """\
+        program SimpleFunctionExitTest;
+        var
+            result: Integer;
+            
+        function TestFunc(): Integer;
+        begin
+            TestFunc := 42;
+            Exit();
+            TestFunc := 99;  { This should not execute }
+        end;
+        
+        begin
+            result := TestFunc();
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockCallStackForFunction()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["result"].value, 42)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_exit_for_nested_procedure_call(self):
         text = """\
         program ExitExample;
 
@@ -421,7 +472,7 @@ END.
         self.assertEqual(ar["count"].value, 6)
         self.assertEqual(ar.nesting_level, 5)
 
-    def test_exit_for_function(self):
+    def test_exit_for__nested_function_call(self):
         text = """\
         program SumExample;
 
@@ -464,6 +515,128 @@ END.
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["sum"].value, 6)
         self.assertEqual(ar.nesting_level, 1)
+
+    def test_exit_within_if_statement(self):
+        """Test Exit within if statements in procedures"""
+        text = """\
+        program ExitInIfTest;
+        var
+            count: Integer;
+            
+        procedure ConditionalExit(condition: Boolean);
+        begin
+            count := count + 1;
+            if condition then
+            begin
+                count := count + 10;
+                Exit();
+                count := count + 100;  { Should not execute }
+            end;
+            count := count + 1000;  { Should not execute if condition is true }
+        end;
+        
+        begin
+            count := 0;
+            ConditionalExit(True);   { Should result in count = 11 }
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["count"].value, 11)
+        self.assertEqual(ar.nesting_level, 3)
+
+    def test_exit_function_return_value_preservation(self):
+        """Test that function return values are preserved when Exit is called"""
+        text = """\
+        program FunctionReturnPreservationTest;
+        var
+            result1, result2: Integer;
+            
+        function SetAndExit(value: Integer): Integer;
+        begin
+            SetAndExit := value;
+            Exit();
+            SetAndExit := 999;  { This should not change the return value }
+        end;
+        
+        function SetBeforeAndAfterExit(value: Integer): Integer;
+        begin
+            SetBeforeAndAfterExit := value;
+            if value > 0 then
+            begin
+                SetBeforeAndAfterExit := value * 2;
+                Exit();
+            end;
+            SetBeforeAndAfterExit := 0;  { Should not execute }
+        end;
+        
+        begin
+            result1 := SetAndExit(42);
+            result2 := SetBeforeAndAfterExit(5);
+        end.
+"""
+        interpreter = makeInterpreter(text, MockCallStackForFunction())
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["result1"].value, 42)
+        self.assertEqual(ar["result2"].value, 10)
+
+    def test_exit_call_stack_behavior(self):
+        """Test proper call stack behavior with Exit"""
+        text = """\
+        program CallStackExitTest;
+        var
+            depthBefore, depthAfter: Integer;
+            
+        procedure CheckDepthAndExit;
+        begin
+            { For this test, we just verify Exit doesn't break the stack }
+            Exit();
+        end;
+        
+        procedure WrapperProc;
+        begin
+            CheckDepthAndExit();
+        end;
+        
+        begin
+            WrapperProc();
+        end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar.nesting_level, 4)
+        # Test passes if no exceptions are thrown and program completes
+
+    def test_function_with_multiple_return_assignments(self):
+        """Test Exit with multiple return value assignments in functions"""
+        text = """\
+        program MultipleReturnAssignmentTest;
+        var
+            result: Integer;
+            
+        function MultiAssign(x: Integer): Integer;
+        begin
+            MultiAssign := x;        { First assignment }
+            MultiAssign := x * 2;    { Second assignment }
+            if x > 0 then
+            begin
+                MultiAssign := x * 3;    { Third assignment }
+                Exit();                  { Exit with x * 3 }
+            end;
+            MultiAssign := x * 4;    { Should not execute }
+        end;
+        
+        begin
+            result := MultiAssign(5);  { Should return 15 (5 * 3) }
+        end.
+"""
+        interpreter = makeInterpreter(text, MockCallStackForFunction())
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+        self.assertEqual(ar["result"].value, 15)
 
 
 class InterpreterConditionalTestCase(unittest.TestCase):
