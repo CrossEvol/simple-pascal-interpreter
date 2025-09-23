@@ -341,6 +341,43 @@ class ParserTestCase(unittest.TestCase):
         tree = parser.parse()
         self.assertIsNotNone(tree)
 
+    def test_while_statement_with_one_statement(self):
+        """Test that while statements are parsed correctly"""
+        parser = self.makeParser(
+            """
+            program WhileWithOneStatement;
+
+            var 
+                i : Integer;
+
+            begin
+                i := 0;
+                while i < 10 do 
+                    i := i + 1;
+            end.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_if_statement_with_one_statement(self):
+        """Test that if statements are parsed correctly"""
+        parser = self.makeParser(
+            """
+            program forLoopWithOnlyOneStatement;
+            var
+            i: integer;
+            sum : integer;
+
+            begin
+            for i := 1 to 10 do
+                sum := sum + i;
+            end.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
     def test_continue_statement_parsing(self):
         """Test that continue statements are parsed correctly"""
         parser = self.makeParser(

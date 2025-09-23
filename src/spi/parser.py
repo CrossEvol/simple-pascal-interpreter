@@ -648,25 +648,25 @@ class Parser:
         self.eat(TokenType.IF)
         condition = self.logic_expr()
         self.eat(TokenType.THEN)
-        then_branch: AST
-        if self.current_token.type == TokenType.BEGIN:
-            then_branch = self.compound_statement()
-        else:
-            then_branch = self.statement()
+        then_branch = (
+            self.compound_statement()
+            if self.current_token.type == TokenType.BEGIN
+            else self.statement()
+        )
 
         else_if_branches: list[IfStatement] = []
         else_branch: AST | None = None
         while self.current_token.type == TokenType.ELSE:
             self.eat(TokenType.ELSE)
-            sub_then_branch: AST
             if self.current_token.type == TokenType.IF:
                 self.eat(TokenType.IF)
                 sub_condition = self.logic_expr()
                 self.eat(TokenType.THEN)
-                if self.current_token.type == TokenType.BEGIN:
-                    sub_then_branch = self.compound_statement()
-                else:
-                    sub_then_branch = self.statement()
+                sub_then_branch = (
+                    self.compound_statement()
+                    if self.current_token.type == TokenType.BEGIN
+                    else self.statement()
+                )
                 sub_node = IfStatement(sub_condition, sub_then_branch, [], None)
                 else_if_branches.append(sub_node)
             else:
@@ -689,8 +689,12 @@ class Parser:
         self.eat(TokenType.WHILE)
         condition = self.logic_expr()
         self.eat(TokenType.DO)
-        block = self.compound_statement()
-        self.eat(TokenType.SEMI)
+        block = (
+            self.compound_statement()
+            if self.current_token.type == TokenType.BEGIN
+            else self.statement()
+        )
+        # self.eat(TokenType.SEMI)
         node = WhileStatement(condition, block)
         return node
 
@@ -701,11 +705,11 @@ class Parser:
         self.eat(TokenType.TO)
         bound = self.summation_expr()
         self.eat(TokenType.DO)
-        block: AST
-        if self.current_token.type == TokenType.BEGIN:
-            block = self.compound_statement()
-        else:
-            block = self.statement()
+        block = (
+            self.compound_statement()
+            if self.current_token.type == TokenType.BEGIN
+            else self.statement()
+        )
         node = ForStatement(initialization, bound, block)
         return node
 
@@ -732,10 +736,11 @@ class Parser:
         else_stmt: Statement | None = None
         if self.current_token.type == TokenType.ELSE:
             self.eat(TokenType.ELSE)
-            if self.current_token.type == TokenType.BEGIN:
-                else_stmt = self.compound_statement()
-            else:
-                else_stmt = self.statement()
+            else_stmt = (
+                self.compound_statement()
+                if self.current_token.type == TokenType.BEGIN
+                else self.statement()
+            )
             self.eat(TokenType.SEMI)
         self.eat(TokenType.END)
         node = CaseStatement(case_expr, case_items, else_stmt)
@@ -767,11 +772,11 @@ class Parser:
         """case_item : case_label_list COLON (statement | compound_statement)"""
         labels = self.case_label_list()
         self.eat(TokenType.COLON)
-        statement: Statement | None = None
-        if self.current_token.type == TokenType.BEGIN:
-            statement = self.compound_statement()
-        else:
-            statement = self.statement()
+        statement = (
+            self.compound_statement()
+            if self.current_token.type == TokenType.BEGIN
+            else self.statement()
+        )
         node = CaseItem(labels, statement)
         return node
 
@@ -1058,7 +1063,7 @@ class Parser:
         # parent take precedence
         if token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
-            node = self.summation_expr()
+            node = self.logic_expr()
             self.eat(TokenType.RPAREN)
             return node
 
