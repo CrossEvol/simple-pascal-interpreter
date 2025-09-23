@@ -33,6 +33,7 @@ from spi.ast import (
     NoOp,
     Num,
     Param,
+    ParamMode,
     PrimitiveType,
     ProcedureCall,
     ProcedureDecl,
@@ -190,14 +191,14 @@ class Parser:
         formal_parameters : (CONST | VAR)? ID (COMMA ID)* COLON type_spec
         """
         param_nodes: list[Param] = []
-        param_mode = "value"  # default parameter mode
+        param_mode = ParamMode.CLONE  # default parameter mode
 
         # Check for parameter mode keywords
         if self.current_token.type == TokenType.CONST:
-            param_mode = "const"
+            param_mode = ParamMode.CONST
             self.eat(TokenType.CONST)
         elif self.current_token.type == TokenType.VAR:
-            param_mode = "var"
+            param_mode = ParamMode.REFER
             self.eat(TokenType.VAR)
 
         param_tokens = [self.current_token]

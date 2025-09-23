@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from spi.token import Token
@@ -268,11 +269,19 @@ class ConstDecl(Declaration):
         self.value_expr = value_expr
 
 
+class ParamMode(Enum):
+    REFER = "refer"
+    CONST = "const"
+    CLONE = "clone"
+
+
 class Param(Expression):
-    def __init__(self, var_node: Var, type_node: Type, param_mode: str = "value") -> None:
+    def __init__(
+        self, var_node: Var, type_node: Type, param_mode: str = "value"
+    ) -> None:
         self.var_node = var_node
         self.type_node = type_node
-        self.param_mode = param_mode  # "value", "var", or "const"
+        self.param_mode = param_mode  # ParamMode
 
 
 class ProcedureDecl(Declaration):

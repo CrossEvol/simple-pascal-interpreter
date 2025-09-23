@@ -846,7 +846,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             """
         )
 
-    def test_function_invoker_should__not_decl_before(self):
+    def test_function_invoker_should_not_decl_before(self):
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(
                 """
@@ -854,14 +854,14 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
 
             function DoubleAdd(a,b:Integer):Integer;
             begin
-            DoubleAdd := Add(a,b) + Add(a,b);
+                DoubleAdd := Add(a,b) + Add(a,b);
             end;
 
             function Add(a, b: Integer): Integer; forward;
 
             function Add(a, b: Integer): Integer;
             begin
-            Add := a + b;
+                Add := a + b;
             end;
 
             begin
@@ -870,6 +870,89 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             )
         the_exception = cm.exception
         self.assertEqual(the_exception.error_code, ErrorCode.ID_NOT_FOUND)
+        self.assertEqual(the_exception.token, "Add")
+
+    def test_function_var_param_should_not_be_non_variable_identifier(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program ForwardFunction;
+            var 
+                result : Integer;
+
+            function Add(var a, b: Integer): Integer;
+            begin
+                Add := a + b;
+            end;
+
+            begin
+                result := Add(5, 3);
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
+        )
+        self.assertEqual(the_exception.token, "a")
+
+    def test_function_var_param_should_be_variable_identifier(self):
+        self.runSemanticAnalyzer(
+            """
+            program ForwardFunction;
+            var 
+                result : Integer;
+                x , y : Integer;
+
+            function Add(var a, b: Integer): Integer;
+            begin
+                Add := a + b;
+            end;
+
+            begin
+                result := Add(x, y);
+            end.
+            """
+        )
+
+    def test_procedure_var_param_should_not_be_non_variable_identifier(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program VariableIdentifier;
+
+            procedure Add(var a, b: Integer);
+            begin
+            end;
+
+            begin
+                Add(5,3);
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
+        )
+        self.assertEqual(the_exception.token, "a")
+
+    def test_procedure_var_param_should_be_variable_identifier(self):
+        self.runSemanticAnalyzer(
+            """
+            program VariableIdentifier;
+
+            var 
+                a , b : Integer;
+
+            procedure Add(var x, ys: Integer);
+            begin
+            end;
+
+            begin
+                Add(a,b);
+            end.
+            """
+        )
 
     def test_function_invoker_should__decl_after(self):
         self.runSemanticAnalyzer(

@@ -28,6 +28,7 @@ from spi.ast import (
     MemberSuffix,
     NoOp,
     Num,
+    ParamMode,
     PrimitiveType,
     ProcedureCall,
     ProcedureDecl,
@@ -101,24 +102,12 @@ class ScopedSymbolTable:
         self.insert(BuiltinTypeSymbol("BOOLEAN"))
         self.insert(BuiltinTypeSymbol("STRING"))
         self.insert(BuiltinTypeSymbol("CHAR"))
-        self.insert(
-            BuiltinProcedureSymbol(name=NativeMethod.WRITE.name, output_params=[])
-        )
-        self.insert(
-            BuiltinProcedureSymbol(name=NativeMethod.WRITELN.name, output_params=[])
-        )
-        self.insert(
-            BuiltinProcedureSymbol(name=NativeMethod.SETLENGTH.name, output_params=[])
-        )
-        self.insert(
-            BuiltinProcedureSymbol(name=NativeMethod.INC.name, output_params=[])
-        )
-        self.insert(
-            BuiltinProcedureSymbol(name=NativeMethod.DEC.name, output_params=[])
-        )
-        self.insert(
-            BuiltinProcedureSymbol(name=NativeMethod.EXIT.name, output_params=[])
-        )
+        self.insert(BuiltinProcedureSymbol(name=NativeMethod.WRITE.name))
+        self.insert(BuiltinProcedureSymbol(name=NativeMethod.WRITELN.name))
+        self.insert(BuiltinProcedureSymbol(name=NativeMethod.SETLENGTH.name))
+        self.insert(BuiltinProcedureSymbol(name=NativeMethod.INC.name))
+        self.insert(BuiltinProcedureSymbol(name=NativeMethod.DEC.name))
+        self.insert(BuiltinProcedureSymbol(name=NativeMethod.EXIT.name))
         self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.LENGTH.name,
@@ -797,7 +786,9 @@ class SemanticAnalyzer(NodeVisitor):
         is_mutable = True  # All current declarations are VAR declarations
 
         # Create VarSymbol with mutability information
-        var_symbol = VarSymbol(var_name, resolved_type_symbol, is_mutable=is_mutable)
+        var_symbol = VarSymbol(
+            var_name, resolved_type_symbol, param_mode=ParamMode.CLONE
+        )
 
         # Signal an error if the table already has a symbol
         # with the same name
@@ -821,13 +812,13 @@ class SemanticAnalyzer(NodeVisitor):
 
         # Visit the value expression to get its type
         value_type = self.visit(node.value_expr)
-        
+
         # Infer the type from the value expression
         type_symbol = value_type if isinstance(value_type, TypeSymbol) else NEVER_SYMBOL
 
         # Create const variable symbol (immutable)
         var_name = node.var_node.value
-        var_symbol = VarSymbol(var_name, type_symbol, is_mutable=False)
+        var_symbol = VarSymbol(var_name, type_symbol, param_mode=ParamMode.CONST)
 
         # Signal an error if the table already has a symbol
         # with the same name
@@ -874,9 +865,7 @@ class SemanticAnalyzer(NodeVisitor):
 
             # Check if trying to assign to a const variable
             if hasattr(var_symbol, "is_mutable") and not var_symbol.is_mutable:
-                self.error(
-                    ErrorCode.SEMANTIC_CONST_ASSIGNMENT, token=node.left.token
-                )
+                self.error(ErrorCode.SEMANTIC_CONST_ASSIGNMENT, token=node.left.token)
 
         elif isinstance(node.left, AccessExpression):
             # Handle access expressions (array/member access)
@@ -1148,8 +1137,11 @@ class SemanticAnalyzer(NodeVisitor):
             param_type = self.current_scope.lookup(param.type_node.value)
             param_name = param.var_node.value
             # Determine mutability based on parameter mode
-            is_mutable = param.param_mode != "const"
-            var_symbol = VarSymbol(param_name, param_type, is_mutable=is_mutable)
+            var_symbol = VarSymbol(
+                param_name,
+                param_type,
+                param_mode=param.param_mode,
+            )
             self.current_scope.insert(var_symbol)
             proc_symbol.formal_params.append(var_symbol)
 
@@ -1164,6 +1156,25 @@ class SemanticAnalyzer(NodeVisitor):
         proc_symbol.block_ast = node.block_node
 
     def visit_ProcedureCall(self, node: ProcedureCall) -> None:
+        if self.current_scope is None:
+            self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
+            return NEVER_SYMBOL
+
+        proc_symbol = cast(ProcedureSymbol, self.current_scope.lookup(node.proc_name))
+        if proc_symbol is None:
+            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.proc_name)
+
+        for param_node, argument_node in zip(
+            proc_symbol.formal_params, node.actual_params
+        ):
+            if param_node.param_mode == ParamMode.REFER and not isinstance(
+                argument_node, Var
+            ):
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED,
+                    token=param_node.name,
+                )
+
         for param_node in node.actual_params:
             self.visit(param_node)
 
@@ -1213,8 +1224,11 @@ class SemanticAnalyzer(NodeVisitor):
             param_type = self.current_scope.lookup(param.type_node.value)
             param_name = param.var_node.value
             # Determine mutability based on parameter mode
-            is_mutable = param.param_mode != "const"
-            var_symbol = VarSymbol(param_name, param_type, is_mutable=is_mutable)
+            var_symbol = VarSymbol(
+                param_name,
+                param_type,
+                param_mode=param.param_mode,
+            )
             self.current_scope.insert(var_symbol)
             func_symbol.formal_params.append(var_symbol)
 
@@ -1229,13 +1243,27 @@ class SemanticAnalyzer(NodeVisitor):
         func_symbol.block_ast = node.block_node
 
     def visit_FunctionCall(self, node: FunctionCall) -> TypeSymbol:
-        for param_node in node.actual_params:
-            self.visit(param_node)
-
         if self.current_scope is None:
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return NEVER_SYMBOL
-        func_symbol = self.current_scope.lookup(node.func_name)
+
+        func_symbol = cast(FunctionSymbol, self.current_scope.lookup(node.func_name))
+        if func_symbol is None:
+            self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.func_name)
+
+        for param_node, argument_node in zip(
+            func_symbol.formal_params, node.actual_params
+        ):
+            if param_node.param_mode == ParamMode.REFER and not isinstance(
+                argument_node, Var
+            ):
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED,
+                    token=param_node.name,
+                )
+
+        for param_node in node.actual_params:
+            self.visit(param_node)
 
         # Return the function's return type
         if func_symbol and hasattr(func_symbol, "return_type"):

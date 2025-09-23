@@ -55,6 +55,7 @@ class MockFunctionCallStack:
     def pop(self) -> ActivationRecord:
         if len(self._records) >= 2:
             self._records[-2].copy_from(self._records[-1], True)
+            self._records[-2].refer_back(self._records[-1].mappings)
             return self._records.pop()
         else:
             pass
@@ -2048,12 +2049,12 @@ end.  { Main }
         var 
             count:integer;
 
+        procedure Proc1(); forward;
+
         procedure Proc2();
         begin
             Proc1();
         end;
-
-        procedure Proc1(); forward;
 
         procedure Proc1();
         begin   
@@ -2204,7 +2205,6 @@ class InterpreterConstTestCase(unittest.TestCase):
             ar["circumference"].value, expected_circumference, places=5
         )
 
-    @unittest.skip("当前实现有问题， var要关联改变原来的变量， 如果不用var声明则是复制")
     def test_const_parameters_in_procedures(self):
         """Test that const parameters work correctly in procedures"""
         text = """\
@@ -2215,7 +2215,7 @@ class InterpreterConstTestCase(unittest.TestCase):
         
         PROCEDURE Calculate(CONST a : INTEGER; VAR b : INTEGER; c : INTEGER);
         BEGIN
-            x := a + c;
+            b := a + c;
             c := a * 2;  { This modifies the local copy, not the original }
         END;
         
@@ -2227,7 +2227,9 @@ class InterpreterConstTestCase(unittest.TestCase):
             result := y;  { Should be 15 (10 + 5) }
         END.
         """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -2259,7 +2261,6 @@ class InterpreterConstTestCase(unittest.TestCase):
 
         self.assertEqual(ar["result"].value, 30)
 
-    @unittest.skip("当前实现有问题， var要关联改变原来的变量， 如果不用var声明则是复制")
     def test_mixed_parameter_modes(self):
         """Test mixed parameter modes (const, var, value) in the same procedure"""
         text = """\
@@ -2291,7 +2292,9 @@ class InterpreterConstTestCase(unittest.TestCase):
             result2 := MixedFunc(a, b);  { Should be 10 + (10 * 3) = 40 }
         END.
         """
-        interpreter = makeInterpreter(text, MockFunctionCallStack())
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
@@ -2355,7 +2358,6 @@ class InterpreterConstTestCase(unittest.TestCase):
         self.assertEqual(ar["c"].value, "A")
         self.assertEqual(ar["s"].value, "Hello")
 
-    @unittest.skip("当前实现有问题， var要关联改变原来的变量， 如果不用var声明则是复制")
     def test_const_in_nested_procedures(self):
         """Test const parameters in nested procedure calls"""
         text = """\
@@ -2380,7 +2382,9 @@ class InterpreterConstTestCase(unittest.TestCase):
             Outer(10);  { Should result in result = 10 + 10 = 20 }
         END.
         """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 

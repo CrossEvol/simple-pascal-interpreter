@@ -30,6 +30,7 @@ from spi.ast import (
     NoOp,
     Num,
     Param,
+    ParamMode,
     PrimitiveType,
     ProcedureCall,
     ProcedureDecl,
@@ -386,6 +387,7 @@ class CallStack:
     def pop(self) -> ActivationRecord:
         if len(self._records) >= 2:
             self._records[-2].copy_from(self._records[-1], True)
+            self._records[-2].refer_back(self._records[-1].mappings)
         return self._records.pop()
 
     def peek(self) -> ActivationRecord:
@@ -410,6 +412,7 @@ class ActivationRecord:
         self.type = type
         self.nesting_level = nesting_level
         self.members: dict[str | int, Object] = {}
+        self.mappings: dict[str, str] = {}
 
     def __setitem__(self, key: str | int, value: Object) -> None:
         self.members[key] = value
@@ -421,6 +424,10 @@ class ActivationRecord:
         for name, val in other.members.items():
             if override or name not in self.members:
                 self.members[name] = val
+
+    def refer_back(self, mappings: dict[str, str]) -> None:
+        for k, v in mappings.items():
+            self.members[k] = self.members[v]
 
     def get(self, key: str) -> Object:
         return cast(Object, self.members.get(key))
@@ -1331,6 +1338,8 @@ class Interpreter(NodeVisitor):
             for param_node, argument_node in zip(formal_params, actual_params):
                 param_name = param_node.var_node.value
                 ar[param_name] = self.visit(argument_node)
+                if param_node.param_mode == ParamMode.REFER:
+                    ar.mappings[argument_node.value] = param_node.var_node.value
 
             self.call_stack.push(ar)
 
@@ -1439,6 +1448,8 @@ class Interpreter(NodeVisitor):
             for param_node, argument_node in zip(formal_params, actual_params):
                 param_name = param_node.var_node.value
                 ar[param_name] = self.visit(argument_node)
+                if param_node.param_mode == ParamMode.REFER:
+                    ar.mappings[argument_node.value] = param_node.var_node.value
 
             self.call_stack.push(ar)
 

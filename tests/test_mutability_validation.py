@@ -1,11 +1,13 @@
 """Tests for variable mutability validation functionality"""
 
 import unittest
+
+from spi.ast import ParamMode
 from spi.symbol import (
-    VarSymbol,
-    MutabilityValidator,
     NEVER_SYMBOL,
     IntegerTypeSymbol,
+    MutabilityValidator,
+    VarSymbol,
 )
 
 
@@ -18,7 +20,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_mutable_variable_creation(self):
         """Test creating a mutable variable"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type)
 
         self.assertTrue(var.is_mutable)
         self.assertFalse(var.is_const)
@@ -27,7 +29,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_const_variable_creation(self):
         """Test creating a const variable"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
 
         self.assertFalse(var.is_mutable)
         self.assertTrue(var.is_const)
@@ -36,7 +38,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_const_variable_initialization(self):
         """Test const variable initialization"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
 
         # Before initialization
         self.assertTrue(var.can_modify())
@@ -66,7 +68,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_assignment_mutable_variable(self):
         """Test assignment validation for mutable variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type)
 
         # Mutable variables can always be assigned
         is_valid, error = var.validate_assignment(is_initialization=False)
@@ -79,7 +81,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_assignment_const_variable_initialization(self):
         """Test assignment validation for const variable during initialization"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type)
 
         # Should allow initialization
         is_valid, error = var.validate_assignment(is_initialization=True)
@@ -88,7 +90,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_assignment_const_variable_after_initialization(self):
         """Test assignment validation for const variable after initialization"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
         var.mark_initialized()
 
         # Should not allow reassignment
@@ -99,7 +101,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_assignment_const_variable_non_initialization(self):
         """Test assignment validation for const variable without initialization flag"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
 
         # Should not allow assignment without initialization flag
         is_valid, error = var.validate_assignment(is_initialization=False)
@@ -109,7 +111,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_modification_permission_mutable(self):
         """Test modification permission for mutable variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type)
 
         can_modify, error = var.validate_modification_permission()
         self.assertTrue(can_modify)
@@ -117,7 +119,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_modification_permission_const_before_init(self):
         """Test modification permission for const variable before initialization"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type)
 
         can_modify, error = var.validate_modification_permission()
         self.assertTrue(can_modify)
@@ -125,7 +127,7 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_validate_modification_permission_const_after_init(self):
         """Test modification permission for const variable after initialization"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
         var.mark_initialized()
 
         can_modify, error = var.validate_modification_permission()
@@ -134,8 +136,8 @@ class TestVarSymbolMutability(unittest.TestCase):
 
     def test_require_initialization_check(self):
         """Test initialization requirement checking"""
-        mutable_var = VarSymbol("x", self.integer_type, is_mutable=True)
-        const_var = VarSymbol("y", self.integer_type, is_mutable=False)
+        mutable_var = VarSymbol("x", self.integer_type)
+        const_var = VarSymbol("y", self.integer_type, param_mode=ParamMode.CONST)
 
         self.assertFalse(mutable_var.require_initialization_check())
         self.assertTrue(const_var.require_initialization_check())
@@ -150,7 +152,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_validate_const_assignment_mutable_variable(self):
         """Test const assignment validation for mutable variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type)
 
         is_valid, error = MutabilityValidator.validate_const_assignment(
             var, is_initialization=False
@@ -160,7 +162,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_validate_const_assignment_const_initialization(self):
         """Test const assignment validation during initialization"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type)
 
         is_valid, error = MutabilityValidator.validate_const_assignment(
             var, is_initialization=True
@@ -170,7 +172,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_validate_const_assignment_const_reassignment(self):
         """Test const assignment validation for reassignment"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
         var.mark_initialized()
 
         is_valid, error = MutabilityValidator.validate_const_assignment(
@@ -181,7 +183,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_validate_variable_modification_mutable(self):
         """Test variable modification validation for mutable variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
 
         is_valid, error = MutabilityValidator.validate_variable_modification(var)
         self.assertTrue(is_valid)
@@ -189,7 +191,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_validate_variable_modification_const_initialized(self):
         """Test variable modification validation for initialized const variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
         var.mark_initialized()
 
         is_valid, error = MutabilityValidator.validate_variable_modification(var)
@@ -198,7 +200,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_check_initialization_requirements_mutable(self):
         """Test initialization requirements for mutable variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type)
 
         is_satisfied, error = MutabilityValidator.check_initialization_requirements(var)
         self.assertTrue(is_satisfied)
@@ -206,7 +208,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_check_initialization_requirements_const_uninitialized(self):
         """Test initialization requirements for uninitialized const variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
 
         is_satisfied, error = MutabilityValidator.check_initialization_requirements(var)
         self.assertFalse(is_satisfied)
@@ -214,7 +216,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_check_initialization_requirements_const_initialized(self):
         """Test initialization requirements for initialized const variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type)
         var.mark_initialized()
 
         is_satisfied, error = MutabilityValidator.check_initialization_requirements(var)
@@ -223,7 +225,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_mark_variable_initialized(self):
         """Test marking a variable as initialized"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type)
         self.assertFalse(var.is_initialized)
 
         MutabilityValidator.mark_variable_initialized(var)
@@ -231,15 +233,15 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_is_const_variable(self):
         """Test const variable detection"""
-        mutable_var = VarSymbol("x", self.integer_type, is_mutable=True)
-        const_var = VarSymbol("y", self.integer_type, is_mutable=False)
+        mutable_var = VarSymbol("x", self.integer_type)
+        const_var = VarSymbol("y", self.integer_type, param_mode=ParamMode.CONST)
 
         self.assertFalse(MutabilityValidator.is_const_variable(mutable_var))
         self.assertTrue(MutabilityValidator.is_const_variable(const_var))
 
     def test_get_mutability_info_mutable(self):
         """Test getting mutability info for mutable variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=True)
+        var = VarSymbol("x", self.integer_type)
 
         info = MutabilityValidator.get_mutability_info(var)
 
@@ -251,7 +253,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_get_mutability_info_const_uninitialized(self):
         """Test getting mutability info for uninitialized const variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
 
         info = MutabilityValidator.get_mutability_info(var)
 
@@ -263,7 +265,7 @@ class TestMutabilityValidator(unittest.TestCase):
 
     def test_get_mutability_info_const_initialized(self):
         """Test getting mutability info for initialized const variables"""
-        var = VarSymbol("x", self.integer_type, is_mutable=False)
+        var = VarSymbol("x", self.integer_type, param_mode=ParamMode.CONST)
         var.mark_initialized()
 
         info = MutabilityValidator.get_mutability_info(var)

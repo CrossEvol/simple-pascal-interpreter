@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from spi.ast import Block, Type
+from spi.ast import Block, ParamMode, Type
 
 ###############################################################################
 #                                                                             #
@@ -416,10 +416,15 @@ class CharTypeSymbol(PrimitiveTypeSymbol):
 
 
 class VarSymbol(Symbol):
-    def __init__(self, name: str, type: Symbol | None, is_mutable: bool = True) -> None:
+    def __init__(
+        self,
+        name: str,
+        type: Symbol | None,
+        param_mode: ParamMode = ParamMode.CLONE,
+    ) -> None:
         super().__init__(name, type or NEVER_SYMBOL)
-        self.is_mutable = is_mutable
         self.is_initialized = False  # Track if const has been initialized
+        self.param_mode = param_mode
 
     def can_modify(self) -> bool:
         """Check if this variable can be modified"""
@@ -435,7 +440,12 @@ class VarSymbol(Symbol):
     @property
     def is_const(self) -> bool:
         """Check if this is a const variable"""
-        return not self.is_mutable
+        return self.param_mode == ParamMode.CONST
+
+    @property
+    def is_mutable(self) -> bool:
+        """Check if this is a non-const variable"""
+        return self.param_mode != ParamMode.CONST
 
     def validate_assignment(
         self, is_initialization: bool = False
@@ -1171,12 +1181,10 @@ class TypeAliasSymbol(TypeSymbol):
 
 
 class ProcedureSymbol(Symbol):
-    def __init__(self, name: str, formal_params: list[Symbol] | None = None) -> None:
+    def __init__(self, name: str) -> None:
         super().__init__(name)
         # a list of VarSymbol objects
-        self.formal_params: list[Symbol] = (
-            [] if formal_params is None else formal_params
-        )
+        self.formal_params: list[VarSymbol] = []
         # a reference to procedure's body (AST sub-tree)
         self.block_ast: Block | None = None
         self.is_forward = False
@@ -1192,32 +1200,26 @@ class ProcedureSymbol(Symbol):
 
 
 class BuiltinProcedureSymbol(Symbol):
-    def __init__(self, name: str, output_params: list[Symbol] | None = None) -> None:
+    def __init__(self, name: str) -> None:
         super().__init__(name)
         # a list of VarSymbol objects
-        self.output_params: list[Symbol] = (
-            [] if output_params is None else output_params
-        )
+        self.formal_params: list[Symbol] = []
 
     def __str__(self) -> str:
         return "<{class_name}(name={name}, parameters={params})>".format(
             class_name=self.__class__.__name__,
             name=self.name,
-            params=self.output_params,
+            params=self.formal_params,
         )
 
     __repr__ = __str__
 
 
 class FunctionSymbol(Symbol):
-    def __init__(
-        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
-    ) -> None:
+    def __init__(self, name: str, return_type: Type) -> None:
         super().__init__(name)
         # a list of VarSymbol objects
-        self.formal_params: list[Symbol] = (
-            [] if formal_params is None else formal_params
-        )
+        self.formal_params: list[VarSymbol] = []
         self.return_type = return_type
         # a reference to procedure's body (AST sub-tree)
         self.block_ast: Block | None = None

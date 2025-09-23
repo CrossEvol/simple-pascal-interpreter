@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from spi.ast import (
+    Param,
     RecordType,
 )
 from spi.constants import ElementType
@@ -429,7 +430,7 @@ class ProcedureObject(Object):
 class FunctionObject(Object):
     """Runtime object representing a user-defined function"""
 
-    def __init__(self, name: str, formal_params: list, return_type, block_ast):
+    def __init__(self, name: str, formal_params: list[Param], return_type, block_ast):
         super().__init__()
         self.name = name
         self.formal_params = formal_params  # List of Param AST nodes (includes return variable as first param)

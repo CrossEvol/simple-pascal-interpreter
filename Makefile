@@ -44,6 +44,12 @@ run:
 test: 
 	$(UV_PYTEST) tests/* -v
 
+# Run only mutability tests  
+.PHONY: test_mutability
+test_mutability:
+	$(UV_PYTEST) tests/test_mutability_validation.py -v
+
+
 # Run only lexer tests
 .PHONY: test_lexer 
 test_lexer:
