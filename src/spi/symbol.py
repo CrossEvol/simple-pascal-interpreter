@@ -1127,6 +1127,9 @@ class TypeAliasSymbol(TypeSymbol):
             visited.add(current.name)
             current = current.target_type
 
+        if isinstance(current, BuiltinTypeSymbol):
+            current = current.delegate_type
+
         return current
 
     def is_compatible_with(self, other: TypeSymbol) -> bool:

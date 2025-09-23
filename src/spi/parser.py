@@ -120,35 +120,40 @@ class Parser:
 
     def declarations(self) -> list[Declaration]:
         """
-        declarations : type_declarations? (CONST (const_declaration SEMI)+)? (VAR (variable_declaration SEMI)+)? procedure_declaration* function_declaration*
+        declarations : (type_declarations | CONST (const_declaration SEMI)+ | VAR (variable_declaration SEMI)+ | procedure_declaration | function_declaration)*
         """
+
         declarations: list[Declaration] = []
 
-        if self.current_token.type == TokenType.TYPE:
-            type_decls = self.type_declarations()
-            declarations.extend(type_decls)
-
-        if self.current_token.type == TokenType.CONST:
-            self.eat(TokenType.CONST)
-            while self.current_token.type == TokenType.ID:
-                const_decl = self.const_declaration()
-                declarations.extend(const_decl)
-                self.eat(TokenType.SEMI)
-
-        if self.current_token.type == TokenType.VAR:
-            self.eat(TokenType.VAR)
-            while self.current_token.type == TokenType.ID:
-                var_decl = self.variable_declaration()
-                declarations.extend(var_decl)
-                self.eat(TokenType.SEMI)
-
-        while self.current_token.type == TokenType.PROCEDURE:
-            proc_decl = self.procedure_declaration()
-            declarations.append(proc_decl)
-
-        while self.current_token.type == TokenType.FUNCTION:
-            func_decl = self.function_declaration()
-            declarations.append(func_decl)
+        # Continuously check for declaration keywords until none are found
+        while self.current_token.type in (
+            TokenType.TYPE,
+            TokenType.CONST,
+            TokenType.VAR,
+            TokenType.PROCEDURE,
+            TokenType.FUNCTION,
+        ):
+            if self.current_token.type == TokenType.TYPE:
+                type_decls = self.type_declarations()
+                declarations.extend(type_decls)
+            elif self.current_token.type == TokenType.CONST:
+                self.eat(TokenType.CONST)
+                while self.current_token.type == TokenType.ID:
+                    const_decl = self.const_declaration()
+                    declarations.extend(const_decl)
+                    self.eat(TokenType.SEMI)
+            elif self.current_token.type == TokenType.VAR:
+                self.eat(TokenType.VAR)
+                while self.current_token.type == TokenType.ID:
+                    var_decl = self.variable_declaration()
+                    declarations.extend(var_decl)
+                    self.eat(TokenType.SEMI)
+            elif self.current_token.type == TokenType.PROCEDURE:
+                proc_decl = self.procedure_declaration()
+                declarations.append(proc_decl)
+            elif self.current_token.type == TokenType.FUNCTION:
+                func_decl = self.function_declaration()
+                declarations.append(func_decl)
 
         return declarations
 
@@ -1084,9 +1089,13 @@ class Parser:
 
         block : declarations compound_statement
 
-        declarations : type_declarations? (CONST (const_declaration SEMI)+)? (VAR (variable_declaration SEMI)+)?
-                       procedure_declaration*
-                       function_declaration*
+        declarations : (
+                        type_declarations |
+                        CONST (const_declaration SEMI)+ |
+                        VAR (variable_declaration SEMI)+ |
+                        procedure_declaration |
+                        function_declaration
+                       )*
 
         type_declarations : TYPE (type_declaration SEMI)+
 

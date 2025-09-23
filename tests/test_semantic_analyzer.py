@@ -252,6 +252,26 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.error_code, ErrorCode.ID_NOT_FOUND)
         self.assertEqual(the_exception.token.value, "NonExistentType")
 
+    def test_semantic_type_alias_resolved_to_string_type(self):
+        self.runSemanticAnalyzer(
+            """
+            PROGRAM StringAliasProgram;
+
+            CONST
+            ProgramName = 'ChaosPascal';
+
+            TYPE
+            TMyString = STRING;
+
+            VAR
+            programTitle: TMyString;
+
+            BEGIN
+            programTitle := 'Running ' + programTitle;
+            END.
+            """
+        )
+
     def test_binop_integer_addition_valid(self):
         """Test that INTEGER + INTEGER is valid"""
         # This should not raise an exception

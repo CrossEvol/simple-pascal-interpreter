@@ -47,7 +47,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(the_exception.token.value, "(")
         self.assertEqual(the_exception.token.lineno, 6)
 
-    def test_maximum_one_VAR_block_is_allowed(self):
+    def test_multi_VAR_block_is_allowed(self):
         # zero VARs
         parser = self.makeParser(
             """
@@ -83,12 +83,7 @@ class ParserTestCase(unittest.TestCase):
             END.
             """
         )
-        with self.assertRaises(ParserError) as cm:
-            parser.parse()
-        the_exception = cm.exception
-        self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
-        self.assertEqual(the_exception.token.value, "VAR")
-        self.assertEqual(the_exception.token.lineno, 5)  # second VAR
+        parser.parse()
 
     def test_case_item_must_have_semi_end(self):
         parser = self.makeParser(
