@@ -48,18 +48,29 @@
   - 编写单元测试验证作用域跟踪和错误检测
   - _Requirements: 1.5, 2.5, 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 5. 实现解释器的循环控制流处理
+- [x] 5. 实现解释器的循环控制流处理
+
+
+
+
+
+  - 这是 uv project 
   - 在interpreter.py中添加visit_BreakStatement()方法抛出BreakSignal
   - 在interpreter.py中添加visit_ContinueStatement()方法抛出ContinueSignal
   - 修改visit_WhileStatement()方法捕获和处理控制流信号
   - 修改visit_ForStatement()方法捕获和处理控制流信号
-  - 编写单元测试验证控制流信号的正确处理
+  - 在 `test_interpreter.py` 中 编写单元测试验证控制流信号的正确处理
   - _Requirements: 1.2, 1.3, 2.2, 2.3_
 
-- [ ] 6. 实现嵌套循环的正确处理
+- [x] 6. 实现嵌套循环的正确处理
+
+
+
+
+
   - 验证BreakSignal和ContinueSignal只影响最内层循环
   - 确保外层循环在内层循环break后继续正常执行
-  - 编写集成测试验证嵌套循环场景的正确行为
+  - 在 `test_interpreter.py` 中 编写集成测试验证嵌套循环场景的正确行为
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
 - [ ] 7. 添加错误处理和错误消息

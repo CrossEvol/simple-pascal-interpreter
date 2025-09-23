@@ -16,10 +16,12 @@ from spi.ast import (
     BinOp,
     Block,
     Bool,
+    BreakStatement,
     CaseStatement,
     Char,
     Compound,
     ConstDecl,
+    ContinueStatement,
     EnumType,
     ForStatement,
     FunctionCall,
@@ -47,6 +49,8 @@ from spi.ast import (
 )
 from spi.constants import ElementType
 from spi.error import (
+    BreakSignal,
+    ContinueSignal,
     ErrorCode,
     ExitSignal,
     InterpreterError,
@@ -1235,7 +1239,14 @@ class Interpreter(NodeVisitor):
 
     def visit_WhileStatement(self, node: WhileStatement) -> None:
         while self.visit(node.condition).to_bool():
-            self.visit(node.block)
+            try:
+                self.visit(node.block)
+            except BreakSignal:
+                # Break out of the while loop
+                break
+            except ContinueSignal:
+                # Continue to next iteration
+                continue
 
     def visit_ForStatement(self, node: ForStatement) -> None:
         ar = self.call_stack.peek()
@@ -1264,15 +1275,37 @@ class Interpreter(NodeVisitor):
                     # 更新循环变量为当前枚举值
                     # 使用_enum_obj方法创建正确的枚举对象
                     ar[var_name] = self._enum_obj(var_obj.type_name, current_ord)
-                    self.visit(node.block)
+                    try:
+                        self.visit(node.block)
+                    except BreakSignal:
+                        # Break out of the for loop
+                        break
+                    except ContinueSignal:
+                        # Continue to next iteration
+                        pass
                     current_ord += step
         else:
             # 原来的数值类型for循环
             while var_value <= bound_value:
-                self.visit(node.block)
+                try:
+                    self.visit(node.block)
+                except BreakSignal:
+                    # Break out of the for loop
+                    break
+                except ContinueSignal:
+                    # Continue to next iteration
+                    pass
                 var_value += 1
                 if var_value <= bound_value:
                     ar[var_name] = IntegerObject(var_value)
+
+    def visit_BreakStatement(self, node: BreakStatement) -> None:
+        """Handle break statement by raising BreakSignal"""
+        raise BreakSignal()
+
+    def visit_ContinueStatement(self, node: ContinueStatement) -> None:
+        """Handle continue statement by raising ContinueSignal"""
+        raise ContinueSignal()
 
     def visit_ProcedureDecl(self, node: ProcedureDecl) -> None:
         """Create and register ProcedureObject for runtime use"""

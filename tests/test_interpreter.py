@@ -2391,5 +2391,365 @@ class InterpreterConstTestCase(unittest.TestCase):
         self.assertEqual(ar["result"].value, 20)
 
 
+class InterpreterLoopControlTestCase(unittest.TestCase):
+    def test_break_in_while_loop(self):
+        """Test break statement in while loop"""
+        text = """\
+        program TestBreakWhile;
+        var i: integer;
+        begin
+            i := 1;
+            while i <= 10 do
+            begin
+                if i = 5 then
+                    break;
+                i := i + 1;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Loop should break when i = 5, so i should still be 5
+        self.assertEqual(ar["i"].value, 5)
+
+    def test_continue_in_while_loop(self):
+        """Test continue statement in while loop"""
+        text = """\
+        program TestContinueWhile;
+        var i, sum: integer;
+        begin
+            i := 0;
+            sum := 0;
+            while i < 10 do
+            begin
+                i := i + 1;
+                if i mod 2 = 0 then
+                    continue;
+                sum := sum + i;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Should sum only odd numbers: 1 + 3 + 5 + 7 + 9 = 25
+        self.assertEqual(ar["sum"].value, 25)
+        self.assertEqual(ar["i"].value, 10)
+
+    def test_break_in_for_loop(self):
+        """Test break statement in for loop"""
+        text = """\
+        program TestBreakFor;
+        var i, sum: integer;
+        begin
+            sum := 0;
+            for i := 1 to 10 do
+            begin
+                if i = 6 then
+                    break;
+                sum := sum + i;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Should sum 1 + 2 + 3 + 4 + 5 = 15
+        self.assertEqual(ar["sum"].value, 15)
+        # i should be 6 when break occurred
+        self.assertEqual(ar["i"].value, 6)
+
+    def test_continue_in_for_loop(self):
+        """Test continue statement in for loop"""
+        text = """\
+        program TestContinueFor;
+        var i, sum: integer;
+        begin
+            sum := 0;
+            for i := 1 to 10 do
+            begin
+                if i mod 2 = 0 then
+                    continue;
+                sum := sum + i;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Should sum only odd numbers: 1 + 3 + 5 + 7 + 9 = 25
+        self.assertEqual(ar["sum"].value, 25)
+        # i should be 10 after loop completion
+        self.assertEqual(ar["i"].value, 10)
+
+    def test_nested_loops_with_break(self):
+        """Test that break only affects the innermost loop"""
+        text = """\
+        program TestNestedBreak;
+        var i, j, count: integer;
+        begin
+            count := 0;
+            for i := 1 to 3 do
+            begin
+                for j := 1 to 3 do
+                begin
+                    if j = 2 then
+                        break;
+                    count := count + 1;
+                end;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Inner loop breaks at j=2, so only j=1 is counted for each i
+        # Should count 3 times (once for each i)
+        self.assertEqual(ar["count"].value, 3)
+        self.assertEqual(ar["i"].value, 3)
+
+    def test_nested_loops_with_continue(self):
+        """Test that continue only affects the innermost loop"""
+        text = """\
+        program TestNestedContinue;
+        var i, j, count: integer;
+        begin
+            count := 0;
+            for i := 1 to 3 do
+            begin
+                for j := 1 to 3 do
+                begin
+                    if j = 2 then
+                        continue;
+                    count := count + 1;
+                end;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Inner loop skips j=2, so j=1 and j=3 are counted for each i
+        # Should count 6 times (2 for each of 3 i values)
+        self.assertEqual(ar["count"].value, 6)
+        self.assertEqual(ar["i"].value, 3)
+
+    def test_nested_for_while_break(self):
+        """Test break in nested for-while loops - break should only affect innermost while loop"""
+        text = """\
+        program TestNestedForWhileBreak;
+        var i, j, outer_count, inner_count: integer;
+        begin
+            outer_count := 0;
+            inner_count := 0;
+            for i := 1 to 3 do
+            begin
+                outer_count := outer_count + 1;
+                j := 1;
+                while j <= 5 do
+                begin
+                    inner_count := inner_count + 1;
+                    if j = 3 then
+                        break;  { Should only break the while loop }
+                    j := j + 1;
+                end;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Outer for loop should complete all 3 iterations
+        self.assertEqual(ar["outer_count"].value, 3)
+        # Inner while loop breaks at j=3, so runs 3 times per outer iteration: 3 * 3 = 9
+        self.assertEqual(ar["inner_count"].value, 9)
+        self.assertEqual(ar["i"].value, 3)
+        # j should be 3 from the last iteration where break occurred
+        self.assertEqual(ar["j"].value, 3)
+
+    def test_nested_while_for_continue(self):
+        """Test continue in nested while-for loops - continue should only affect innermost for loop"""
+        text = """\
+        program TestNestedWhileForContinue;
+        var i, j, outer_count, inner_count: integer;
+        begin
+            outer_count := 0;
+            inner_count := 0;
+            i := 1;
+            while i <= 2 do
+            begin
+                outer_count := outer_count + 1;
+                for j := 1 to 4 do
+                begin
+                    if j = 2 then
+                        continue;  { Should only skip current for loop iteration }
+                    inner_count := inner_count + 1;
+                end;
+                i := i + 1;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Outer while loop should complete 2 iterations
+        self.assertEqual(ar["outer_count"].value, 2)
+        # Inner for loop skips j=2, so counts j=1,3,4 per outer iteration: 3 * 2 = 6
+        self.assertEqual(ar["inner_count"].value, 6)
+        self.assertEqual(ar["i"].value, 3)
+        self.assertEqual(ar["j"].value, 4)
+
+    def test_triple_nested_loops_break(self):
+        """Test break in triple nested loops - should only affect innermost loop"""
+        text = """\
+        program TestTripleNestedBreak;
+        var i, j, k, count: integer;
+        begin
+            count := 0;
+            for i := 1 to 2 do
+            begin
+                for j := 1 to 2 do
+                begin
+                    for k := 1 to 5 do
+                    begin
+                        if k = 3 then
+                            break;  { Should only break the innermost k loop }
+                        count := count + 1;
+                    end;
+                end;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Innermost loop breaks at k=3, so counts k=1,2 for each i,j combination
+        # 2 counts per (i,j) pair * 2 i values * 2 j values = 8
+        self.assertEqual(ar["count"].value, 8)
+        self.assertEqual(ar["i"].value, 2)
+        self.assertEqual(ar["j"].value, 2)
+        # k should be 3 from the last break
+        self.assertEqual(ar["k"].value, 3)
+
+    def test_triple_nested_loops_continue(self):
+        """Test continue in triple nested loops - should only affect innermost loop"""
+        text = """\
+        program TestTripleNestedContinue;
+        var i, j, k, count: integer;
+        begin
+            count := 0;
+            for i := 1 to 2 do
+            begin
+                for j := 1 to 2 do
+                begin
+                    for k := 1 to 4 do
+                    begin
+                        if k = 2 then
+                            continue;  { Should only skip current k iteration }
+                        count := count + 1;
+                    end;
+                end;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Innermost loop skips k=2, so counts k=1,3,4 for each i,j combination
+        # 3 counts per (i,j) pair * 2 i values * 2 j values = 12
+        self.assertEqual(ar["count"].value, 12)
+        self.assertEqual(ar["i"].value, 2)
+        self.assertEqual(ar["j"].value, 2)
+        self.assertEqual(ar["k"].value, 4)
+
+    def test_nested_loops_outer_continues_after_inner_break(self):
+        """Test that outer loop continues normally after inner loop breaks"""
+        text = """\
+        program TestOuterContinuesAfterInnerBreak;
+        var i, j, outer_iterations, inner_breaks: integer;
+        begin
+            outer_iterations := 0;
+            inner_breaks := 0;
+            for i := 1 to 4 do
+            begin
+                outer_iterations := outer_iterations + 1;
+                for j := 1 to 10 do
+                begin
+                    if j = 3 then
+                    begin
+                        inner_breaks := inner_breaks + 1;
+                        break;  { Break inner loop }
+                    end;
+                end;
+                { This code should execute after inner loop breaks }
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # Outer loop should complete all 4 iterations despite inner breaks
+        self.assertEqual(ar["outer_iterations"].value, 4)
+        # Inner loop should break 4 times (once per outer iteration)
+        self.assertEqual(ar["inner_breaks"].value, 4)
+        self.assertEqual(ar["i"].value, 4)
+        # j should be 3 from the last break
+        self.assertEqual(ar["j"].value, 3)
+
+    def test_nested_loops_complex_control_flow(self):
+        """Test complex nested loop scenario with both break and continue"""
+        text = """\
+        program TestComplexNestedControl;
+        var i, j, processed, skipped, early_exits: integer;
+        begin
+            processed := 0;
+            skipped := 0;
+            early_exits := 0;
+            for i := 1 to 3 do
+            begin
+                for j := 1 to 6 do
+                begin
+                    if j = 2 then
+                    begin
+                        skipped := skipped + 1;
+                        continue;  { Skip j=2 }
+                    end;
+                    if j = 5 then
+                    begin
+                        early_exits := early_exits + 1;
+                        break;  { Break at j=5 }
+                    end;
+                    processed := processed + 1;
+                end;
+            end;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # For each outer iteration: j=1 (processed), j=2 (skipped), j=3,4 (processed), j=5 (break)
+        # So 3 processed per outer iteration * 3 outer iterations = 9
+        self.assertEqual(ar["processed"].value, 9)
+        # j=2 skipped once per outer iteration * 3 = 3
+        self.assertEqual(ar["skipped"].value, 3)
+        # Break at j=5 once per outer iteration * 3 = 3
+        self.assertEqual(ar["early_exits"].value, 3)
+        self.assertEqual(ar["i"].value, 3)
+        self.assertEqual(ar["j"].value, 5)
+
+
 if __name__ == "__main__":
     unittest.main()
