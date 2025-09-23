@@ -327,6 +327,196 @@ class ParserTestCase(unittest.TestCase):
         tree = parser.parse()
         self.assertIsNotNone(tree)
 
+    def test_break_statement_parsing(self):
+        """Test that break statements are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                FOR i := 1 TO 10 DO
+                BEGIN
+                    IF i = 5 THEN
+                        break;
+                END;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_continue_statement_parsing(self):
+        """Test that continue statements are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                FOR i := 1 TO 10 DO
+                BEGIN
+                    IF i = 5 THEN
+                        continue;
+                END;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_break_statement_in_while_loop(self):
+        """Test break statement in while loop"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                i := 1;
+                WHILE i <= 10 DO
+                BEGIN
+                    IF i = 5 THEN
+                        break;
+                    i := i + 1;
+                END;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_continue_statement_in_while_loop(self):
+        """Test continue statement in while loop"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                i := 1;
+                WHILE i <= 10 DO
+                BEGIN
+                    IF i = 5 THEN
+                    BEGIN
+                        i := i + 1;
+                        continue;
+                    END;
+                    i := i + 1;
+                END;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_break_statement_missing_semicolon_between_statements(self):
+        """Test that break statement without semicolon between statements raises error"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                FOR i := 1 TO 10 DO
+                BEGIN
+                    break
+                    i := i + 1;
+                END;
+            END.
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
+
+    def test_continue_statement_missing_semicolon_between_statements(self):
+        """Test that continue statement without semicolon between statements raises error"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                FOR i := 1 TO 10 DO
+                BEGIN
+                    continue
+                    i := i + 1;
+                END;
+            END.
+            """
+        )
+        with self.assertRaises(ParserError) as cm:
+            parser.parse()
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.UNEXPECTED_TOKEN)
+
+    def test_nested_loops_with_break_continue(self):
+        """Test break and continue in nested loops"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i, j : INTEGER;
+            BEGIN
+                FOR i := 1 TO 3 DO
+                BEGIN
+                    FOR j := 1 TO 3 DO
+                    BEGIN
+                        IF j = 2 THEN
+                            break;
+                        IF i = 2 THEN
+                            continue;
+                    END;
+                END;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+    def test_break_continue_ast_node_creation(self):
+        """Test that break and continue statements create correct AST nodes"""
+        from spi.ast import BreakStatement, ContinueStatement, ForStatement, IfStatement
+
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                i : INTEGER;
+            BEGIN
+                FOR i := 1 TO 10 DO
+                BEGIN
+                    IF i = 5 THEN
+                        break;
+                    IF i = 3 THEN
+                        continue;
+                END;
+            END.
+            """
+        )
+        tree = parser.parse()
+
+        # Navigate to the FOR statement
+        for_stmt = tree.block.compound_statement.children[0]
+        self.assertIsInstance(for_stmt, ForStatement)
+
+        # Navigate to the compound statement inside the FOR loop
+        compound_stmt = for_stmt.block
+
+        # Check the first IF statement contains a break
+        first_if = compound_stmt.children[0]
+        self.assertIsInstance(first_if, IfStatement)
+        break_stmt = first_if.then_branch
+        self.assertIsInstance(break_stmt, BreakStatement)
+
+        # Check the second IF statement contains a continue
+        second_if = compound_stmt.children[1]
+        self.assertIsInstance(second_if, IfStatement)
+        continue_stmt = second_if.then_branch
+        self.assertIsInstance(continue_stmt, ContinueStatement)
+
 
 if __name__ == "__main__":
     unittest.main()

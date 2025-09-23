@@ -50,6 +50,8 @@ class TokenType(Enum):
     DO = "DO"
     FOR = "FOR"
     TO = "TO"
+    BREAK = "BREAK"
+    CONTINUE = "CONTINUE"
     ARRAY = "ARRAY"
     OF = "OF"
     CASE = "CASE"

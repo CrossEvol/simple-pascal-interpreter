@@ -239,6 +239,20 @@ class MemberSuffix(AccessSuffix):
         self.token = member
 
 
+class BreakStatement(Statement):
+    """Represents a break statement"""
+
+    def __init__(self, token: Token) -> None:
+        self.token = token
+
+
+class ContinueStatement(Statement):
+    """Represents a continue statement"""
+
+    def __init__(self, token: Token) -> None:
+        self.token = token
+
+
 class NoOp(Statement):
     pass
 

@@ -15,12 +15,14 @@ from spi.ast import (
     BinOp,
     Block,
     Bool,
+    BreakStatement,
     CaseItem,
     CaseLabel,
     CaseStatement,
     Char,
     Compound,
     ConstDecl,
+    ContinueStatement,
     Declaration,
     EnumType,
     Expression,
@@ -598,6 +600,10 @@ class Parser:
                   | assignment_statement
                   | if_statement
                   | case_statement
+                  | while_statement
+                  | for_statement
+                  | break_statement
+                  | continue_statement
                   | empty
         """
         node: Statement
@@ -611,6 +617,10 @@ class Parser:
             node = self.while_statement()
         elif self.current_token.type == TokenType.FOR:
             node = self.for_statement()
+        elif self.current_token.type == TokenType.BREAK:
+            node = self.break_statement()
+        elif self.current_token.type == TokenType.CONTINUE:
+            node = self.continue_statement()
         elif (
             self.current_token.type == TokenType.ID
             and self.lexer.peek_next_token().type == TokenType.LPAREN
@@ -690,6 +700,20 @@ class Parser:
         else:
             block = self.statement()
         node = ForStatement(initialization, bound, block)
+        return node
+
+    def break_statement(self) -> BreakStatement:
+        """break_statement: BREAK SEMI"""
+        token = self.current_token
+        self.eat(TokenType.BREAK)
+        node = BreakStatement(token)
+        return node
+
+    def continue_statement(self) -> ContinueStatement:
+        """continue_statement: CONTINUE SEMI"""
+        token = self.current_token
+        self.eat(TokenType.CONTINUE)
+        node = ContinueStatement(token)
         return node
 
     def case_statement(self) -> CaseStatement:
@@ -1101,6 +1125,8 @@ class Parser:
                   | case_statement
                   | for_statement
                   | while_statement
+                  | break_statement
+                  | continue_statement
                   | empty
 
         if_statement: IF logic_expr THEN (statement | compound_statement)
@@ -1110,6 +1136,10 @@ class Parser:
         while_statement:  WHILE logic_expr DO compound_statement SEMI
 
         for_statement:  FOR assignment_statement TO summation_expr DO (statement | compound_statement) SEMI
+
+        break_statement: BREAK
+
+        continue_statement: CONTINUE
 
         case_statement : CASE variable OF case_list (ELSE (statement | compound_statement) SEMI)? END SEMI
 

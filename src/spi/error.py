@@ -142,3 +142,41 @@ class ExitSignal(Exception):
         """
         self.exit_type = exit_type
         super().__init__(f"Exit from {exit_type}")
+
+
+###############################################################################
+#                                                                             #
+#  BreakSignal                                                                #
+#                                                                             #
+###############################################################################
+
+
+class BreakSignal(Exception):
+    """Special signal used for break statement control flow.
+
+    This exception is used to implement Pascal's break statement, which allows
+    early termination from loops. It inherits directly from Exception (not from 
+    Error) to avoid being treated as an error condition.
+    """
+
+    def __init__(self):
+        super().__init__("Break from loop")
+
+
+###############################################################################
+#                                                                             #
+#  ContinueSignal                                                             #
+#                                                                             #
+###############################################################################
+
+
+class ContinueSignal(Exception):
+    """Special signal used for continue statement control flow.
+
+    This exception is used to implement Pascal's continue statement, which allows
+    skipping the rest of the current loop iteration. It inherits directly from 
+    Exception (not from Error) to avoid being treated as an error condition.
+    """
+
+    def __init__(self):
+        super().__init__("Continue to next loop iteration")

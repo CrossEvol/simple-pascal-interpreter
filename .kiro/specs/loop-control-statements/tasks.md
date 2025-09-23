@@ -1,18 +1,34 @@
 # Implementation Plan
 
-- [ ] 1. 添加控制流信号类和AST节点定义
+- [x] 1. 添加控制流信号类和AST节点定义
+
+
+
+
+
   - 在error.py中添加BreakSignal和ContinueSignal异常类
   - 在ast.py中添加BreakStatement和ContinueStatement AST节点类
   - 编写单元测试验证AST节点的创建和属性
   - _Requirements: 1.1, 2.1_
 
-- [ ] 2. 扩展词法分析器支持break和continue关键字
+- [x] 2. 扩展词法分析器支持break和continue关键字
+
+
+
+
+
+
   - 在token.py的TokenType枚举中添加BREAK和CONTINUE token类型
   - 在lexer.py的保留字字典中添加break和continue关键字映射
   - 在`test_lexer.py`中验证关键字的正确识别和token生成
   - _Requirements: 1.1, 2.1, 5.1, 5.2_
 
-- [ ] 3. 扩展解析器支持break和continue语句解析
+- [x] 3. 扩展解析器支持break和continue语句解析
+
+
+
+
+
   - 在parser.py中添加break_statement()和continue_statement()方法
   - 修改statement()方法添加break和continue语句的解析分支
   - 确保正确处理分号和语法错误

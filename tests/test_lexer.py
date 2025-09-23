@@ -62,6 +62,10 @@ class LexerTestCase(unittest.TestCase):
             ("ARRAY", TokenType.ARRAY, "ARRAY"),
             ("OF", TokenType.OF, "OF"),
             ("CASE", TokenType.CASE, "CASE"),
+            ("BREAK", TokenType.BREAK, "BREAK"),
+            ("CONTINUE", TokenType.CONTINUE, "CONTINUE"),
+            ("break", TokenType.BREAK, "BREAK"),
+            ("continue", TokenType.CONTINUE, "CONTINUE"),
             ("..", TokenType.RANGE, ".."),
             ("STRING", TokenType.STRING, "STRING"),
             ("CHAR", TokenType.CHAR, "CHAR"),
@@ -93,6 +97,28 @@ class LexerTestCase(unittest.TestCase):
         lexer = self.makeLexer("#abc")
         with self.assertRaises(LexerError):
             lexer.get_next_token()
+
+    def test_break_continue_keywords(self):
+        """Test that break and continue keywords are correctly recognized"""
+        # Test break keyword in different cases
+        test_cases = [
+            ("break;", [TokenType.BREAK, TokenType.SEMI]),
+            ("BREAK;", [TokenType.BREAK, TokenType.SEMI]),
+            ("continue;", [TokenType.CONTINUE, TokenType.SEMI]),
+            ("CONTINUE;", [TokenType.CONTINUE, TokenType.SEMI]),
+            ("if i = 5 then break;", [TokenType.IF, TokenType.ID, TokenType.EQ, TokenType.INTEGER_CONST, TokenType.THEN, TokenType.BREAK, TokenType.SEMI]),
+            ("if i mod 2 = 0 then continue;", [TokenType.IF, TokenType.ID, TokenType.MOD, TokenType.INTEGER_CONST, TokenType.EQ, TokenType.INTEGER_CONST, TokenType.THEN, TokenType.CONTINUE, TokenType.SEMI]),
+        ]
+        
+        for text, expected_types in test_cases:
+            lexer = self.makeLexer(text)
+            for expected_type in expected_types:
+                token = lexer.get_next_token()
+                self.assertEqual(token.type, expected_type, f"Failed for text '{text}', expected {expected_type}, got {token.type}")
+            
+            # Verify EOF
+            token = lexer.get_next_token()
+            self.assertEqual(token.type, TokenType.EOF)
 
 
 if __name__ == "__main__":
