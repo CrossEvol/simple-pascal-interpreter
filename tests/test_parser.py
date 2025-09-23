@@ -512,6 +512,27 @@ class ParserTestCase(unittest.TestCase):
         continue_stmt = second_if.then_branch
         self.assertIsInstance(continue_stmt, ContinueStatement)
 
+    def test_array_range_with_expression(self):
+        """Test break and continue in nested loops"""
+        parser = self.makeParser(
+            """
+            program ArrayLength;
+
+            const 
+                LOW = 1;
+                HIGH = 5;
+
+            var
+                arr: array[LOW..HIGH - 1] of Integer; 
+            i: Integer;
+            begin
+                i := Length(arr);
+            end.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
 
 if __name__ == "__main__":
     unittest.main()

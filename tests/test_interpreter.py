@@ -1096,6 +1096,29 @@ class InterpreterComplexTypeTestCase(unittest.TestCase):
             self.assertEqual(ar["n"].value[i].value, 100 + i)
         self.assertEqual(ar.nesting_level, 1)
 
+    def test_array_range_with_expression(self):
+        """Test break and continue in nested loops"""
+        text = """
+            program ArrayLength;
+
+            const 
+                LOW = 1;
+                HIGH = 5;
+
+            var
+                arr: array[LOW..HIGH - 1] of Integer; 
+            i: Integer;
+            begin
+                i := Length(arr);
+            end.
+            """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertIsInstance(ar["arr"], ArrayObject)
+        self.assertEqual(ar["i"].value, 4)
+
     def test_array_initialized(self):
         text = """\
 program exArrays;

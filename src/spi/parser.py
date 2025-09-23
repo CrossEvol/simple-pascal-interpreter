@@ -446,7 +446,9 @@ class Parser:
             )
 
     def array_type_spec(self) -> ArrayType:
-        """array_type_spec : ARRAY (LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET)? of type_spec"""
+        """
+        array_type_spec : ARRAY (LBRACKET summation_expr RANGE summation_expr RBRACKET)? of type_spec
+        """
         token = self.current_token
         self.eat(TokenType.ARRAY)
         lower: Expression = self.newZeroNum(
@@ -458,9 +460,9 @@ class Parser:
         dynamic: bool = True
         if self.current_token.type == TokenType.LBRACKET:
             self.eat(TokenType.LBRACKET)
-            lower = self.factor()
+            lower = self.summation_expr()
             self.eat(TokenType.RANGE)
-            upper = self.factor()
+            upper = self.summation_expr()
             self.eat(TokenType.RBRACKET)
             dynamic = False
         self.eat(TokenType.OF)
@@ -1120,7 +1122,7 @@ class Parser:
 
         string_type_spec: STRING ( LBRACKET INTEGER_CONST RBRACKET )?
 
-        array_type_spec : ARRAY ( LBRACKET INTEGER_CONST RANGE INTEGER_CONST RBRACKET )? of type_spec
+        array_type_spec : ARRAY (LBRACKET summation_expr RANGE summation_expr RBRACKET)? of type_spec
 
         compound_statement : BEGIN statement_list END
 
