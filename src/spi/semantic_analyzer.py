@@ -387,9 +387,9 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_WhileStatement(self, node: WhileStatement) -> None:
         self.visit(node.condition)
-        
+
         # 进入while循环作用域
-        self.loop_stack.append('while')
+        self.loop_stack.append("while")
         try:
             self.visit(node.block)
         finally:
@@ -401,9 +401,9 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.bound)
         var_name = node.initialization.left.value
         self.unmodified_vars.append(var_name)
-        
+
         # 进入for循环作用域
-        self.loop_stack.append('for')
+        self.loop_stack.append("for")
         try:
             self.visit(node.block)
         finally:
@@ -673,6 +673,8 @@ class SemanticAnalyzer(NodeVisitor):
                 token=node.token,
                 message=f"{ErrorCode.SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE.value} -> {node.token}",
             )
+        self.visit(node.lower)
+        self.visit(node.upper)
         type_name = str(node)
         type_symbol = self.current_scope.lookup(type_name)
         if type_symbol is None:
