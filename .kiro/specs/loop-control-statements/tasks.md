@@ -35,7 +35,12 @@
   - 编写单元测试验证语句的正确解析和AST节点生成
   - _Requirements: 1.1, 2.1, 5.3, 5.4_
 
-- [ ] 4. 实现语义分析器的循环作用域跟踪
+- [x] 4. 实现语义分析器的循环作用域跟踪
+
+
+
+
+
   - 在semantic_analyzer.py中添加循环作用域栈机制
   - 修改visit_WhileStatement()和visit_ForStatement()方法管理循环作用域
   - 添加visit_BreakStatement()和visit_ContinueStatement()方法验证循环上下文

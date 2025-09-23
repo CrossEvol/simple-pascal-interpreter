@@ -15,10 +15,12 @@ from spi.ast import (
     BinOp,
     Block,
     Bool,
+    BreakStatement,
     CaseStatement,
     Char,
     Compound,
     ConstDecl,
+    ContinueStatement,
     EnumType,
     ForStatement,
     FunctionCall,
@@ -204,6 +206,8 @@ class SemanticAnalyzer(NodeVisitor):
         ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
         # 类型名称和符号的映射关系
         self.type_mappings: dict[str, Symbol] = {}  # { type_name -> type_symbol }
+        # 循环作用域栈，用于跟踪当前是否在循环内部
+        self.loop_stack: list[str] = []  # 存储循环类型 ('for' 或 'while')
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
@@ -383,15 +387,29 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_WhileStatement(self, node: WhileStatement) -> None:
         self.visit(node.condition)
-        self.visit(node.block)
+        
+        # 进入while循环作用域
+        self.loop_stack.append('while')
+        try:
+            self.visit(node.block)
+        finally:
+            # 确保离开循环作用域，即使发生异常
+            self.loop_stack.pop()
 
     def visit_ForStatement(self, node: ForStatement) -> None:
         self.visit(node.initialization)
         self.visit(node.bound)
         var_name = node.initialization.left.value
         self.unmodified_vars.append(var_name)
-        self.visit(node.block)
-        self.unmodified_vars.remove(var_name)
+        
+        # 进入for循环作用域
+        self.loop_stack.append('for')
+        try:
+            self.visit(node.block)
+        finally:
+            # 确保离开循环作用域，即使发生异常
+            self.loop_stack.pop()
+            self.unmodified_vars.remove(var_name)
 
     def _is_enum_type(self, type_symbol):
         """Check if a type symbol is an enum type"""
@@ -1275,3 +1293,21 @@ class SemanticAnalyzer(NodeVisitor):
                 return self._convert_to_type_symbol(func_symbol.return_type)
         else:
             return NEVER_SYMBOL
+
+    def visit_BreakStatement(self, node: BreakStatement) -> None:
+        """验证break语句是否在循环内部使用"""
+        if not self.loop_stack:
+            # break语句不在任何循环内部，报告语义错误
+            self.error(
+                error_code=ErrorCode.BREAK_OUTSIDE_LOOP,
+                token=node.token,
+            )
+
+    def visit_ContinueStatement(self, node: ContinueStatement) -> None:
+        """验证continue语句是否在循环内部使用"""
+        if not self.loop_stack:
+            # continue语句不在任何循环内部，报告语义错误
+            self.error(
+                error_code=ErrorCode.CONTINUE_OUTSIDE_LOOP,
+                token=node.token,
+            )

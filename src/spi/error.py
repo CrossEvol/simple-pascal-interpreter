@@ -55,6 +55,10 @@ class ErrorCode(Enum):
     SEMANTIC_PROCEDURE_TYPE_MISMATCH = "Procedure signature mismatch"
     SEMANTIC_FUNCTION_TYPE_MISMATCH = "Function signature mismatch"
 
+    # Loop control statement errors
+    BREAK_OUTSIDE_LOOP = "Break statement must be inside a loop"
+    CONTINUE_OUTSIDE_LOOP = "Continue statement must be inside a loop"
+
     # Interpreter errors
     INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
     INTERPRETER_UNKNOWN_BUILTIN_FUNCTION = "Interpreter unknown builtin function"
