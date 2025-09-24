@@ -74,6 +74,9 @@ class ErrorCode(Enum):
     INTERPRETER_UNKNOWN_OPERATOR = "Interpreter unknown operator"
     INTERPRETER_UNKNOWN_ENUM = "Interpreter unknown enum"
     INTERPRETER_UNKNOWN_BOOLEAN = "Interpreter unknown boolean"
+    INTERPRETER_SUBRANGE_INVALID = "Interpreter subrange invalid"
+    INTERPRETER_SET_INVALID = "Interpreter set invalid"
+    INTERPRETER_IN_OPERATOR_INVALID = "Interpreter in operator invalid"
 
 
 class Error(Exception):

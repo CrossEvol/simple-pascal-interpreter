@@ -1390,6 +1390,63 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             the_exception.error_code, ErrorCode.SEMANTIC_IN_OPERATOR_INVALID
         )
 
+    def test_in_operator_invalid_left_operand_error(self):
+        """Test that invalid left operand type for in operator raises error"""
+        text = """\
+        program TestInOperatorInvalidLeft;
+        var
+            s: string;
+            result: boolean;
+        begin
+            s := 'hello';
+            result := s in [1, 2, 3];
+        end.
+        """
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(text)
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES
+        )
+
+    def test_in_operator_invalid_right_operand_error(self):
+        """Test that invalid right operand type for in operator raises error"""
+        text = """\
+        program TestInOperatorInvalidRight;
+        var
+            x: integer;
+            s: string;
+            result: boolean;
+        begin
+            x := 5;
+            s := 'hello';
+            result := x in s;
+        end.
+        """
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(text)
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES
+        )
+
+    def test_set_literal_invalid_element_type_error(self):
+        """Test that invalid element type in set literal raises error"""
+        text = """\
+        program TestSetLiteralInvalidElement;
+        var
+            s: string;
+            result: boolean;
+        begin
+            s := 'hello';
+            result := 5 in [1, s, 3];
+        end.
+        """
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(text)
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_SET_TYPE_MISMATCH)
+
 
 if __name__ == "__main__":
     unittest.main()

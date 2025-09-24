@@ -92,28 +92,48 @@
 
 
 
-  - [ ] 5.3 Implement in operator semantic validation
+  - [x] 5.3 Implement in operator semantic validation
     - Add visit_InOperator method to semantic analyzer
     - Validate left operand type compatibility with set element types
     - Ensure right operand is a valid set or subrange
     - Write tests for in operator type validation
     - _Requirements: 3.4_
 
-- [ ] 6. Create runtime objects for subranges and sets
-  - [ ] 6.1 Implement SubrangeObject class
+- [x] 6. Create runtime objects for subranges and sets
+
+
+
+
+
+  - [x] 6.1 Implement SubrangeObject class
+
+
     - Create SubrangeObject with lower/upper bounds and contains method
     - Add to_set method for converting subranges to sets when needed
     - Write unit tests for SubrangeObject functionality
     - _Requirements: 1.1, 3.2_
 
-  - [ ] 6.2 Implement SetObject class
+  - [x] 6.2 Implement SetObject class
+
     - Create SetObject with elements set and contains method
     - Add methods for set operations and element access
     - Write unit tests for SetObject functionality
     - _Requirements: 2.1, 3.1_
 
-- [ ] 7. Implement interpreter evaluation for new constructs
-  - [ ] 7.1 Add subrange type evaluation
+- [x] 7. Implement interpreter evaluation for new constructs
+
+
+
+
+
+
+
+
+
+
+  - [x] 7.1 Add subrange type evaluation
+
+
     - Implement visit_SubrangeType method in interpreter
     - Evaluate lower and upper bounds at runtime
     - Validate that lower bound ≤ upper bound for complex expressions
@@ -121,7 +141,9 @@
     - Write tests for subrange evaluation and validation
     - _Requirements: 1.1, 1.3_
 
-  - [ ] 7.2 Add set literal evaluation
+  - [x] 7.2 Add set literal evaluation
+
+
     - Implement visit_SetLiteral method in interpreter
     - Expand range elements to individual values
     - Combine all elements into a single set
@@ -129,7 +151,9 @@
     - Write tests for set literal evaluation with various element types
     - _Requirements: 2.1, 2.2, 2.3_
 
-  - [ ] 7.3 Add in operator evaluation
+  - [x] 7.3 Add in operator evaluation
+
+
     - Implement visit_InOperator method in interpreter
     - Handle membership testing for both sets and subranges
     - Return boolean results for membership tests

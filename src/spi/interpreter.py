@@ -27,6 +27,7 @@ from spi.ast import (
     FunctionCall,
     FunctionDecl,
     IfStatement,
+    InOperator,
     IndexSuffix,
     MemberSuffix,
     NoOp,
@@ -38,8 +39,10 @@ from spi.ast import (
     ProcedureDecl,
     Program,
     RecordType,
+    SetLiteral,
     String,
     StringType,
+    SubrangeType,
     Type,
     TypeDeclaration,
     UnaryOp,
@@ -70,7 +73,9 @@ from spi.object import (
     ProcedureObject,
     RealObject,
     RecordObject,
+    SetObject,
     StringObject,
+    SubrangeObject,
 )
 from spi.symbol import EnumTypeSymbol, RecordTypeSymbol
 from spi.token import Token, TokenType
@@ -850,6 +855,111 @@ class Interpreter(NodeVisitor):
         """访问记录类型定义节点"""
         # 在解释器中，记录类型定义已经在语义分析阶段处理
         pass
+
+    def visit_SubrangeType(self, node: SubrangeType) -> SubrangeObject:
+        """Evaluate subrange type and return SubrangeObject"""
+        # Evaluate lower and upper bounds at runtime
+        lower_obj = self.visit(node.lower)
+        upper_obj = self.visit(node.upper)
+        
+        # Extract numeric values
+        if not isinstance(lower_obj, NumberObject):
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_SUBRANGE_INVALID,
+                token=node.token,
+                message=f"Subrange lower bound must be a number, got {type(lower_obj).__name__}"
+            )
+        
+        if not isinstance(upper_obj, NumberObject):
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_SUBRANGE_INVALID,
+                token=node.token,
+                message=f"Subrange upper bound must be a number, got {type(upper_obj).__name__}"
+            )
+        
+        lower_value = int(lower_obj.value)
+        upper_value = int(upper_obj.value)
+        
+        # Validate that lower bound ≤ upper bound
+        if lower_value > upper_value:
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_SUBRANGE_INVALID,
+                token=node.token,
+                message=f"Invalid subrange bounds: {lower_value}..{upper_value} (lower > upper)"
+            )
+        
+        return SubrangeObject(lower_value, upper_value)
+
+    def visit_SetLiteral(self, node: SetLiteral) -> SetObject:
+        """Evaluate set literal and return SetObject"""
+        elements = set()
+        
+        # Process each element in the set literal
+        for element in node.elements:
+            if isinstance(element, SubrangeType):
+                # Handle range elements (e.g., 3..5)
+                subrange_obj = self.visit(element)
+                if isinstance(subrange_obj, SubrangeObject):
+                    # Expand range to individual values
+                    elements.update(subrange_obj.to_set())
+                else:
+                    raise InterpreterError(
+                        error_code=ErrorCode.INTERPRETER_SET_INVALID,
+                        token=node.token,
+                        message=f"Invalid range element in set: {element}"
+                    )
+            else:
+                # Handle individual elements
+                element_obj = self.visit(element)
+                if isinstance(element_obj, NumberObject):
+                    elements.add(int(element_obj.value))
+                elif isinstance(element_obj, CharObject):
+                    # Convert character to ASCII value for set membership
+                    elements.add(ord(element_obj.value) if element_obj.value else 0)
+                else:
+                    raise InterpreterError(
+                        error_code=ErrorCode.INTERPRETER_SET_INVALID,
+                        token=node.token,
+                        message=f"Invalid element type in set: {type(element_obj).__name__}"
+                    )
+        
+        return SetObject(elements)
+
+    def visit_InOperator(self, node: InOperator) -> BooleanObject:
+        """Evaluate in operator and return boolean result"""
+        # Evaluate the left operand (value to test)
+        value_obj = self.visit(node.value)
+        
+        # Convert value to integer for membership testing
+        if isinstance(value_obj, NumberObject):
+            test_value = int(value_obj.value)
+        elif isinstance(value_obj, CharObject):
+            test_value = ord(value_obj.value) if value_obj.value else 0
+        else:
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_IN_OPERATOR_INVALID,
+                token=node.token,
+                message=f"Invalid left operand type for 'in' operator: {type(value_obj).__name__}"
+            )
+        
+        # Evaluate the right operand (set or subrange)
+        set_obj = self.visit(node.set_expr)
+        
+        # Check membership based on the type of the right operand
+        if isinstance(set_obj, SetObject):
+            # Test membership in set
+            result = set_obj.contains(test_value)
+        elif isinstance(set_obj, SubrangeObject):
+            # Test membership in subrange
+            result = set_obj.contains(test_value)
+        else:
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_IN_OPERATOR_INVALID,
+                token=node.token,
+                message=f"Invalid right operand type for 'in' operator: {type(set_obj).__name__}"
+            )
+        
+        return BooleanObject(result)
 
     def visit_BinOp(self, node: BinOp) -> Object:
         left_obj = self.visit(node.left)

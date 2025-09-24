@@ -15,6 +15,7 @@ from spi.object import (
     RecordObject,
     StringObject,
 )
+from spi.error import SemanticError
 from spi.parser import Parser
 from spi.semantic_analyzer import SemanticAnalyzer
 from spi.token import Token, TokenType
@@ -2776,3 +2777,272 @@ class InterpreterLoopControlTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InterpreterSubrangeSetTestCase(unittest.TestCase):
+    """Test cases for subrange types, set literals, and in operator evaluation"""
+
+    def test_subrange_evaluation_simple_integers(self):
+        """Test subrange evaluation with simple integer bounds"""
+        text = """\
+        program TestSubrangeEvaluation;
+        var
+            result: boolean;
+        begin
+            result := 7 in 1..10;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # 7 should be in range 1..10
+        self.assertEqual(ar["result"].value, True)
+
+    def test_subrange_evaluation_with_expressions(self):
+        """Test subrange evaluation with expression bounds"""
+        text = """\
+        program TestSubrangeExpressions;
+        var
+            min, max: integer;
+            result: boolean;
+        begin
+            min := 5;
+            max := 15;
+            result := 10 in min..max;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # 10 should be in range 5..15
+        self.assertEqual(ar["result"].value, True)
+
+    def test_subrange_invalid_bounds_runtime_error(self):
+        """Test that invalid subrange bounds (lower > upper) raise runtime error"""
+        text = """\
+        program TestInvalidSubrange;
+        var
+            lower, upper: integer;
+            result: boolean;
+        begin
+            lower := 10;
+            upper := 5;
+            result := 7 in lower..upper;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+
+        with self.assertRaises(InterpreterError) as cm:
+            interpreter.interpret()
+
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code.name, "INTERPRETER_SUBRANGE_INVALID")
+
+    def test_set_literal_evaluation_individual_elements(self):
+        """Test set literal evaluation with individual elements"""
+        text = """\
+        program TestSetLiteralIndividual;
+        var
+            result1, result2, result3: boolean;
+        begin
+            result1 := 1 in [1, 3, 5, 7];
+            result2 := 2 in [1, 3, 5, 7];
+            result3 := 5 in [1, 3, 5, 7];
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 1 is in set
+        self.assertEqual(ar["result2"].value, False)  # 2 is not in set
+        self.assertEqual(ar["result3"].value, True)  # 5 is in set
+
+    def test_set_literal_evaluation_with_ranges(self):
+        """Test set literal evaluation with range elements"""
+        text = """\
+        program TestSetLiteralRanges;
+        var
+            result1, result2, result3, result4: boolean;
+        begin
+            result1 := 2 in [1..5, 8..10];
+            result2 := 6 in [1..5, 8..10];
+            result3 := 9 in [1..5, 8..10];
+            result4 := 11 in [1..5, 8..10];
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 2 is in range 1..5
+        self.assertEqual(ar["result2"].value, False)  # 6 is not in either range
+        self.assertEqual(ar["result3"].value, True)  # 9 is in range 8..10
+        self.assertEqual(ar["result4"].value, False)  # 11 is not in either range
+
+    def test_set_literal_evaluation_mixed_elements(self):
+        """Test set literal evaluation with mixed individual and range elements"""
+        text = """\
+        program TestSetLiteralMixed;
+        var
+            result1, result2, result3, result4, result5: boolean;
+        begin
+            result1 := 1 in [1, 3..5, 8, 10..12];
+            result2 := 2 in [1, 3..5, 8, 10..12];
+            result3 := 4 in [1, 3..5, 8, 10..12];
+            result4 := 8 in [1, 3..5, 8, 10..12];
+            result5 := 11 in [1, 3..5, 8, 10..12];
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 1 is individual element
+        self.assertEqual(ar["result2"].value, False)  # 2 is not in set
+        self.assertEqual(ar["result3"].value, True)  # 4 is in range 3..5
+        self.assertEqual(ar["result4"].value, True)  # 8 is individual element
+        self.assertEqual(ar["result5"].value, True)  # 11 is in range 10..12
+
+    def test_set_literal_evaluation_empty_set(self):
+        """Test set literal evaluation with empty set"""
+        text = """\
+        program TestEmptySet;
+        var
+            result: boolean;
+        begin
+            result := 5 in [];
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result"].value, False)  # Nothing is in empty set
+
+    def test_set_literal_evaluation_character_elements(self):
+        """Test set literal evaluation with character elements (converted to ASCII)"""
+        text = """\
+        program TestCharacterSet;
+        var
+            result1, result2: boolean;
+        begin
+            result1 := 65 in [65, 67, 69];  { ASCII values for 'A', 'C', 'E' }
+            result2 := 66 in [65, 67, 69];  { ASCII value for 'B' }
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 65 ('A') is in set
+        self.assertEqual(ar["result2"].value, False)  # 66 ('B') is not in set
+
+    def test_in_operator_evaluation_with_subrange(self):
+        """Test in operator evaluation with subrange operands"""
+        text = """\
+        program TestInOperatorSubrange;
+        var
+            result1, result2, result3: boolean;
+        begin
+            result1 := 5 in 1..10;
+            result2 := 0 in 1..10;
+            result3 := 15 in 1..10;
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 5 is in range 1..10
+        self.assertEqual(ar["result2"].value, False)  # 0 is not in range 1..10
+        self.assertEqual(ar["result3"].value, False)  # 15 is not in range 1..10
+
+    def test_in_operator_evaluation_with_set_literal(self):
+        """Test in operator evaluation with set literal operands"""
+        text = """\
+        program TestInOperatorSetLiteral;
+        var
+            result1, result2, result3: boolean;
+        begin
+            result1 := 3 in [1, 3, 5];
+            result2 := 4 in [1, 3, 5];
+            result3 := 7 in [1..5, 7..9];
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 3 is in set [1, 3, 5]
+        self.assertEqual(ar["result2"].value, False)  # 4 is not in set [1, 3, 5]
+        self.assertEqual(ar["result3"].value, True)  # 7 is in range 7..9
+
+    def test_in_operator_evaluation_complex_expressions(self):
+        """Test in operator evaluation with complex expressions"""
+        text = """\
+        program TestInOperatorComplex;
+        var
+            x, y: integer;
+            result1, result2: boolean;
+        begin
+            x := 3;
+            y := 7;
+            result1 := (x + y) in [5..15];
+            result2 := (x * y) in [1, 5, 10, 21, 25];
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # (3 + 7) = 10 is in range 5..15
+        self.assertEqual(ar["result2"].value, True)  # (3 * 7) = 21 is in set
+
+    def test_subrange_bounds_validation_complex_expressions(self):
+        """Test subrange bounds validation with complex expressions at runtime"""
+        text = """\
+        program TestSubrangeBoundsValidation;
+        var
+            a, b, c: integer;
+            result: boolean;
+        begin
+            a := 5;
+            b := 3;
+            c := 2;
+            result := 4 in (a - c)..(b + c * 2);
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        # (5 - 2)..(3 + 2 * 2) = 3..7, so 4 should be in range
+        self.assertEqual(ar["result"].value, True)
+
+    def test_nested_set_operations_in_conditionals(self):
+        """Test using set operations in conditional statements"""
+        text = """\
+        program TestNestedSetOperations;
+        var
+            grade: integer;
+            result: string;
+        begin
+            grade := 85;
+            if grade in [90..100] then
+                result := 'A'
+            else if grade in [80..89] then
+                result := 'B'
+            else if grade in [70..79] then
+                result := 'C'
+            else
+                result := 'F';
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result"].value, "B")  # 85 is in range 80..89

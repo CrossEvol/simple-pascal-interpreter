@@ -448,6 +448,80 @@ class FunctionObject(Object):
         return len(self.formal_params) - 1 if len(self.formal_params) > 0 else 0
 
 
+class SubrangeObject(Object):
+    """Runtime object representing a subrange type like 1..10"""
+
+    def __init__(self, lower: int, upper: int):
+        super().__init__((lower, upper))
+        self.lower = lower
+        self.upper = upper
+
+    def contains(self, value: int) -> bool:
+        """Check if value is within the subrange bounds"""
+        return self.lower <= value <= self.upper
+
+    def to_set(self) -> set[int]:
+        """Convert subrange to a set of all values in the range"""
+        return set(range(self.lower, self.upper + 1))
+
+    def __str__(self):
+        return f"{self.lower}..{self.upper}"
+
+    def __repr__(self):
+        return f"SubrangeObject({self.lower}, {self.upper})"
+
+
+class SetObject(Object):
+    """Runtime object representing a set of values"""
+
+    def __init__(self, elements: set[int] = None):
+        if elements is None:
+            elements = set()
+        super().__init__(elements)
+        self.elements = elements
+
+    def contains(self, value: int) -> bool:
+        """Check if value is in the set"""
+        return value in self.elements
+
+    def add(self, value: int) -> None:
+        """Add a value to the set"""
+        self.elements.add(value)
+
+    def remove(self, value: int) -> None:
+        """Remove a value from the set"""
+        self.elements.discard(value)
+
+    def union(self, other: 'SetObject') -> 'SetObject':
+        """Return union of this set with another set"""
+        return SetObject(self.elements | other.elements)
+
+    def intersection(self, other: 'SetObject') -> 'SetObject':
+        """Return intersection of this set with another set"""
+        return SetObject(self.elements & other.elements)
+
+    def difference(self, other: 'SetObject') -> 'SetObject':
+        """Return difference of this set with another set"""
+        return SetObject(self.elements - other.elements)
+
+    def is_empty(self) -> bool:
+        """Check if the set is empty"""
+        return len(self.elements) == 0
+
+    def size(self) -> int:
+        """Return the number of elements in the set"""
+        return len(self.elements)
+
+    def __str__(self):
+        if self.is_empty():
+            return "[]"
+        sorted_elements = sorted(self.elements)
+        return f"[{', '.join(map(str, sorted_elements))}]"
+
+    def __repr__(self):
+        return f"SetObject({self.elements})"
+
+
 class RecordObject(Object):
     """表示记录对象，只需要record_type参数初始化"""
 
