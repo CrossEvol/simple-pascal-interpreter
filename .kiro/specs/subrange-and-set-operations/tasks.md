@@ -1,38 +1,65 @@
 # Implementation Plan
 
-- [ ] 1. Add core AST nodes and token support
+- [x] 1. Add core AST nodes and token support
+
+
+
+
   - Create SubrangeType, SetLiteral, and InOperator AST node classes
   - Add IN token to TokenType enum and reserved keywords
   - Update lexer to recognize IN keyword
   - _Requirements: 1.1, 2.1, 3.1_
 
-- [ ] 2. Implement subrange type parsing
-  - [ ] 2.1 Add subrange parsing to parser
+- [x] 2. Implement subrange type parsing
+
+
+
+
+
+  - [x] 2.1 Add subrange parsing to parser
+
+
     - Implement subrange_type parsing method for lower..upper expressions
     - Update type_spec method to handle subrange types
     - Write unit tests for subrange parsing
     - _Requirements: 1.1_
 
-  - [ ] 2.2 Update array type parsing to use subranges
+  - [x] 2.2 Update array type parsing to use subranges
+
+
     - Modify array_type_spec to create SubrangeType for bounds instead of separate expressions
     - Ensure backward compatibility with existing array syntax
     - Write tests to verify existing array parsing still works
     - _Requirements: 4.1, 4.3_
 
-- [ ] 3. Implement set literal parsing
-  - [ ] 3.1 Add set literal parsing support
+- [x] 3. Implement set literal parsing
+
+
+
+
+
+  - [x] 3.1 Add set literal parsing support
+
+
     - Implement set_literal parsing method for [elem1, elem2..elem3, ...] syntax
     - Handle empty sets and mixed individual elements with ranges
     - Write unit tests for various set literal formats
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ] 3.2 Add set element parsing
+
+
+  - [x] 3.2 Add set element parsing
     - Implement set_element parsing for individual values and ranges within sets
     - Handle both single expressions and range expressions as set elements
     - Write tests for complex set element combinations
     - _Requirements: 2.2, 2.4_
 
-- [ ] 4. Implement in operator parsing
+- [x] 4. Implement in operator parsing
+
+
+
+
+
   - Add in_expression parsing method for membership testing syntax
   - Update comparison_expr to include IN operator precedence
   - Integrate in operator into expression parsing hierarchy

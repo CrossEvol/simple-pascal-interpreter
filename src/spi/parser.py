@@ -31,6 +31,7 @@ from spi.ast import (
     FunctionDecl,
     IfStatement,
     IndexSuffix,
+    InOperator,
     MemberSuffix,
     NoOp,
     Num,
@@ -42,9 +43,11 @@ from spi.ast import (
     Program,
     RecordField,
     RecordType,
+    SetLiteral,
     Statement,
     String,
     StringType,
+    SubrangeType,
     Type,
     TypeDeclaration,
     UnaryOp,
@@ -358,9 +361,12 @@ class Parser:
 
     def type_spec(self) -> Type:
         """
-        type_spec : primitive_type_spec | string_type_spec | array_type_spec | record_type_spec | ID
+        type_spec : primitive_type_spec | string_type_spec | array_type_spec | record_type_spec | subrange_type | ID
         """
-        if self.current_token.type in (
+        # Check if this could be a subrange type by looking ahead
+        if self._is_subrange_type():
+            return self.subrange_type()
+        elif self.current_token.type in (
             TokenType.INTEGER,
             TokenType.REAL,
             TokenType.BOOLEAN,
@@ -384,6 +390,40 @@ class Parser:
                 token=self.current_token,
                 message=f"{ErrorCode.SEMANTIC_UNKNOWN_TYPE.value} -> {self.current_token}",
             )
+
+    def _is_subrange_type(self) -> bool:
+        """
+        Check if the current position could be the start of a subrange type.
+        Look ahead to see if we have an expression followed by RANGE token.
+        """
+        # Save current position
+        saved_pos = self.lexer.pos
+        saved_current_char = self.lexer.current_char
+        saved_current_token = self.current_token
+
+        try:
+            # Try to parse an expression and see if it's followed by RANGE
+            self.summation_expr()
+            is_subrange = self.current_token.type == TokenType.RANGE
+        except:
+            is_subrange = False
+        finally:
+            # Restore position
+            self.lexer.pos = saved_pos
+            self.lexer.current_char = saved_current_char
+            self.current_token = saved_current_token
+
+        return is_subrange
+
+    def subrange_type(self) -> SubrangeType:
+        """
+        subrange_type : summation_expr RANGE summation_expr
+        """
+        token = self.current_token
+        lower = self.summation_expr()
+        self.eat(TokenType.RANGE)
+        upper = self.summation_expr()
+        return SubrangeType(token, lower, upper)
 
     def primitive_type_spec(self) -> Type:
         """
@@ -451,27 +491,25 @@ class Parser:
         """
         token = self.current_token
         self.eat(TokenType.ARRAY)
-        lower: Expression = self.newZeroNum(
-            lineno=self.current_token.lineno, column=self.current_token.column
-        )
-        upper: Expression = self.newZeroNum(
-            lineno=self.current_token.lineno, column=self.current_token.column
-        )
+        bounds: SubrangeType | None = None
         dynamic: bool = True
+
         if self.current_token.type == TokenType.LBRACKET:
             self.eat(TokenType.LBRACKET)
             lower = self.summation_expr()
             self.eat(TokenType.RANGE)
             upper = self.summation_expr()
             self.eat(TokenType.RBRACKET)
+            # Create SubrangeType for the bounds
+            bounds = SubrangeType(token, lower, upper)
             dynamic = False
+
         self.eat(TokenType.OF)
         element_type = self.type_spec()
         node = ArrayType(
             token=token,
             element_type=element_type,
-            lower=lower,
-            upper=upper,
+            bounds=bounds,
             dynamic=dynamic,
         )
         return node
@@ -945,7 +983,7 @@ class Parser:
         return node
 
     def comparison_expr(self) -> Expression:
-        """comparison_expr : summation_expr ( (EQ | NE | GT | GE | LT | LE) summation_expr )*"""
+        """comparison_expr : summation_expr ( (EQ | NE | GT | GE | LT | LE | IN) summation_expr )*"""
         node = self.summation_expr()
         while self.current_token.type in (
             TokenType.EQ,
@@ -954,6 +992,7 @@ class Parser:
             TokenType.GE,
             TokenType.LT,
             TokenType.LE,
+            TokenType.IN,
         ):
             token = self.current_token
             if token.type == TokenType.EQ:
@@ -968,10 +1007,49 @@ class Parser:
                 self.eat(TokenType.LT)
             elif token.type == TokenType.LE:
                 self.eat(TokenType.LE)
+            elif token.type == TokenType.IN:
+                self.eat(TokenType.IN)
+                right = self.in_operand()
+                node = InOperator(value=node, set_expr=right, token=token)
+                continue
 
             node = BinOp(left=node, op=token, right=self.summation_expr())
 
         return node
+
+    def in_expression(self, left: Expression) -> InOperator:
+        """
+        in_expression : summation_expr IN (set_literal | subrange_type | variable)
+        """
+        token = self.current_token
+        self.eat(TokenType.IN)
+        right = self.in_operand()
+        return InOperator(value=left, set_expr=right, token=token)
+
+    def in_operand(self) -> Expression:
+        """
+        in_operand : set_literal | subrange_expr | summation_expr
+        """
+        if self.current_token.type == TokenType.LBRACKET:
+            # Parse set literal
+            return self.set_literal()
+        else:
+            # Try to parse as subrange or regular expression
+            return self.subrange_or_expr()
+
+    def subrange_or_expr(self) -> Expression:
+        """
+        subrange_or_expr : summation_expr (RANGE summation_expr)?
+        """
+        left = self.summation_expr()
+        
+        if self.current_token.type == TokenType.RANGE:
+            token = self.current_token
+            self.eat(TokenType.RANGE)
+            right = self.summation_expr()
+            return SubrangeType(token, left, right)
+        
+        return left
 
     def summation_expr(self) -> Expression:
         """
@@ -1079,6 +1157,10 @@ class Parser:
             self.eat(TokenType.CHAR_CONST)
             return Char(token=token)
 
+        # parse set literal
+        if self.current_token.type == TokenType.LBRACKET:
+            return self.set_literal()
+
         # call
         if (
             token.type == TokenType.ID
@@ -1089,6 +1171,47 @@ class Parser:
         else:
             node = self.variable()
             return node
+
+    def set_literal(self) -> SetLiteral:
+        """
+        set_literal: LBRACKET (set_element (COMMA set_element)*)? RBRACKET
+        """
+        token = self.current_token
+        self.eat(TokenType.LBRACKET)
+        
+        elements = []
+        
+        # Handle empty set
+        if self.current_token.type == TokenType.RBRACKET:
+            self.eat(TokenType.RBRACKET)
+            return SetLiteral(token, elements)
+        
+        # Parse first element
+        elements.append(self.set_element())
+        
+        # Parse remaining elements
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            elements.append(self.set_element())
+        
+        self.eat(TokenType.RBRACKET)
+        return SetLiteral(token, elements)
+
+    def set_element(self) -> Expression:
+        """
+        set_element: summation_expr (RANGE summation_expr)?
+        """
+        lower = self.summation_expr()
+        
+        # Check if this is a range element
+        if self.current_token.type == TokenType.RANGE:
+            range_token = self.current_token
+            self.eat(TokenType.RANGE)
+            upper = self.summation_expr()
+            return SubrangeType(range_token, lower, upper)
+        
+        # Single element
+        return lower
 
     def parse(self):
         """

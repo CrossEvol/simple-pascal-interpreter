@@ -570,6 +570,527 @@ class ParserTestCase(unittest.TestCase):
         tree = parser.parse()
         self.assertIsNotNone(tree)
 
+    def test_subrange_type_parsing_simple(self):
+        """Test parsing simple subrange types like 1..10"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            TYPE
+                Range1 = 1..10;
+                Range2 = 'A'..'Z';
+            BEGIN
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Check that we have type declarations
+        type_decls = [
+            decl for decl in tree.block.declarations if hasattr(decl, "type_def")
+        ]
+        self.assertEqual(len(type_decls), 2)
+
+        # Check first subrange type (1..10)
+        from spi.ast import SubrangeType, Num
+
+        range1_decl = type_decls[0]
+        self.assertIsInstance(range1_decl.type_def, SubrangeType)
+        self.assertIsInstance(range1_decl.type_def.lower, Num)
+        self.assertIsInstance(range1_decl.type_def.upper, Num)
+        self.assertEqual(range1_decl.type_def.lower.value, 1)
+        self.assertEqual(range1_decl.type_def.upper.value, 10)
+
+        # Check second subrange type ('A'..'Z')
+        from spi.ast import String
+
+        range2_decl = type_decls[1]
+        self.assertIsInstance(range2_decl.type_def, SubrangeType)
+        self.assertIsInstance(range2_decl.type_def.lower, String)
+        self.assertIsInstance(range2_decl.type_def.upper, String)
+        self.assertEqual(range2_decl.type_def.lower.value, "A")
+        self.assertEqual(range2_decl.type_def.upper.value, "Z")
+
+    def test_subrange_type_parsing_expressions(self):
+        """Test parsing subrange types with expressions"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            CONST
+                MIN = 5;
+                MAX = 15;
+            TYPE
+                Range = MIN..MAX;
+            BEGIN
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Check that we have type declarations
+        type_decls = [
+            decl for decl in tree.block.declarations if hasattr(decl, "type_def")
+        ]
+        self.assertEqual(len(type_decls), 1)
+
+        # Check subrange type with variable expressions
+        from spi.ast import SubrangeType, Var
+
+        range_decl = type_decls[0]
+        self.assertIsInstance(range_decl.type_def, SubrangeType)
+        self.assertIsInstance(range_decl.type_def.lower, Var)
+        self.assertIsInstance(range_decl.type_def.upper, Var)
+        self.assertEqual(range_decl.type_def.lower.value, "MIN")
+        self.assertEqual(range_decl.type_def.upper.value, "MAX")
+
+    def test_subrange_type_parsing_in_variable_declaration(self):
+        """Test parsing subrange types in variable declarations"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                count : 1..100;
+                grade : 0..10;
+            BEGIN
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Check that we have variable declarations with subrange types
+        var_decls = [
+            decl for decl in tree.block.declarations if hasattr(decl, "var_node")
+        ]
+        self.assertEqual(len(var_decls), 2)
+
+        # Check first variable with subrange type
+        from spi.ast import SubrangeType
+
+        count_decl = var_decls[0]
+        self.assertIsInstance(count_decl.type_node, SubrangeType)
+        self.assertEqual(count_decl.type_node.lower.value, 1)
+        self.assertEqual(count_decl.type_node.upper.value, 100)
+
+        # Check second variable with subrange type
+        grade_decl = var_decls[1]
+        self.assertIsInstance(grade_decl.type_node, SubrangeType)
+        self.assertEqual(grade_decl.type_node.lower.value, 0)
+        self.assertEqual(grade_decl.type_node.upper.value, 10)
+
+    def test_array_type_uses_subrange_bounds(self):
+        """Test that array types now use SubrangeType for bounds"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                arr1 : ARRAY[1..10] OF INTEGER;
+                arr2 : ARRAY OF INTEGER;
+            BEGIN
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Check that we have variable declarations
+        var_decls = [
+            decl for decl in tree.block.declarations if hasattr(decl, "var_node")
+        ]
+        self.assertEqual(len(var_decls), 2)
+
+        # Check first array with bounds
+        from spi.ast import ArrayType, SubrangeType, Num
+
+        arr1_decl = var_decls[0]
+        self.assertIsInstance(arr1_decl.type_node, ArrayType)
+        self.assertFalse(arr1_decl.type_node.dynamic)
+        self.assertIsNotNone(arr1_decl.type_node.bounds)
+        self.assertIsInstance(arr1_decl.type_node.bounds, SubrangeType)
+
+        # Verify bounds values through SubrangeType
+        bounds = arr1_decl.type_node.bounds
+        self.assertIsInstance(bounds.lower, Num)
+        self.assertIsInstance(bounds.upper, Num)
+        self.assertEqual(bounds.lower.value, 1)
+        self.assertEqual(bounds.upper.value, 10)
+
+        # Verify backward compatibility properties
+        self.assertEqual(arr1_decl.type_node.lower.value, 1)
+        self.assertEqual(arr1_decl.type_node.upper.value, 10)
+
+        # Check second array (dynamic)
+        arr2_decl = var_decls[1]
+        self.assertIsInstance(arr2_decl.type_node, ArrayType)
+        self.assertTrue(arr2_decl.type_node.dynamic)
+        self.assertIsNone(arr2_decl.type_node.bounds)
+
+        # Verify backward compatibility for dynamic arrays
+        self.assertEqual(arr2_decl.type_node.lower.value, 0)
+        self.assertEqual(arr2_decl.type_node.upper.value, 0)
+
+    def test_set_literal_parsing_empty_set(self):
+        """Test parsing empty set literal []"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                s : INTEGER;
+            BEGIN
+                s := [];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        assignment = tree.block.compound_statement.children[0]
+        from spi.ast import Assign, SetLiteral
+
+        self.assertIsInstance(assignment, Assign)
+        self.assertIsInstance(assignment.right, SetLiteral)
+
+        # Check empty set
+        set_literal = assignment.right
+        self.assertEqual(len(set_literal.elements), 0)
+
+    def test_set_literal_parsing_individual_elements(self):
+        """Test parsing set literal with individual elements [1, 3, 5]"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                s : INTEGER;
+            BEGIN
+                s := [1, 3, 5];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        assignment = tree.block.compound_statement.children[0]
+        from spi.ast import Assign, SetLiteral, Num
+
+        self.assertIsInstance(assignment, Assign)
+        self.assertIsInstance(assignment.right, SetLiteral)
+
+        # Check set elements
+        set_literal = assignment.right
+        self.assertEqual(len(set_literal.elements), 3)
+
+        # Verify individual elements
+        self.assertIsInstance(set_literal.elements[0], Num)
+        self.assertIsInstance(set_literal.elements[1], Num)
+        self.assertIsInstance(set_literal.elements[2], Num)
+        self.assertEqual(set_literal.elements[0].value, 1)
+        self.assertEqual(set_literal.elements[1].value, 3)
+        self.assertEqual(set_literal.elements[2].value, 5)
+
+    def test_set_literal_parsing_range_elements(self):
+        """Test parsing set literal with range elements [1..5, 8..10]"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                s : INTEGER;
+            BEGIN
+                s := [1..5, 8..10];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        assignment = tree.block.compound_statement.children[0]
+        from spi.ast import Assign, SetLiteral, SubrangeType, Num
+
+        self.assertIsInstance(assignment, Assign)
+        self.assertIsInstance(assignment.right, SetLiteral)
+
+        # Check set elements
+        set_literal = assignment.right
+        self.assertEqual(len(set_literal.elements), 2)
+
+        # Verify first range element (1..5)
+        self.assertIsInstance(set_literal.elements[0], SubrangeType)
+        range1 = set_literal.elements[0]
+        self.assertIsInstance(range1.lower, Num)
+        self.assertIsInstance(range1.upper, Num)
+        self.assertEqual(range1.lower.value, 1)
+        self.assertEqual(range1.upper.value, 5)
+
+        # Verify second range element (8..10)
+        self.assertIsInstance(set_literal.elements[1], SubrangeType)
+        range2 = set_literal.elements[1]
+        self.assertIsInstance(range2.lower, Num)
+        self.assertIsInstance(range2.upper, Num)
+        self.assertEqual(range2.lower.value, 8)
+        self.assertEqual(range2.upper.value, 10)
+
+    def test_set_literal_parsing_mixed_elements(self):
+        """Test parsing set literal with mixed individual and range elements [1, 3..5, 8, 10..12]"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                s : INTEGER;
+            BEGIN
+                s := [1, 3..5, 8, 10..12];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        assignment = tree.block.compound_statement.children[0]
+        from spi.ast import Assign, SetLiteral, SubrangeType, Num
+
+        self.assertIsInstance(assignment, Assign)
+        self.assertIsInstance(assignment.right, SetLiteral)
+
+        # Check set elements
+        set_literal = assignment.right
+        self.assertEqual(len(set_literal.elements), 4)
+
+        # Verify first element (1)
+        self.assertIsInstance(set_literal.elements[0], Num)
+        self.assertEqual(set_literal.elements[0].value, 1)
+
+        # Verify second element (3..5)
+        self.assertIsInstance(set_literal.elements[1], SubrangeType)
+        range1 = set_literal.elements[1]
+        self.assertEqual(range1.lower.value, 3)
+        self.assertEqual(range1.upper.value, 5)
+
+        # Verify third element (8)
+        self.assertIsInstance(set_literal.elements[2], Num)
+        self.assertEqual(set_literal.elements[2].value, 8)
+
+        # Verify fourth element (10..12)
+        self.assertIsInstance(set_literal.elements[3], SubrangeType)
+        range2 = set_literal.elements[3]
+        self.assertEqual(range2.lower.value, 10)
+        self.assertEqual(range2.upper.value, 12)
+
+    def test_set_literal_parsing_character_elements(self):
+        """Test parsing set literal with character elements ['A', 'C'..'F', 'Z']"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                s : CHAR;
+            BEGIN
+                s := ['A', 'C'..'F', 'Z'];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        assignment = tree.block.compound_statement.children[0]
+        from spi.ast import Assign, SetLiteral, SubrangeType, String
+
+        self.assertIsInstance(assignment, Assign)
+        self.assertIsInstance(assignment.right, SetLiteral)
+
+        # Check set elements
+        set_literal = assignment.right
+        self.assertEqual(len(set_literal.elements), 3)
+
+        # Verify first element ('A')
+        self.assertIsInstance(set_literal.elements[0], String)
+        self.assertEqual(set_literal.elements[0].value, "A")
+
+        # Verify second element ('C'..'F')
+        self.assertIsInstance(set_literal.elements[1], SubrangeType)
+        range1 = set_literal.elements[1]
+        self.assertIsInstance(range1.lower, String)
+        self.assertIsInstance(range1.upper, String)
+        self.assertEqual(range1.lower.value, "C")
+        self.assertEqual(range1.upper.value, "F")
+
+        # Verify third element ('Z')
+        self.assertIsInstance(set_literal.elements[2], String)
+        self.assertEqual(set_literal.elements[2].value, "Z")
+
+    def test_in_operator_parsing_with_set_literal(self):
+        """Test parsing in operator with set literal"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                x : INTEGER;
+                result : BOOLEAN;
+            BEGIN
+                result := x in [1, 3, 5];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        compound = tree.block.compound_statement
+        assignment = compound.children[0]
+        
+        from spi.ast import InOperator, Var, SetLiteral
+        
+        # Check that the right side is an InOperator
+        self.assertIsInstance(assignment.right, InOperator)
+        in_op = assignment.right
+        
+        # Check left operand (value being tested)
+        self.assertIsInstance(in_op.value, Var)
+        self.assertEqual(in_op.value.value, "x")
+        
+        # Check right operand (set literal)
+        self.assertIsInstance(in_op.set_expr, SetLiteral)
+        set_literal = in_op.set_expr
+        self.assertEqual(len(set_literal.elements), 3)
+
+    def test_in_operator_parsing_with_subrange(self):
+        """Test parsing in operator with subrange"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                x : INTEGER;
+                result : BOOLEAN;
+            BEGIN
+                result := x in 1..10;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        compound = tree.block.compound_statement
+        assignment = compound.children[0]
+        
+        from spi.ast import InOperator, Var, SubrangeType
+        
+        # Check that the right side is an InOperator
+        self.assertIsInstance(assignment.right, InOperator)
+        in_op = assignment.right
+        
+        # Check left operand (value being tested)
+        self.assertIsInstance(in_op.value, Var)
+        self.assertEqual(in_op.value.value, "x")
+        
+        # Check right operand (subrange)
+        self.assertIsInstance(in_op.set_expr, SubrangeType)
+
+    def test_in_operator_parsing_with_variable(self):
+        """Test parsing in operator with variable"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                x : INTEGER;
+                mySet : ARRAY[1..10] OF INTEGER;
+                result : BOOLEAN;
+            BEGIN
+                result := x in mySet;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        compound = tree.block.compound_statement
+        assignment = compound.children[0]
+        
+        from spi.ast import InOperator, Var
+        
+        # Check that the right side is an InOperator
+        self.assertIsInstance(assignment.right, InOperator)
+        in_op = assignment.right
+        
+        # Check left operand (value being tested)
+        self.assertIsInstance(in_op.value, Var)
+        self.assertEqual(in_op.value.value, "x")
+        
+        # Check right operand (variable)
+        self.assertIsInstance(in_op.set_expr, Var)
+        self.assertEqual(in_op.set_expr.value, "mySet")
+
+    def test_in_operator_parsing_in_if_statement(self):
+        """Test parsing in operator in if statement"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                x : INTEGER;
+            BEGIN
+                IF x in [1, 2, 3] THEN
+                    x := 0;
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the if statement
+        compound = tree.block.compound_statement
+        if_stmt = compound.children[0]
+        
+        from spi.ast import IfStatement, InOperator, Var, SetLiteral
+        
+        # Check that it's an if statement
+        self.assertIsInstance(if_stmt, IfStatement)
+        
+        # Check that the condition is an InOperator
+        self.assertIsInstance(if_stmt.condition, InOperator)
+        in_op = if_stmt.condition
+        
+        # Check operands
+        self.assertIsInstance(in_op.value, Var)
+        self.assertEqual(in_op.value.value, "x")
+        self.assertIsInstance(in_op.set_expr, SetLiteral)
+
+    def test_in_operator_parsing_complex_expression(self):
+        """Test parsing in operator with complex expressions"""
+        parser = self.makeParser(
+            """
+            PROGRAM Test;
+            VAR
+                x, y : INTEGER;
+                result : BOOLEAN;
+            BEGIN
+                result := (x + y) in [1..5, 10, 15..20];
+            END.
+            """
+        )
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
+        # Get the assignment statement
+        compound = tree.block.compound_statement
+        assignment = compound.children[0]
+        
+        from spi.ast import InOperator, BinOp, SetLiteral
+        
+        # Check that the right side is an InOperator
+        self.assertIsInstance(assignment.right, InOperator)
+        in_op = assignment.right
+        
+        # Check left operand is a binary operation (x + y)
+        self.assertIsInstance(in_op.value, BinOp)
+        
+        # Check right operand is a set literal
+        self.assertIsInstance(in_op.set_expr, SetLiteral)
+        set_literal = in_op.set_expr
+        self.assertEqual(len(set_literal.elements), 3)  # [1..5, 10, 15..20]
+
 
 if __name__ == "__main__":
     unittest.main()

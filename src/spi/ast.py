@@ -69,20 +69,41 @@ class ArrayType(Type):
         self,
         token,
         element_type: Type,
-        lower: Expression,
-        upper: Expression,
+        bounds: SubrangeType | None = None,
         dynamic: bool = False,
     ):
         super().__init__(token)
         self.element_type = element_type
-        self.lower = lower
-        self.upper = upper
+        self.bounds = bounds  # SubrangeType for array bounds
         self.dynamic = dynamic
+        
+        # Backward compatibility properties
+        if bounds:
+            self.lower = bounds.lower
+            self.upper = bounds.upper
+        else:
+            # For dynamic arrays, create default zero bounds
+            from spi.token import Token, TokenType
+            zero_token = Token(TokenType.INTEGER_CONST, 0, token.lineno if token else 1, token.column if token else 1)
+            self.lower = Num(zero_token)
+            self.upper = Num(zero_token)
 
     def __str__(self):
         return "Array[{element_type_name}]".format(
             element_type_name=str(self.element_type)
         )
+
+
+class SubrangeType(Type):
+    """Represents a subrange type like 1..10"""
+
+    def __init__(self, token: Token, lower: Expression, upper: Expression):
+        super().__init__(token)
+        self.lower = lower
+        self.upper = upper
+
+    def __str__(self):
+        return f"{self.lower}..{self.upper}"
 
 
 class EnumType(Type):
@@ -125,6 +146,23 @@ class UnaryOp(Expression):
     def __init__(self, op: Token, expr: AST) -> None:
         self.token = self.op = op
         self.expr = expr
+
+
+class SetLiteral(Expression):
+    """Represents a set literal like [1, 3..5, 8]"""
+
+    def __init__(self, token: Token, elements: list[Expression]):
+        self.token = token
+        self.elements = elements  # Mix of individual values and SubrangeType
+
+
+class InOperator(Expression):
+    """Represents membership test like 'value in set'"""
+
+    def __init__(self, value: Expression, set_expr: Expression, token: Token):
+        self.value = value
+        self.set_expr = set_expr
+        self.token = token
 
 
 class Compound(Statement):
