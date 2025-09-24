@@ -70,7 +70,6 @@ from spi.symbol import (
     EnumTypeSymbol,
     FunctionSymbol,
     IntegerTypeSymbol,
-    MutabilityValidator,
     ProcedureSymbol,
     RealTypeSymbol,
     RecordFieldSymbol,
@@ -211,10 +210,17 @@ class SemanticAnalyzer(NodeVisitor):
         self.type_mappings: dict[str, Symbol] = {}  # { type_name -> type_symbol }
         # 循环作用域栈，用于跟踪当前是否在循环内部
         self.loop_stack: list[str] = []  # 存储循环类型 ('for' 或 'while')
+        self.in_mark = False
 
     def log(self, msg) -> None:
         if _SHOULD_LOG_SCOPE:
             print(msg)
+
+    def enter_in_scope(self) -> None:
+        self.in_mark = True
+
+    def leave_in_scope(self) -> None:
+        self.in_mark = False
 
     @staticmethod
     def string_type_name(size: int):
@@ -1067,6 +1073,8 @@ class SemanticAnalyzer(NodeVisitor):
         return BOOLEAN_TYPE_SYMBOL
 
     def visit_String(self, node: String) -> TypeSymbol:
+        if self.in_mark and len(node.value) == 1:
+            return CHAR_TYPE_SYMBOL
         return STRING_TYPE_SYMBOL
 
     def visit_Char(self, node: Char) -> TypeSymbol:
@@ -1444,8 +1452,13 @@ class SemanticAnalyzer(NodeVisitor):
         """Validate in operator operands"""
 
         # Visit and get types of both operands
+        self.enter_in_scope()
         value_type = self.visit(node.value)
+        self.leave_in_scope()
+
+        self.enter_in_scope()
         set_type = self.visit(node.set_expr)
+        self.leave_in_scope()
 
         # Validate that the right operand is a valid set or subrange
         if not isinstance(node.set_expr, (SetLiteral, SubrangeType)):

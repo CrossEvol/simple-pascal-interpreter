@@ -1,6 +1,7 @@
 import unittest
 
 from spi.ast import Var
+from spi.error import SemanticError
 from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
 from spi.object import (
@@ -15,7 +16,6 @@ from spi.object import (
     RecordObject,
     StringObject,
 )
-from spi.error import SemanticError
 from spi.parser import Parser
 from spi.semantic_analyzer import SemanticAnalyzer
 from spi.token import Token, TokenType
@@ -2959,6 +2959,24 @@ class InterpreterSubrangeSetTestCase(unittest.TestCase):
         self.assertEqual(ar["result1"].value, True)  # 5 is in range 1..10
         self.assertEqual(ar["result2"].value, False)  # 0 is not in range 1..10
         self.assertEqual(ar["result3"].value, False)  # 15 is not in range 1..10
+
+    def test_in_operator_evaluation_with_char_subrange(self):
+        """Test in operator evaluation with subrange operands"""
+        text = """\
+        program TestCharacterSet;
+        var
+            result1, result2: boolean;
+        begin
+            result1 := 'A' in [#65, #67, #69];  { ASCII values for 'A', 'C', 'E' }
+            result2 := #66 in ['A', 'C', 'E'];  { ASCII value for 'B' }
+        end.
+        """
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["result1"].value, True)  # 5 is in range 1..10
+        self.assertEqual(ar["result2"].value, False)  # 0 is not in range 1..10
 
     def test_in_operator_evaluation_with_set_literal(self):
         """Test in operator evaluation with set literal operands"""

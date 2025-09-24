@@ -1354,6 +1354,28 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         except SemanticError:
             self.fail("Valid in operator with subrange should not raise semantic error")
 
+    def test_in_operator_valid_with_char_subrange(self):
+        """Test valid in operator with subrange"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                program TestCharacterSet;
+                var
+                    result1, result2: boolean;
+                begin
+                    result1 := 'A' in [#65, #67, #69];  { ASCII values for 'A', 'C', 'E' }
+                    result2 := #66 in ['A', 'C', 'E'];  { ASCII value for 'B' }
+                writeln(result1);
+                writeln(result2);
+                end.
+                """
+            )
+        except SemanticError:
+            self.fail(
+                "Valid in operator with char subrange should not raise semantic error"
+            )
+
     def test_in_operator_type_mismatch_error(self):
         """Test in operator with incompatible types (should fail)"""
         with self.assertRaises(SemanticError) as cm:
@@ -1409,7 +1431,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES
         )
 
-    def test_in_operator_invalid_right_operand_error(self):
+    def test_in_operator_invalid_right_string_operand_error(self):
         """Test that invalid right operand type for in operator raises error"""
         text = """\
         program TestInOperatorInvalidRight;
