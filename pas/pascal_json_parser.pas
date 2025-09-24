@@ -1073,7 +1073,7 @@ begin
     jtNull: Write('null');
     jtBoolean: 
       if JSONValues[ValueIndex].BoolValue then Write('true') else Write('false');
-    jtNumber: Write(JSONValues[ValueIndex].NumValue:0:6);
+    jtNumber: Write(JSONValues[ValueIndex].NumValue);
     jtString:
     begin
       Write('"');
@@ -1134,7 +1134,7 @@ end;
 
 begin
   { 初始化内存管理器}
-  InitMemoryManager;
+  InitMemoryManager();
   
   { 示例JSON字符串}
   TestJSON := '{"name":"John","age":30,"city":"New York","isStudent":false,"courses":["Math","Physics"],"address":{"street":"123 Main St","zipcode":"10001"}}';
