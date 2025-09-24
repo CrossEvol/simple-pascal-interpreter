@@ -448,7 +448,10 @@ class Parser:
         self.eat(TokenType.LPAREN)
         identifiers = self.identifier_list()
         self.eat(TokenType.RPAREN)
-        return EnumType(identifiers)
+        return EnumType(
+            token=Token(type=TokenType.__ENUM__, value=identifiers[0] or ""),
+            enum_values=identifiers,
+        )
 
     def identifier_list(self) -> list[str]:
         """
@@ -549,7 +552,11 @@ class Parser:
             variant_part = self._parse_variant_part()
 
         self.eat(TokenType.END)
-        return RecordType(fields, variant_part)
+        return RecordType(
+            token=Token(type=TokenType.__RECORD__, value=""),
+            fields=fields,
+            variant_part=variant_part,
+        )
 
     def _parse_variant_part(self) -> VariantPart:
         """解析记录的变体部分，使用 'case kind of' 语法格式"""
@@ -1042,13 +1049,13 @@ class Parser:
         subrange_or_expr : summation_expr (RANGE summation_expr)?
         """
         left = self.summation_expr()
-        
+
         if self.current_token.type == TokenType.RANGE:
             token = self.current_token
             self.eat(TokenType.RANGE)
             right = self.summation_expr()
             return SubrangeType(token, left, right)
-        
+
         return left
 
     def summation_expr(self) -> Expression:
@@ -1178,22 +1185,22 @@ class Parser:
         """
         token = self.current_token
         self.eat(TokenType.LBRACKET)
-        
+
         elements = []
-        
+
         # Handle empty set
         if self.current_token.type == TokenType.RBRACKET:
             self.eat(TokenType.RBRACKET)
             return SetLiteral(token, elements)
-        
+
         # Parse first element
         elements.append(self.set_element())
-        
+
         # Parse remaining elements
         while self.current_token.type == TokenType.COMMA:
             self.eat(TokenType.COMMA)
             elements.append(self.set_element())
-        
+
         self.eat(TokenType.RBRACKET)
         return SetLiteral(token, elements)
 
@@ -1202,14 +1209,14 @@ class Parser:
         set_element: summation_expr (RANGE summation_expr)?
         """
         lower = self.summation_expr()
-        
+
         # Check if this is a range element
         if self.current_token.type == TokenType.RANGE:
             range_token = self.current_token
             self.eat(TokenType.RANGE)
             upper = self.summation_expr()
             return SubrangeType(range_token, lower, upper)
-        
+
         # Single element
         return lower
 

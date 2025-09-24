@@ -62,6 +62,8 @@ class TokenType(Enum):
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
     # misc
+    __ENUM__ = "__ENUM__"
+    __RECORD__ = "__RECORD__"
     ID = "ID"
     INTEGER_CONST = "INTEGER_CONST"
     REAL_CONST = "REAL_CONST"
