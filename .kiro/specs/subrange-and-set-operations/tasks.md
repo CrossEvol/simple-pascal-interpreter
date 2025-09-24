@@ -66,20 +66,31 @@
   - Write unit tests for in operator parsing with various operands
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 5. Add semantic analysis for new constructs
-  - [ ] 5.1 Implement subrange semantic validation
+- [x] 5. Add semantic analysis for new constructs
+
+
+
+
+
+  - [x] 5.1 Implement subrange semantic validation
+
+
     - Add visit_SubrangeType method to semantic analyzer
     - Validate simple literal bounds (numbers and characters only)
     - Skip complex expression validation (defer to interpreter)
     - Write tests for subrange semantic validation
     - _Requirements: 1.2, 1.4_
 
-  - [ ] 5.2 Implement set literal semantic validation
+  - [x] 5.2 Implement set literal semantic validation
+
+
     - Add visit_SetLiteral method to semantic analyzer
     - Validate type compatibility of all set elements
     - Handle mixed types and provide appropriate error messages
     - Write tests for set type validation scenarios
     - _Requirements: 2.4_
+
+
 
   - [ ] 5.3 Implement in operator semantic validation
     - Add visit_InOperator method to semantic analyzer

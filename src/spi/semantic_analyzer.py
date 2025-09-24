@@ -27,6 +27,7 @@ from spi.ast import (
     FunctionDecl,
     IfStatement,
     IndexSuffix,
+    InOperator,
     MemberSuffix,
     NoOp,
     Num,
@@ -36,8 +37,10 @@ from spi.ast import (
     ProcedureDecl,
     Program,
     RecordType,
+    SetLiteral,
     String,
     StringType,
+    SubrangeType,
     Type,
     TypeDeclaration,
     UnaryOp,
@@ -298,6 +301,14 @@ class SemanticAnalyzer(NodeVisitor):
                 # 枚举值作为特殊的变量符号插入
                 var_symbol = VarSymbol(enum_val, enum_symbol)
                 self.current_scope.insert(var_symbol)
+        elif isinstance(node.type_def, SubrangeType):
+            # Handle subrange type definition
+            subrange_type_symbol = self.visit_SubrangeType(node.type_def)
+
+            # Create a type alias for the subrange
+            alias_symbol = TypeAliasSymbol(type_name, subrange_type_symbol)
+            self.current_scope.insert(alias_symbol)
+            self.type_mappings[type_name] = alias_symbol
         elif isinstance(node.type_def, RecordType):
             # Handle record type definition
             # Process the record type to create a RecordTypeSymbol
@@ -1313,3 +1324,164 @@ class SemanticAnalyzer(NodeVisitor):
                 error_code=ErrorCode.CONTINUE_OUTSIDE_LOOP,
                 token=node.token,
             )
+
+    def visit_SubrangeType(self, node) -> TypeSymbol:
+        """Validate subrange type bounds (only simple literals)"""
+
+        # Helper function to check if a node represents a character
+        def is_char_node(ast_node):
+            return isinstance(ast_node, (Char, String)) and len(ast_node.value) == 1
+
+        # Helper function to check if a node represents a number
+        def is_num_node(ast_node):
+            return isinstance(ast_node, Num)
+
+        # Only validate simple literal bounds (numbers and characters)
+        # Complex expressions are deferred to interpreter
+        if (is_num_node(node.lower) or is_char_node(node.lower)) and (
+            is_num_node(node.upper) or is_char_node(node.upper)
+        ):
+            # Check that both bounds are compatible types
+            lower_is_num = is_num_node(node.lower)
+            upper_is_num = is_num_node(node.upper)
+            lower_is_char = is_char_node(node.lower)
+            upper_is_char = is_char_node(node.upper)
+
+            if (lower_is_num and upper_is_char) or (lower_is_char and upper_is_num):
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES,
+                    token=node.token,
+                )
+
+            lower_val = node.lower.value
+            upper_val = node.upper.value
+
+            # Check that lower bound <= upper bound for numeric types
+            if lower_is_num and upper_is_num and lower_val > upper_val:
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_SUBRANGE_INVALID,
+                    token=node.token,
+                )
+
+            # For character types, check ASCII values
+            elif lower_is_char and upper_is_char and ord(lower_val) > ord(upper_val):
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_SUBRANGE_INVALID,
+                    token=node.token,
+                )
+
+        # Visit the bounds to ensure they're semantically valid
+        self.visit(node.lower)
+        self.visit(node.upper)
+
+        # Return appropriate type symbol based on bounds
+        if is_num_node(node.lower) or is_num_node(node.upper):
+            return INTEGER_TYPE_SYMBOL
+        elif is_char_node(node.lower) or is_char_node(node.upper):
+            return CHAR_TYPE_SYMBOL
+        else:
+            # For complex expressions, defer type determination to interpreter
+            return INTEGER_TYPE_SYMBOL  # Default assumption
+
+    def visit_SetLiteral(self, node) -> TypeSymbol:
+        """Validate set literal element types"""
+
+        if not node.elements:
+            # Empty set - return a generic set type
+            return INTEGER_TYPE_SYMBOL  # Default for empty sets
+
+        element_types = []
+
+        for element in node.elements:
+            if isinstance(element, SubrangeType):
+                # For subrange elements, validate the subrange and get its type
+                element_type = self.visit_SubrangeType(element)
+            else:
+                # For individual elements, visit and get their type
+                element_type = self.visit(element)
+
+            element_types.append(element_type)
+
+        # Check type compatibility of all elements
+        first_type = element_types[0]
+        for i, element_type in enumerate(element_types[1:], 1):
+            if not self._are_set_element_types_compatible(first_type, element_type):
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_SET_TYPE_MISMATCH,
+                    token=node.token,
+                )
+
+        return first_type
+
+    def _are_set_element_types_compatible(
+        self, type1: TypeSymbol, type2: TypeSymbol
+    ) -> bool:
+        """Check if two types are compatible for set elements"""
+        if type1 is None or type2 is None:
+            return False
+
+        # Same type is always compatible (use 'is' for identity comparison)
+        if type1 is type2:
+            return True
+
+        # Check by name for basic types
+        type1_name = getattr(type1, "name", str(type1))
+        type2_name = getattr(type2, "name", str(type2))
+
+        if type1_name == type2_name:
+            return True
+
+        # Integer and real are compatible in sets
+        if (type1_name == "INTEGER" and type2_name == "REAL") or (
+            type1_name == "REAL" and type2_name == "INTEGER"
+        ):
+            return True
+
+        # Different basic types are not compatible
+        return False
+
+    def visit_InOperator(self, node) -> TypeSymbol:
+        """Validate in operator operands"""
+
+        # Visit and get types of both operands
+        value_type = self.visit(node.value)
+        set_type = self.visit(node.set_expr)
+
+        # Validate that the right operand is a valid set or subrange
+        if not isinstance(node.set_expr, (SetLiteral, SubrangeType)):
+            # Check if it's a variable that could be a set or subrange
+            if isinstance(node.set_expr, Var):
+                # For variables, we'll defer detailed validation to interpreter
+                pass
+            else:
+                self.error(
+                    error_code=ErrorCode.SEMANTIC_IN_OPERATOR_INVALID,
+                    token=node.token,
+                )
+
+        # Validate type compatibility between value and set elements
+        if not self._are_set_element_types_compatible(value_type, set_type):
+            self.error(
+                error_code=ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES,
+                token=node.token,
+            )
+
+        # In operator always returns boolean
+        return BOOLEAN_TYPE_SYMBOL
+
+    def _are_types_compatible(self, type1: TypeSymbol, type2: TypeSymbol) -> bool:
+        """Check if two types are compatible for operations"""
+        if type1 is None or type2 is None:
+            return False
+
+        # Same type is always compatible
+        if type1 == type2:
+            return True
+
+        # Integer and real are compatible
+        if (type1 == INTEGER_TYPE_SYMBOL and type2 == REAL_TYPE_SYMBOL) or (
+            type1 == REAL_TYPE_SYMBOL and type2 == INTEGER_TYPE_SYMBOL
+        ):
+            return True
+
+        return False

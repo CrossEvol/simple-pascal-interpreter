@@ -59,6 +59,11 @@ class ErrorCode(Enum):
     BREAK_OUTSIDE_LOOP = "Break statement must be inside a loop"
     CONTINUE_OUTSIDE_LOOP = "Continue statement must be inside a loop"
 
+    # Subrange and set operation errors
+    SEMANTIC_SUBRANGE_INVALID = "Invalid subrange bounds"
+    SEMANTIC_SET_TYPE_MISMATCH = "Set element type mismatch"
+    SEMANTIC_IN_OPERATOR_INVALID = "Invalid operands for 'in' operator"
+
     # Interpreter errors
     INTERPRETER_STATIC_ARRAY_MODIFY_LENGTH = "Interpreter static array modify length"
     INTERPRETER_UNKNOWN_BUILTIN_FUNCTION = "Interpreter unknown builtin function"

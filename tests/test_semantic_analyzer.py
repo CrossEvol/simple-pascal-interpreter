@@ -1174,6 +1174,222 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(the_exception.error_code, ErrorCode.DUPLICATE_ID)
         self.assertEqual(the_exception.token.value, "VALUE")
 
+    def test_subrange_valid_integer_bounds(self):
+        """Test valid integer subrange bounds"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                TYPE
+                    Range = 1..10;
+                BEGIN
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Valid subrange should not raise semantic error")
+
+    def test_subrange_valid_char_bounds(self):
+        """Test valid character subrange bounds"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                TYPE
+                    CharRange = 'a'..'z';
+                BEGIN
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Valid character subrange should not raise semantic error")
+
+    def test_subrange_invalid_integer_bounds(self):
+        """Test invalid integer subrange bounds (lower > upper)"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                TYPE
+                    Range = 10..1;  {Invalid: lower > upper}
+                BEGIN
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_SUBRANGE_INVALID)
+
+    def test_subrange_invalid_char_bounds(self):
+        """Test invalid character subrange bounds (lower > upper)"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                TYPE
+                    CharRange = 'z'..'a';  {Invalid: 'z' > 'a'}
+                BEGIN
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_SUBRANGE_INVALID)
+
+    def test_subrange_mixed_type_bounds(self):
+        """Test subrange with mixed type bounds (should fail)"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                TYPE
+                    Range = 1..'z';  {Invalid: mixed integer and char}
+                BEGIN
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES
+        )
+
+    def test_set_literal_valid_homogeneous_integers(self):
+        """Test valid set literal with homogeneous integer elements"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    s: BOOLEAN;
+                BEGIN
+                    s := 5 in [1, 2, 3, 4, 5];
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Valid homogeneous set should not raise semantic error")
+
+    def test_set_literal_valid_with_ranges(self):
+        """Test valid set literal with ranges"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    s: BOOLEAN;
+                BEGIN
+                    s := 5 in [1..3, 7, 9..10];
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Valid set with ranges should not raise semantic error")
+
+    def test_set_literal_empty_set(self):
+        """Test empty set literal"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    s: BOOLEAN;
+                BEGIN
+                    s := 5 in [];
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Empty set should not raise semantic error")
+
+    def test_set_literal_mixed_types_error(self):
+        """Test set literal with mixed incompatible types (should fail)"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    s: BOOLEAN;
+                BEGIN
+                    s := 5 in [1, 'a', 3];  {Mixed integer and char}
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(the_exception.error_code, ErrorCode.SEMANTIC_SET_TYPE_MISMATCH)
+
+    def test_in_operator_valid_with_set_literal(self):
+        """Test valid in operator with set literal"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    result: BOOLEAN;
+                BEGIN
+                    result := 5 in [1, 2, 3, 4, 5];
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Valid in operator with set should not raise semantic error")
+
+    def test_in_operator_valid_with_subrange(self):
+        """Test valid in operator with subrange"""
+        # This should not raise an error
+        try:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    result: BOOLEAN;
+                BEGIN
+                    result := 5 in 1..10;
+                END.
+                """
+            )
+        except SemanticError:
+            self.fail("Valid in operator with subrange should not raise semantic error")
+
+    def test_in_operator_type_mismatch_error(self):
+        """Test in operator with incompatible types (should fail)"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    result: BOOLEAN;
+                BEGIN
+                    result := 'x' in [1, 2, 3];  {Char in integer set}
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES
+        )
+
+    def test_in_operator_invalid_right_operand_error(self):
+        """Test in operator with invalid right operand (should fail)"""
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+                PROGRAM Test;
+                VAR
+                    result: BOOLEAN;
+                BEGIN
+                    result := 5 in 42;  {Invalid: literal number is not a set or subrange}
+                END.
+                """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_IN_OPERATOR_INVALID
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
