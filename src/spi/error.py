@@ -71,6 +71,7 @@ class ErrorCode(Enum):
     INTERPRETER_UNKNOWN_BUILTIN_PROCEDURE = "Interpreter unknown builtin procedure"
     INTERPRETER_UNKNOWN_PROCEDURE = "Interpreter unknown procedure"
     INTERPRETER_ARRAY_RANGE_INVALID = "Interpreter array range invalid"
+    INTERPRETER_ARRAY_INDEX_OUT_OF_BOUNDS = "Interpreter array index out of bounds"
     INTERPRETER_UNKNOWN_OPERATOR = "Interpreter unknown operator"
     INTERPRETER_UNKNOWN_ENUM = "Interpreter unknown enum"
     INTERPRETER_UNKNOWN_BOOLEAN = "Interpreter unknown boolean"
@@ -85,6 +86,21 @@ class Error(Exception):
         self.token = token
         # add exception class name before the message
         self.message = f"{self.__class__.__name__}: {message}"
+
+    def __str__(self) -> str:
+        # Include error code and message in the string representation
+        error_info = f"[{self.error_code.value}]" if self.error_code else "[Unknown Error]"
+        if self.message:
+            # Remove duplicate class name if it's already in the message
+            msg = self.message
+            if self.message.startswith(f"{self.__class__.__name__}: "):
+                msg = self.message[len(self.__class__.__name__) + 2:]
+            return f"{error_info} {self.__class__.__name__}: {msg}" if msg else f"{error_info} {self.__class__.__name__}: No message provided"
+        return f"{error_info} {self.__class__.__name__}: No message provided"
+
+    def __repr__(self) -> str:
+        # Provide a detailed representation including all attributes
+        return f"{self.__class__.__name__}(error_code={self.error_code}, token={self.token}, message={repr(self.message)})"
 
 
 ###############################################################################

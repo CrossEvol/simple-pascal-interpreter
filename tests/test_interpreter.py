@@ -1,7 +1,7 @@
 import unittest
 
 from spi.ast import Var
-from spi.error import SemanticError
+from spi.error import ErrorCode
 from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
 from spi.object import (
@@ -1196,15 +1196,16 @@ begin
     d := nestArr[100][100];
 end.
     """
-        interpreter = makeInterpreter(text)
-        interpreter.interpret()
+        with self.assertRaises(InterpreterError) as cm:
+            interpreter = makeInterpreter(text)
+            interpreter.interpret()
 
-        ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["a"].value, 0)
-        self.assertEqual(ar["b"].value, False)
-        self.assertEqual(ar["c"].value, 0.0)
-        self.assertEqual(ar["d"].value, 0)
-        self.assertEqual(ar.nesting_level, 1)
+            ar = interpreter.call_stack.peek()
+            self.assertEqual(ar.nesting_level, 1)
+        self.assertIsInstance(cm.exception, InterpreterError)
+        self.assertEqual(
+            cm.exception.error_code, ErrorCode.INTERPRETER_ARRAY_INDEX_OUT_OF_BOUNDS
+        )
 
     def test_string(self):
         text = """\

@@ -773,9 +773,16 @@ class Interpreter(NodeVisitor):
 
     def __initArray(self, node: Type) -> ArrayObject:
         if isinstance(node, ArrayType):
-            lower_bound: int = self.visit(node.lower).value
-            upper_bound: int = self.visit(node.upper).value
-            if lower_bound > upper_bound:
+            # Get bounds from SubrangeType if available, otherwise use backward compatibility
+            if node.bounds:
+                lower_bound: int = self.visit(node.bounds.lower).value
+                upper_bound: int = self.visit(node.bounds.upper).value
+            else:
+                # For dynamic arrays, use default bounds
+                lower_bound: int = 0
+                upper_bound: int = 0
+
+            if not node.dynamic and lower_bound > upper_bound:
                 raise InterpreterError(
                     error_code=ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID,
                     token=node.token,
@@ -812,12 +819,18 @@ class Interpreter(NodeVisitor):
                 # For complex types without simple token, treat as custom
                 element_type = ElementType.CUSTOM
 
+            # Create SubrangeObject for bounds checking if we have bounds
+            bounds_subrange = (
+                SubrangeObject(lower_bound, upper_bound)
+                if node.bounds and not node.dynamic
+                else SubrangeObject(0, 0)
+            )
+
             # Create array with the determined element type
             array_obj = ArrayObject(
                 element_type=element_type,
-                lower_bound=lower_bound,
-                upper_bound=upper_bound,
                 dynamic=node.dynamic,
+                bounds_subrange=bounds_subrange,
             )
 
             # For record and custom types, we need to post-initialize elements

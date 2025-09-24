@@ -690,8 +690,9 @@ class SemanticAnalyzer(NodeVisitor):
                 token=node.token,
                 message=f"{ErrorCode.SEMANTIC_UNKNOWN_ARRAY_ELEMENT_TYPE.value} -> {node.token}",
             )
-        self.visit(node.lower)
-        self.visit(node.upper)
+        # Visit bounds if they exist (for static arrays)
+        if node.bounds:
+            self.visit(node.bounds)
         type_name = str(node)
         type_symbol = self.current_scope.lookup(type_name)
         if type_symbol is None:

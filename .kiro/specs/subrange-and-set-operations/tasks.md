@@ -161,12 +161,25 @@
     - _Requirements: 3.1, 3.2, 3.3_
 
 - [ ] 8. Update array implementation to use subranges
-  - [ ] 8.1 Modify ArrayType to use SubrangeType
+
+
+
+
+
+
+
+  - [x] 8.1 Modify ArrayType to use SubrangeType
+
+
+
+
     - Update ArrayType AST node to store SubrangeType instead of separate bounds
     - Modify array creation logic to work with SubrangeType bounds
     - Ensure array bounds checking uses subrange containment
     - Write tests to verify array functionality with subrange bounds
     - _Requirements: 4.1, 4.2_
+
+
 
   - [ ] 8.2 Update array bounds validation
     - Modify array bounds checking to use SubrangeObject.contains method

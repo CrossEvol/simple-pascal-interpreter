@@ -270,22 +270,47 @@ class CharObject(Object):
         return NotImplemented
 
 
+class SubrangeObject(Object):
+    """Runtime object representing a subrange type like 1..10"""
+
+    def __init__(self, lower: int, upper: int):
+        super().__init__((lower, upper))
+        self.lower = lower
+        self.upper = upper
+
+    def contains(self, value: int) -> bool:
+        """Check if value is within the subrange bounds"""
+        return self.lower <= value <= self.upper
+
+    def to_set(self) -> set[int]:
+        """Convert subrange to a set of all values in the range"""
+        return set(range(self.lower, self.upper + 1))
+
+    def __str__(self):
+        return f"{self.lower}..{self.upper}"
+
+    def __repr__(self):
+        return f"SubrangeObject({self.lower}, {self.upper})"
+
+
 class ArrayObject(Object):
     """Array value object"""
 
     def __init__(
         self,
         element_type: ElementType,
-        lower_bound: int = 0,
-        upper_bound: int = 0,
         dynamic: bool = False,
+        bounds_subrange: SubrangeObject = SubrangeObject(lower=0, upper=0),
     ):
         super().__init__({})
         self.element_type = element_type
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
         self.dynamic = dynamic
+        self.bounds_subrange = (
+            bounds_subrange  # Optional SubrangeObject for bounds checking
+        )
 
+        lower_bound = bounds_subrange.lower
+        upper_bound = bounds_subrange.upper
         # Initialize static arrays
         if not dynamic and lower_bound <= upper_bound:
             for i in range(lower_bound, upper_bound + 1):
@@ -304,7 +329,11 @@ class ArrayObject(Object):
         elif self.element_type == ElementType.CHAR:
             return CharObject("")
         elif self.element_type == ElementType.ARRAY:
-            return ArrayObject(ElementType.INTEGER, 0, 0, True)  # Default nested array
+            return ArrayObject(
+                element_type=ElementType.INTEGER,
+                dynamic=True,
+                bounds_subrange=SubrangeObject(lower=0, upper=0),
+            )  # Default nested array
         elif self.element_type == ElementType.RECORD:
             # For record elements, return NullObject - will be initialized by interpreter
             return NullObject()
@@ -314,8 +343,25 @@ class ArrayObject(Object):
         else:
             return Object()
 
+    @property
+    def lower_bound(self) -> int:
+        return self.bounds_subrange.lower
+
+    @property
+    def upper_bound(self) -> int:
+        return self.bounds_subrange.upper
+
     def __getitem__(self, index):
         """Get element at index"""
+        # For static arrays, check bounds using SubrangeObject if available
+        if not self.dynamic and self.bounds_subrange:
+            if not self.bounds_subrange.contains(index):
+                raise InterpreterError(
+                    error_code=ErrorCode.INTERPRETER_ARRAY_INDEX_OUT_OF_BOUNDS,
+                    token=None,
+                    message=f"Array index {index} out of bounds {self.bounds_subrange}",
+                )
+
         if index in self.value:
             return self.value[index]
         else:
@@ -324,6 +370,15 @@ class ArrayObject(Object):
 
     def __setitem__(self, index, value):
         """Set element at index"""
+        # For static arrays, check bounds using SubrangeObject if available
+        if not self.dynamic and self.bounds_subrange:
+            if not self.bounds_subrange.contains(index):
+                raise InterpreterError(
+                    error_code=ErrorCode.INTERPRETER_ARRAY_INDEX_OUT_OF_BOUNDS,
+                    token=None,
+                    message=f"Array index {index} out of bounds {self.bounds_subrange}",
+                )
+
         self.value[index] = value
 
     def __len__(self):
@@ -448,29 +503,6 @@ class FunctionObject(Object):
         return len(self.formal_params) - 1 if len(self.formal_params) > 0 else 0
 
 
-class SubrangeObject(Object):
-    """Runtime object representing a subrange type like 1..10"""
-
-    def __init__(self, lower: int, upper: int):
-        super().__init__((lower, upper))
-        self.lower = lower
-        self.upper = upper
-
-    def contains(self, value: int) -> bool:
-        """Check if value is within the subrange bounds"""
-        return self.lower <= value <= self.upper
-
-    def to_set(self) -> set[int]:
-        """Convert subrange to a set of all values in the range"""
-        return set(range(self.lower, self.upper + 1))
-
-    def __str__(self):
-        return f"{self.lower}..{self.upper}"
-
-    def __repr__(self):
-        return f"SubrangeObject({self.lower}, {self.upper})"
-
-
 class SetObject(Object):
     """Runtime object representing a set of values"""
 
@@ -492,15 +524,15 @@ class SetObject(Object):
         """Remove a value from the set"""
         self.elements.discard(value)
 
-    def union(self, other: 'SetObject') -> 'SetObject':
+    def union(self, other: "SetObject") -> "SetObject":
         """Return union of this set with another set"""
         return SetObject(self.elements | other.elements)
 
-    def intersection(self, other: 'SetObject') -> 'SetObject':
+    def intersection(self, other: "SetObject") -> "SetObject":
         """Return intersection of this set with another set"""
         return SetObject(self.elements & other.elements)
 
-    def difference(self, other: 'SetObject') -> 'SetObject':
+    def difference(self, other: "SetObject") -> "SetObject":
         """Return difference of this set with another set"""
         return SetObject(self.elements - other.elements)
 
