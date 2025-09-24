@@ -316,7 +316,7 @@ def handle_length(interpreter: Interpreter, node: FunctionCall):
     return result
 
 
-def handle_ord(interpreter: Interpreter, node: FunctionCall):
+def handle_ord(interpreter: Interpreter, node: FunctionCall) -> IntegerObject:
     """Handle ORD built-in function - returns ASCII code of a character or ordinal of an enum"""
     func_name = node.func_name
     actual_params = node.actual_params
@@ -1090,6 +1090,14 @@ class Interpreter(NodeVisitor):
                 return BooleanObject(value=left_obj == right_obj)
             elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
                 return BooleanObject(value=left_obj == right_obj)
+            elif isinstance(left_obj, CharObject) and isinstance(
+                right_obj, StringObject
+            ):
+                return BooleanObject(value=left_obj.value == right_obj.value)
+            elif isinstance(left_obj, StringObject) and isinstance(
+                right_obj, CharObject
+            ):
+                return BooleanObject(value=left_obj.value == right_obj.value)
         elif node.op.type == TokenType.NE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject
@@ -1103,6 +1111,14 @@ class Interpreter(NodeVisitor):
                 return BooleanObject(value=left_obj != right_obj)
             elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
                 return BooleanObject(value=left_obj != right_obj)
+            elif isinstance(left_obj, CharObject) and isinstance(
+                right_obj, StringObject
+            ):
+                return BooleanObject(value=left_obj.value != right_obj.value)
+            elif isinstance(left_obj, StringObject) and isinstance(
+                right_obj, CharObject
+            ):
+                return BooleanObject(value=left_obj.value != right_obj.value)
         elif node.op.type == TokenType.LE:
             if isinstance(left_obj, NumberObject) and isinstance(
                 right_obj, NumberObject

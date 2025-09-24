@@ -115,27 +115,21 @@ class ScopedSymbolTable:
         self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.LENGTH.name,
-                return_type=Type(
-                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
-                ),
+                return_type=IntegerTypeSymbol(),
                 formal_params=[],
             )
         )
         self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.ORD.name,
-                return_type=Type(
-                    token=Token(type=TokenType.INTEGER, value=0, lineno=-1, column=-1)
-                ),
+                return_type=IntegerTypeSymbol(),
                 formal_params=[],
             )
         )
         self.insert(
             BuiltinFunctionSymbol(
                 name=NativeMethod.CHR.name,
-                return_type=Type(
-                    token=Token(type=TokenType.CHAR, value="", lineno=-1, column=-1)
-                ),
+                return_type=IntegerTypeSymbol(),
                 formal_params=[],
             )
         )
@@ -601,7 +595,9 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_BinOp(self, node: BinOp) -> TypeSymbol:
         # Visit operands and get their typedef
         left_type = self.visit(node.left)
+        self.enter_in_scope()
         right_type = self.visit(node.right)
+        self.leave_in_scope()
 
         # Use TypeSymbol operations for type checking
         if isinstance(left_type, TypeSymbol) and isinstance(right_type, TypeSymbol):
@@ -1208,11 +1204,11 @@ class SemanticAnalyzer(NodeVisitor):
             proc_symbol.formal_params, node.actual_params
         ):
             if param_node.param_mode == ParamMode.REFER and not isinstance(
-                argument_node, Var
+                argument_node, (Var, AccessExpression)
             ):
                 self.error(
                     error_code=ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED,
-                    token=param_node.name,
+                    token=node.token,
                 )
 
         for param_node in node.actual_params:
@@ -1295,11 +1291,11 @@ class SemanticAnalyzer(NodeVisitor):
             func_symbol.formal_params, node.actual_params
         ):
             if param_node.param_mode == ParamMode.REFER and not isinstance(
-                argument_node, Var
+                argument_node, (Var, AccessExpression)
             ):
                 self.error(
                     error_code=ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED,
-                    token=param_node.name,
+                    token=node.token,
                 )
 
         for param_node in node.actual_params:

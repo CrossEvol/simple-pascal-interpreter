@@ -151,7 +151,7 @@ end;
 function HashString(const Str: TJSONString; Len: Integer): Integer;
 var
   i: Integer;
-  Hash: LongInt;
+  Hash: Integer;
 begin
   Hash := 0;
   for i := 1 to Len do

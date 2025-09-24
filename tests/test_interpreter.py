@@ -216,6 +216,28 @@ end. {Main}
         self.assertEqual(ar["f4"].value, True)
         self.assertEqual(ar.nesting_level, 1)
 
+    def test_eq_calculus_for_char(self):
+        text = """\
+program NotEQ;
+
+var 
+  ch : Char;
+  b1,b2 : Boolean;
+
+begin 
+  b1 := ch = ' ';
+  b2 := ch <> ' ';
+end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["ch"].value, "")
+        self.assertEqual(ar["b1"].value, False)
+        self.assertEqual(ar["b2"].value, True)
+        self.assertEqual(ar.nesting_level, 1)
+
 
 class InterpreterNativeMethodTestCase(unittest.TestCase):
     def test_write_and_writeln(self):

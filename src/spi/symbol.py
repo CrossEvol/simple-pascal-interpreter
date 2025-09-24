@@ -91,22 +91,6 @@ class NeverSymbol(TypeSymbol):
 NEVER_SYMBOL = NeverSymbol()
 
 
-class PrimitiveTypeSymbol(TypeSymbol, ABC):
-    """Abstract base class for primitive types (INTEGER, REAL, BOOLEAN, CHAR)"""
-
-    def __init__(self, name: str):
-        super().__init__(name)
-
-    def __str__(self) -> str:
-        return self.name
-
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-        )
-
-
 ###############################################################################
 #                                                                             #
 #  TYPE SYMBOL INFRASTRUCTURE                                                #
@@ -1241,7 +1225,10 @@ class FunctionSymbol(Symbol):
 
 class BuiltinFunctionSymbol(Symbol):
     def __init__(
-        self, name: str, return_type: Type, formal_params: list[Symbol] | None = None
+        self,
+        name: str,
+        return_type: TypeSymbol,
+        formal_params: list[Symbol] | None = None,
     ) -> None:
         super().__init__(name)
         # a list of VarSymbol objects

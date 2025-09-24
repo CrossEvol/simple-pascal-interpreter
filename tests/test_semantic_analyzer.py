@@ -275,7 +275,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_binop_integer_addition_valid(self):
         """Test that INTEGER + INTEGER is valid"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -290,7 +290,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_binop_integer_real_addition_valid(self):
         """Test that INTEGER + REAL is valid"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -346,7 +346,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_binop_division_returns_real(self):
         """Test that division always returns REAL type"""
         # This should not raise an exception - INTEGER / INTEGER should be valid and return REAL
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -362,7 +362,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_binop_comparison_returns_boolean(self):
         """Test that comparison operations return BOOLEAN type"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -378,7 +378,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_assignment_type_compatibility_valid(self):
         """Test that compatible type assignments are valid"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -435,7 +435,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_variable_declaration_creates_mutable_vars(self):
         """Test that VAR declarations create mutable variables"""
         # This should not raise an exception - all VAR declarations should be mutable
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -453,7 +453,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_type_alias_resolution_in_var_decl(self):
         """Test that type aliases are resolved during variable declaration"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         TYPE
@@ -470,7 +470,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_type_declaration_creates_appropriate_symbols(self):
         """Test that type declarations create appropriate TypeSymbol instances"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         TYPE
@@ -493,7 +493,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_chained_type_alias_resolution(self):
         """Test that chained type aliases are resolved correctly"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         TYPE
@@ -534,7 +534,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_unary_op_integer_valid(self):
         """Test that unary operations on INTEGER are valid"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -551,7 +551,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_unary_op_real_valid(self):
         """Test that unary operations on REAL are valid"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -568,7 +568,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_unary_op_boolean_not_valid(self):
         """Test that NOT operation on BOOLEAN is valid"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -621,10 +621,26 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             the_exception.error_code, ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES
         )
 
+    def test_binOp_for_char_and_string(self):
+        """Test that NOT operation on INTEGER raises error"""
+        self.runSemanticAnalyzer(
+            """
+        program EqualOperatorForCharAndString;
+
+        var 
+            ch : Char;
+            b : Boolean;
+        begin
+            ch := 'A';
+            b := ch = ' ';
+        end.
+        """
+        )
+
     def test_array_access_type_resolution(self):
         """Test that array access returns correct element type"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         TYPE
@@ -642,7 +658,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_string_indexing_returns_char(self):
         """Test that string indexing returns CHAR type"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -659,7 +675,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_record_field_access_type_resolution(self):
         """Test that record field access returns correct field type"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         TYPE
@@ -731,7 +747,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         """Test that nested array access works correctly"""
         # For now, let's test a simpler case - this might need parser support for nested arrays
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         TYPE
@@ -770,7 +786,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         # Currently, the semantic analyzer allows member access but returns NEVER type
         # This test verifies that the type system handles it correctly
         # In a stricter implementation, this could raise an error during assignment
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
         PROGRAM Test;
         VAR
@@ -914,7 +930,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(
             the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
         )
-        self.assertEqual(the_exception.token, "a")
+        self.assertEqual(the_exception.token.value, "Add")
 
     def test_function_var_param_should_be_variable_identifier(self):
         self.runSemanticAnalyzer(
@@ -954,7 +970,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
         self.assertEqual(
             the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
         )
-        self.assertEqual(the_exception.token, "a")
+        self.assertEqual(the_exception.token.value, "Add")
 
     def test_procedure_var_param_should_be_variable_identifier(self):
         self.runSemanticAnalyzer(
@@ -999,7 +1015,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_const_declaration_semantic_analysis(self):
         """Test that const declarations are semantically analyzed correctly"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
             PROGRAM TestConst;
             CONST
@@ -1084,7 +1100,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_const_parameter_valid_usage(self):
         """Test that const parameters can be used in expressions without error"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
             PROGRAM TestConstParamValid;
             VAR
@@ -1116,7 +1132,7 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
     def test_mixed_parameter_modes_semantic_analysis(self):
         """Test semantic analysis of mixed parameter modes"""
         # This should not raise an exception
-        analyzer = self.runSemanticAnalyzer(
+        self.runSemanticAnalyzer(
             """
             PROGRAM TestMixedParams;
             VAR
