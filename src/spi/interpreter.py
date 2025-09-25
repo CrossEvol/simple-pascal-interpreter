@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Callable, cast
 
 from spi.ast import (
+    AST,
     AccessExpression,
     ArrayType,
     Assign,
@@ -236,7 +237,7 @@ def handle_inc(interpreter: Interpreter, node: ProcedureCall):
     interpreter.log(str(interpreter.call_stack))
 
     # Get the variable name and optional increment value
-    var_name = actual_params[0].value
+    key = f"__PROCEDURE__{proc_name}__{0}"
     increment = 1  # Default increment
 
     if len(actual_params) > 1:
@@ -245,13 +246,13 @@ def handle_inc(interpreter: Interpreter, node: ProcedureCall):
             increment = increment_obj.value
 
     # Get current value and increment it
-    var_obj = ar.get(var_name)
+    var_obj = interpreter.visit(actual_params[0])
     if isinstance(var_obj, NumberObject):
         new_value = var_obj.value + increment
         if isinstance(var_obj, IntegerObject):
-            ar[var_name] = IntegerObject(new_value)
+            ar[key] = IntegerObject(new_value)
         else:
-            ar[var_name] = RealObject(new_value)
+            ar[key] = RealObject(new_value)
 
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -268,7 +269,7 @@ def handle_dec(interpreter: Interpreter, node: ProcedureCall):
     interpreter.log(str(interpreter.call_stack))
 
     # Get the variable name and optional decrement value
-    var_name = actual_params[0].value
+    key = f"__PROCEDURE__{proc_name}__{0}"
     decrement = 1  # Default decrement
 
     if len(actual_params) > 1:
@@ -277,13 +278,13 @@ def handle_dec(interpreter: Interpreter, node: ProcedureCall):
             decrement = decrement_obj.value
 
     # Get current value and decrement it
-    var_obj = ar.get(var_name)
+    var_obj = interpreter.visit(actual_params[0])
     if isinstance(var_obj, NumberObject):
         new_value = var_obj.value - decrement
         if isinstance(var_obj, IntegerObject):
-            ar[var_name] = IntegerObject(new_value)
+            ar[key] = IntegerObject(new_value)
         else:
-            ar[var_name] = RealObject(new_value)
+            ar[key] = RealObject(new_value)
 
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -399,6 +400,10 @@ class CallStack:
             self._records[-2].refer_back(self._records[-1].mappings)
         return self._records.pop()
 
+    @property
+    def preMappingNodes(self) -> dict[AST, AST]:
+        return self._records[-1].mappingNodes
+
     def peek(self) -> ActivationRecord:
         return self._records[-1]
 
@@ -422,6 +427,7 @@ class ActivationRecord:
         self.nesting_level = nesting_level
         self.members: dict[str | int, Object] = {}
         self.mappings: dict[str, str] = {}
+        self.mappingNodes: dict[AST, AST] = {}
 
     def __setitem__(self, key: str | int, value: Object) -> None:
         self.members[key] = value
@@ -450,7 +456,7 @@ class ActivationRecord:
             )
         ]
         for name, val in self.members.items():
-            lines.append(f"   {name:<20}: {val}")
+            lines.append(f"   {name}: {val}")
 
         s = "\n".join(lines)
         return s
@@ -532,7 +538,7 @@ class Interpreter(NodeVisitor):
             if isinstance(current_obj, NullObject):
                 new_obj = self._create_complex_object_from_type_node(field_type)
                 if not isinstance(new_obj, NullObject):
-                    record_obj.fields[field_name] = new_obj
+                    record_obj[field_name] = new_obj
 
     def _create_complex_object_from_type_node(self, type_node) -> Object:
         """根据类型节点创建复杂类型对象，使用interpreter的属性信息"""
@@ -771,82 +777,75 @@ class Interpreter(NodeVisitor):
         const_value = self.visit(node.value_expr)
         ar[node.var_node.value] = const_value
 
-    def __initArray(self, node: Type) -> ArrayObject:
-        if isinstance(node, ArrayType):
-            # Get bounds from SubrangeType if available, otherwise use backward compatibility
-            if node.bounds:
-                lower_bound: int = self.visit(node.bounds.lower).value
-                upper_bound: int = self.visit(node.bounds.upper).value
-            else:
-                # For dynamic arrays, use default bounds
-                lower_bound: int = 0
-                upper_bound: int = 0
+    def __initArray(self, node: ArrayType) -> ArrayObject:
+        # Get bounds from SubrangeType if available, otherwise use backward compatibility
+        if node.bounds:
+            lower_bound: int = self.visit(node.bounds.lower).value
+            upper_bound: int = self.visit(node.bounds.upper).value
+        else:
+            # For dynamic arrays, use default bounds
+            lower_bound: int = 0
+            upper_bound: int = 0
 
-            if not node.dynamic and lower_bound > upper_bound:
-                raise InterpreterError(
-                    error_code=ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID,
-                    token=node.token,
-                    message=f"{ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID.value} -> {node.token}",
-                )
-
-            # Determine element type
-            element_type = ElementType.INTEGER  # default
-
-            # Check if element_type has a token attribute for basic types
-            if hasattr(node.element_type, "token"):
-                if node.element_type.token.type == TokenType.BOOLEAN:
-                    element_type = ElementType.BOOL
-                elif node.element_type.token.type == TokenType.INTEGER:
-                    element_type = ElementType.INTEGER
-                elif node.element_type.token.type == TokenType.REAL:
-                    element_type = ElementType.REAL
-                elif node.element_type.token.type == TokenType.STRING:
-                    element_type = ElementType.STRING
-                elif node.element_type.token.type == TokenType.CHAR:
-                    element_type = ElementType.CHAR
-                elif node.element_type.token.type == TokenType.ARRAY:
-                    element_type = ElementType.ARRAY
-                elif node.element_type.token.type == TokenType.ID:
-                    # Custom type (record, enum, etc.)
-                    # Check if it's a record type first
-                    type_name = node.element_type.value
-                    if type_name in self.record_types:
-                        element_type = ElementType.RECORD
-                    else:
-                        # Could be enum or other custom type
-                        element_type = ElementType.CUSTOM
-            else:
-                # For complex types without simple token, treat as custom
-                element_type = ElementType.CUSTOM
-
-            # Create SubrangeObject for bounds checking if we have bounds
-            bounds_subrange = (
-                SubrangeObject(lower_bound, upper_bound)
-                if node.bounds and not node.dynamic
-                else SubrangeObject(0, 0)
+        if not node.dynamic and lower_bound > upper_bound:
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID,
+                token=node.token,
+                message=f"{ErrorCode.INTERPRETER_ARRAY_RANGE_INVALID.value} -> {node.token}",
             )
 
-            # Create array with the determined element type
-            array_obj = ArrayObject(
-                element_type=element_type,
-                dynamic=node.dynamic,
-                bounds_subrange=bounds_subrange,
-            )
+        # Determine element type
+        element_type = ElementType.INTEGER  # default
 
-            # For record and custom types, we need to post-initialize elements
-            if (
-                element_type in (ElementType.RECORD, ElementType.CUSTOM)
-                and not node.dynamic
-            ):
-                self._post_initialize_array_elements(array_obj, node.element_type)
+        # Check if element_type has a token attribute for basic types
+        if hasattr(node.element_type, "token"):
+            if node.element_type.token.type == TokenType.BOOLEAN:
+                element_type = ElementType.BOOL
+            elif node.element_type.token.type == TokenType.INTEGER:
+                element_type = ElementType.INTEGER
+            elif node.element_type.token.type == TokenType.REAL:
+                element_type = ElementType.REAL
+            elif node.element_type.token.type == TokenType.STRING:
+                element_type = ElementType.STRING
+            elif node.element_type.token.type == TokenType.CHAR:
+                element_type = ElementType.CHAR
+            elif node.element_type.token.type == TokenType.ARRAY:
+                element_type = ElementType.ARRAY
+            elif node.element_type.token.type == TokenType.ID:
+                # Custom type (record, enum, etc.)
+                # Check if it's a record type first
+                type_name = node.element_type.value
+                if type_name in self.record_types:
+                    element_type = ElementType.RECORD
+                else:
+                    # Could be enum or other custom type
+                    element_type = ElementType.CUSTOM
+        else:
+            # For complex types without simple token, treat as custom
+            element_type = ElementType.CUSTOM
 
-            return array_obj
-
-        raise SemanticError(
-            error_code=ErrorCode.SEMANTIC_UNKNOWN_TYPE,
-            token=node.token,
-            message=f"{ErrorCode.SEMANTIC_UNKNOWN_TYPE.value} -> {node.token}",
+        # Create SubrangeObject for bounds checking if we have bounds
+        bounds_subrange = (
+            SubrangeObject(lower_bound, upper_bound)
+            if node.bounds and not node.dynamic
+            else SubrangeObject(0, 0)
         )
+
+        # Create array with the determined element type
+        array_obj = ArrayObject(
+            element_type=element_type,
+            dynamic=node.dynamic,
+            bounds_subrange=bounds_subrange,
+        )
+
+        # For record and custom types, we need to post-initialize elements
+        if (
+            element_type in (ElementType.RECORD, ElementType.CUSTOM)
+            and not node.dynamic
+        ):
+            self._post_initialize_array_elements(array_obj, node.element_type)
+
+        return array_obj
 
     def visit_Type(self, node: Type) -> None:
         # Do nothing
@@ -1245,6 +1244,15 @@ class Interpreter(NodeVisitor):
                                 )
 
                         current_obj = current_obj[field_name]
+                        if isinstance(current_obj, RecordObject):
+                            record_obj = cast(RecordObject, current_obj)
+                            for field_name in record_obj.pending_field_name:
+                                if isinstance(record_obj[field_name], NullObject):
+                                    record_obj[field_name] = (
+                                        self._create_complex_object_from_type_node(
+                                            record_obj.pending_fields[field_name]
+                                        )
+                                    )
                     else:
                         # Unsupported member access
                         return
@@ -1295,7 +1303,15 @@ class Interpreter(NodeVisitor):
                                 )
 
                     current_obj[field_name] = var_value
-
+                    if isinstance(current_obj, RecordObject):
+                        record_obj = cast(RecordObject, current_obj)
+                        for field_name in record_obj.pending_field_name:
+                            if isinstance(record_obj[field_name], NullObject):
+                                record_obj[field_name] = (
+                                    self._create_complex_object_from_type_node(
+                                        record_obj.pending_fields[field_name]
+                                    )
+                                )
             return
         elif isinstance(node.left, Var):
             var_name = node.left.value
@@ -1486,14 +1502,26 @@ class Interpreter(NodeVisitor):
             # Prepare parameters
             actual_params = node.actual_params
             for i in range(0, len(actual_params)):
-                ar[i] = self.visit(actual_params[i])
+                key = f"__PROCEDURE__{proc_name}__{i}"
+                ar[key] = self.visit(actual_params[i])
+                ar.mappingNodes[actual_params[i]] = Var(
+                    token=Token(type=TokenType.VAR, value=key)
+                )
 
             self.call_stack.push(ar)
 
             # Call the handler
             handler(self, node)
 
+            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
+            for k, v in mappingNodes.items():
+                assign = Assign(
+                    left=k,
+                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
+                    right=v,
+                )
+                self.visit(assign)
             return
 
         # Check user-defined procedures
@@ -1520,6 +1548,7 @@ class Interpreter(NodeVisitor):
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
                     ar.mappings[argument_node.value] = param_node.var_node.value
+                    ar.mappingNodes[argument_node] = param_node.var_node
 
             self.call_stack.push(ar)
 
@@ -1540,7 +1569,15 @@ class Interpreter(NodeVisitor):
             self.log(f"LEAVE: PROCEDURE {proc_name}")
             self.log(str(self.call_stack))
 
+            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
+            for k, v in mappingNodes.items():
+                assign = Assign(
+                    left=k,
+                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
+                    right=v,
+                )
+                self.visit(assign)
             return
 
         # Unknown procedure
@@ -1596,14 +1633,22 @@ class Interpreter(NodeVisitor):
             # Prepare parameters
             actual_params = node.actual_params
             for i in range(0, len(actual_params)):
-                ar[i] = self.visit(actual_params[i])
+                ar[f"__FUNCTION__{func_name}__{i}"] = self.visit(actual_params[i])
 
             self.call_stack.push(ar)
 
             # Call the handler and get the result
             result = handler(self, node)
 
+            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
+            for k, v in mappingNodes.items():
+                assign = Assign(
+                    left=k,
+                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
+                    right=v,
+                )
+                self.visit(assign)
             return result
 
         # Check user-defined functions
@@ -1630,6 +1675,7 @@ class Interpreter(NodeVisitor):
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
                     ar.mappings[argument_node.value] = param_node.var_node.value
+                    ar.mappingNodes[argument_node] = param_node.var_node
 
             self.call_stack.push(ar)
 
@@ -1652,7 +1698,15 @@ class Interpreter(NodeVisitor):
 
             # Get return value (function name is used as return variable)
             result = ar.get(func_name)
+            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
+            for k, v in mappingNodes.items():
+                assign = Assign(
+                    left=k,
+                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
+                    right=v,
+                )
+                self.visit(assign)
 
             return result if result is not None else NullObject()
 

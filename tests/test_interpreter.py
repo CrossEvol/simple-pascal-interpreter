@@ -1,6 +1,6 @@
 import unittest
 
-from spi.ast import Var
+from spi.ast import AST, Var
 from spi.error import ErrorCode
 from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
@@ -41,6 +41,10 @@ class MockCallStack:
         return self._records[-1]
 
     @property
+    def preMappingNodes(self) -> dict[AST, AST]:
+        return self._records[-1].mappingNodes
+
+    @property
     def nesting_level(self) -> int:
         return len(self._records)
 
@@ -63,6 +67,10 @@ class MockFunctionCallStack:
 
     def peek(self) -> ActivationRecord:
         return self._records[-1]
+
+    @property
+    def preMappingNodes(self) -> dict[AST, AST]:
+        return self._records[-1].mappingNodes
 
     @property
     def nesting_level(self) -> int:
@@ -2152,8 +2160,179 @@ end.  { Main }
         self.assertEqual(ar["sum"].value, 14)
         self.assertEqual(ar.nesting_level, 1)
 
+    def test_builtin_procedure_refer_variable(self):
+        text = """\
+        program UserProcedureReferVariable;
+
+        type 
+            TPerson = record
+                age: Integer;
+            end;
+
+        var 
+            person : TPerson;   
+            arr : array of Integer;
+            i , age : Integer;
+
+        begin
+            person.age := 0;
+            Inc(person.age);
+            age := person.age;
+            arr[1] := 1;
+            Inc(arr[1]);
+            i := arr[1];
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertIsInstance(ar["person"], RecordObject)
+        self.assertIsInstance(ar["arr"], ArrayObject)
+        self.assertEqual(ar["age"].value, 1)
+        self.assertEqual(ar["i"].value, 2)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_user_procedure_refer_variable(self):
+        text = """\
+        program UserProcedureReferVariable;
+
+        type 
+            TPerson = record
+                age: Integer;
+            end;
+
+        var 
+            person : TPerson;
+            arr : array of Integer;
+            age : Integer;
+            i : Integer;
+
+        procedure Incr(var x : Integer);
+        begin
+            x := x + 1;
+        end;
+
+
+        begin
+            person.age := 0;
+            Incr(person.age);
+            age := person.age;
+
+            arr[1] := 1;
+            Incr(arr[1]);
+            i := arr[1];
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertIsInstance(ar["person"], RecordObject)
+        self.assertIsInstance(ar["arr"], ArrayObject)
+        self.assertEqual(ar["age"].value, 1)
+        self.assertEqual(ar["i"].value, 2)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_user_function_refer_variable(self):
+        text = """\
+        program UserFunctionReferVariable;
+
+        type 
+            TPerson = record
+                age: Integer;
+            end;
+
+        FUNCTION ADD(var x , y : Integer): Integer;
+        begin
+            x := x * 2;
+            y := y * 2;
+            ADD := x + y;
+        end;
+
+        var 
+            person : TPerson;
+            arr : array of Integer;
+            result : Integer;
+            formerAge , afterAge : Integer;
+            formerItem, afterItem : Integer;
+
+        begin
+            person.age := 3;
+            arr[1] := 4;
+            formerAge := person.age;
+            formerItem := arr[1];
+            result := ADD(person.age, arr[1]);
+            afterAge := person.age;
+            afterItem := arr[1];
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertIsInstance(ar["person"], RecordObject)
+        self.assertIsInstance(ar["arr"], ArrayObject)
+        self.assertEqual(ar["result"].value, 14)
+        self.assertEqual(ar["formerAge"].value, 3)
+        self.assertEqual(ar["formerItem"].value, 4)
+        self.assertEqual(ar["afterAge"].value, 6)
+        self.assertEqual(ar["afterItem"].value, 8)
+        self.assertEqual(ar.nesting_level, 1)
+
 
 class InterpreterTestCase(unittest.TestCase):
+    def test_record_post_initialize_complex_type(self):
+        text = """\
+program JSONParserNoPointers;
+
+const
+  HASH_TABLE_SIZE = 2;
+  MAX_VALUES = 2;
+
+var 
+  former : Integer;
+  after : Integer;
+
+type
+  TJSONType = (jtNull, jtObject);
+
+  TJSONObject = record
+    HashTable: array[0..HASH_TABLE_SIZE-1] of Integer;
+  end;
+
+  TJSONValue = record
+    JSONType: TJSONType;
+    case TJSONType of
+      jtNull: ();
+      jtObject: (ObjectValue: TJSONObject);
+  end;
+
+var
+  JSONValues: array[1..MAX_VALUES] of TJSONValue;
+
+begin
+  JSONValues[1].JSONType := jtNull;
+  JSONValues[1].JSONType := jtObject;
+  former := JSONValues[1].ObjectValue.HashTable[1];
+  JSONValues[1].ObjectValue.HashTable[1] := 5;
+  after := JSONValues[1].ObjectValue.HashTable[1];
+end.
+"""
+        interpreter = makeInterpreter(text)
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertIsInstance(ar["JSONValues"], ArrayObject)
+        self.assertEqual(ar["former"].value, 0)
+        self.assertEqual(ar["after"].value, 5)
+
     def test_program(self):
         text = """\
 PROGRAM Part12;

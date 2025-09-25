@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from spi.ast import (
     Param,
     RecordType,
+    Type,
 )
 from spi.constants import ElementType
 from spi.error import (
@@ -467,7 +470,7 @@ class EnumObject(Object):
 class ProcedureObject(Object):
     """Runtime object representing a user-defined procedure"""
 
-    def __init__(self, name: str, formal_params: list, block_ast):
+    def __init__(self, name: str, formal_params: list[Param], block_ast):
         super().__init__()
         self.name = name
         self.formal_params = formal_params  # List of Param AST nodes
@@ -561,9 +564,14 @@ class RecordObject(Object):
         super().__init__()
         self.fields: dict[str, Object] = {}  # 字段名到字段对象的映射
         self.record_type = record_type  # 记录类型模板，相当于元信息
+        self.pending_fields: dict[str, Type] = {}
 
         # 初始化常规字段
         self._init_regular_fields()
+
+    @property
+    def pending_field_name(self) -> list[str]:
+        return self.pending_fields.keys()
 
     def _init_regular_fields(self):
         """初始化常规字段"""
@@ -574,7 +582,7 @@ class RecordObject(Object):
                 field_type
             )
 
-    def _create_default_object_from_type_node(self, type_node) -> Object:
+    def _create_default_object_from_type_node(self, type_node: Type) -> Object:
         """根据类型节点创建默认对象（仅处理基本类型）"""
         if hasattr(type_node, "token"):
             token_type = type_node.token.type
@@ -612,9 +620,12 @@ class RecordObject(Object):
             if tag_value in variant_case.tag_values:
                 for field in variant_case.fields:
                     field_name = field.name.value
-                    self.fields[field_name] = (
-                        self._create_default_object_from_type_node(field.type_node)
+                    default_object = self._create_default_object_from_type_node(
+                        field.type_node
                     )
+                    self.fields[field_name] = default_object
+                    if isinstance(default_object, NullObject):
+                        self.pending_fields[field_name] = field.type_node
 
     def __str__(self):
         fields_str = ", ".join(
@@ -637,9 +648,21 @@ class RecordObject(Object):
 
         if is_valid_field:
             self.fields[field_name] = value
-
-            # 如果设置的是标签字段，需要重新初始化变体字段
-            if (
+            if isinstance(value, EnumObject):
+                enum_obj = cast(EnumObject, value)
+                # 如果设置的是标签字段，需要重新初始化变体字段
+                if (
+                    self.record_type.variant_part
+                    and enum_obj.type_name
+                    == self.record_type.variant_part.tag_field.value
+                ):
+                    if hasattr(value, "value"):
+                        # For enum objects, use the enum name, not the ordinal
+                        if isinstance(value, EnumObject):
+                            self._init_variant_fields(value.name)
+                        else:
+                            self._init_variant_fields(str(value.value))
+            elif (
                 self.record_type.variant_part
                 and field_name == self.record_type.variant_part.tag_field.value
             ):
