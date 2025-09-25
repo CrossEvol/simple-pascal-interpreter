@@ -19,6 +19,12 @@ class Symbol:
         self.type = type
         self.scope_level: int = 0
 
+    def __str__(self) -> str:
+        type_name = self.type.name if self.type and hasattr(self.type, 'name') else str(self.type)
+        return f"<{self.__class__.__name__}(name='{self.name}', type='{type_name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
+
 
 ###############################################################################
 #                                                                             #
@@ -51,6 +57,11 @@ class TypeSymbol(Symbol, ABC):
     def resolve_final_type(self) -> "TypeSymbol":
         """Resolve through type alias chain to get the final concrete type"""
         return self
+
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
 
 
 class NeverSymbol(TypeSymbol):
@@ -90,76 +101,6 @@ class NeverSymbol(TypeSymbol):
 # Singleton instance
 NEVER_SYMBOL = NeverSymbol()
 
-
-###############################################################################
-#                                                                             #
-#  TYPE SYMBOL INFRASTRUCTURE                                                #
-#                                                                             #
-###############################################################################
-
-
-class TypeSymbol(Symbol, ABC):
-    """Abstract base class for all type symbols"""
-
-    def __init__(self, name: str):
-        super().__init__(name)
-
-    @abstractmethod
-    def is_compatible_with(self, other: "TypeSymbol") -> bool:
-        """Check if this type is compatible with another type"""
-        pass
-
-    @abstractmethod
-    def can_assign_from(self, other: "TypeSymbol") -> bool:
-        """Check if a value of other type can be assigned to this type"""
-        pass
-
-    @abstractmethod
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
-        """Get the result type of an operation with another type"""
-        pass
-
-    def resolve_final_type(self) -> "TypeSymbol":
-        """Resolve through type alias chain to get the final concrete type"""
-        return self
-
-
-class NeverSymbol(TypeSymbol):
-    """Special symbol representing 'never' type (replacement for None)"""
-
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if not hasattr(self, "_initialized"):
-            super().__init__("NEVER")
-            self._initialized = True
-
-    def is_compatible_with(self, other: TypeSymbol) -> bool:
-        """Never type is compatible with nothing"""
-        return False
-
-    def can_assign_from(self, other: TypeSymbol) -> bool:
-        """Never type cannot be assigned from anything"""
-        return False
-
-    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
-        """Never type operations always result in Never type"""
-        return self
-
-    def __str__(self) -> str:
-        return "NEVER"
-
-    def __repr__(self) -> str:
-        return "<NeverSymbol(name='NEVER')>"
-
-
-# Singleton instance
-NEVER_SYMBOL = NeverSymbol()
 
 # Forward declarations for type symbols (will be defined after all classes)
 INTEGER_TYPE_SYMBOL = None
@@ -176,13 +117,9 @@ class PrimitiveTypeSymbol(TypeSymbol, ABC):
         super().__init__(name)
 
     def __str__(self) -> str:
-        return self.name
+        return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-        )
+    __repr__ = __str__
 
 
 class IntegerTypeSymbol(PrimitiveTypeSymbol):
@@ -239,6 +176,11 @@ class IntegerTypeSymbol(PrimitiveTypeSymbol):
         """INTEGER / INTEGER → REAL, INTEGER / REAL → REAL"""
         return self.get_result_type("/", other)
 
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
+
 
 class RealTypeSymbol(PrimitiveTypeSymbol):
     """Type symbol for REAL type with arithmetic operations"""
@@ -288,6 +230,11 @@ class RealTypeSymbol(PrimitiveTypeSymbol):
         """REAL / INTEGER → REAL, REAL / REAL → REAL"""
         return self.get_result_type("/", other)
 
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
+
 
 class BooleanTypeSymbol(PrimitiveTypeSymbol):
     """Type symbol for BOOLEAN type with logical operations"""
@@ -335,6 +282,11 @@ class BooleanTypeSymbol(PrimitiveTypeSymbol):
     def logical_not(self) -> "TypeSymbol":
         """NOT BOOLEAN → BOOLEAN"""
         return self.get_result_type("NOT", self)
+
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
 
 
 class CharTypeSymbol(PrimitiveTypeSymbol):
@@ -397,6 +349,11 @@ class CharTypeSymbol(PrimitiveTypeSymbol):
     def __add__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR + CHAR/STRING → STRING (concatenation)"""
         return self.get_result_type("+", other)
+
+    def __str__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
 
 
 class VarSymbol(Symbol):
@@ -498,12 +455,8 @@ class VarSymbol(Symbol):
         return self.is_const and not self.is_initialized
 
     def __str__(self) -> str:
-        return "<{class_name}(name='{name}', type='{type}', mutable={mutable})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            type=self.type,
-            mutable=self.is_mutable,
-        )
+        type_name = self.type.name if self.type and hasattr(self.type, 'name') else str(self.type)
+        return f"<{self.__class__.__name__}(name='{self.name}', type='{type_name}', mutable={self.is_mutable}, initialized={self.is_initialized}, param_mode={self.param_mode.name}, scope_level={self.scope_level})>"
 
     __repr__ = __str__
 
@@ -687,12 +640,9 @@ class StringTypeSymbol(TypeSymbol):
         return self.get_result_type(">=", other)
 
     def __str__(self) -> str:
-        return self.name
+        return f"<{self.__class__.__name__}(name='{self.name}', limit={self.limit}, scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}', limit='{limit}')>".format(
-            class_name=self.__class__.__name__, name=self.name, limit=self.limit
-        )
+    __repr__ = __str__
 
 
 class ArrayTypeSymbol(TypeSymbol):
@@ -778,14 +728,10 @@ class ArrayTypeSymbol(TypeSymbol):
         return self.get_result_type("<>", other)
 
     def __str__(self) -> str:
-        return "{name}[]".format(name=self.name)
+        element_type_name = self.element_type.name if hasattr(self.element_type, 'name') else str(self.element_type)
+        return f"<{self.__class__.__name__}(name='{self.name}', element_type='{element_type_name}', scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return "<{class_name}[{element_type_name}](name='{name}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            element_type_name=self.element_type.name,
-        )
+    __repr__ = __str__
 
 
 class EnumTypeSymbol(TypeSymbol):
@@ -882,14 +828,10 @@ class EnumTypeSymbol(TypeSymbol):
         return self.get_result_type(">=", other)
 
     def __str__(self) -> str:
-        return self.name
+        values_str = ', '.join(self.values) if len(self.values) <= 5 else f"{', '.join(self.values[:5])}, ... ({len(self.values)} total)"
+        return f"<{self.__class__.__name__}(name='{self.name}', values=[{values_str}], scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}', values={values})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            values=self.values,
-        )
+    __repr__ = __str__
 
 
 class RecordTypeSymbol(TypeSymbol):
@@ -1018,6 +960,14 @@ class RecordTypeSymbol(TypeSymbol):
     def variant_fields(self) -> dict[str, Symbol]:
         return self.variant_part.variant_fields
 
+    def __str__(self) -> str:
+        field_names = list(self.fields.keys())
+        fields_str = ', '.join(field_names) if len(field_names) <= 5 else f"{', '.join(field_names[:5])}, ... ({len(field_names)} total)"
+        variant_info = f", variant_part={self.variant_part is not None}" if self.variant_part else ""
+        return f"<{self.__class__.__name__}(name='{self.name}', fields=[{fields_str}]{variant_info}, scope_level={self.scope_level})>"
+
+    __repr__ = __str__
+
 
 class RecordFieldSymbol(TypeSymbol):
     """表示记录字段符号"""
@@ -1062,6 +1012,12 @@ class RecordFieldSymbol(TypeSymbol):
         # Fallback for non-TypeSymbol field types - no operations supported
         return NEVER_SYMBOL
 
+    def __str__(self) -> str:
+        type_name = self.type.name if hasattr(self.type, 'name') else str(self.type)
+        return f"<{self.__class__.__name__}(name='{self.name}', type='{type_name}', scope_level={self.scope_level})>"
+
+    __repr__ = __str__
+
 
 class VariantPartSymbol:
     """表示记录变体部分的符号"""
@@ -1083,6 +1039,13 @@ class VariantPartSymbol:
             for field_name, symbol in fields_dict.items():
                 variant_fields[field_name] = symbol
         return variant_fields
+
+    def __str__(self) -> str:
+        tag_type_name = self.tag_type.name if hasattr(self.tag_type, 'name') else str(self.tag_type)
+        cases_count = len(self.variant_cases)
+        return f"<{self.__class__.__name__}(tag_field='{self.tag_field}', tag_type='{tag_type_name}', cases={cases_count})>"
+
+    __repr__ = __str__
 
 
 class TypeAliasSymbol(TypeSymbol):
@@ -1159,12 +1122,10 @@ class TypeAliasSymbol(TypeSymbol):
         return final_type.get_result_type(operation, other)
 
     def __str__(self) -> str:
-        return f"{self.name} -> {self.target_type.name}"
+        target_name = self.target_type.name if hasattr(self.target_type, 'name') else str(self.target_type)
+        return f"<{self.__class__.__name__}(name='{self.name}', target='{target_name}', scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return (
-            f"<TypeAliasSymbol(name='{self.name}', target='{self.target_type.name}')>"
-        )
+    __repr__ = __str__
 
 
 class ProcedureSymbol(Symbol):
@@ -1177,11 +1138,14 @@ class ProcedureSymbol(Symbol):
         self.is_forward = False
 
     def __str__(self) -> str:
-        return "<{class_name}(name={name}, parameters={params})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            params=self.formal_params,
-        )
+        param_count = len(self.formal_params)
+        param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
+        params_str = ', '.join(param_names)
+        if param_count > 3:
+            params_str += f", ... ({param_count} total)"
+        forward_info = ", forward=True" if self.is_forward else ""
+        has_body = ", has_body=True" if self.block_ast else ""
+        return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}]{forward_info}{has_body}, scope_level={self.scope_level})>"
 
     __repr__ = __str__
 
@@ -1193,11 +1157,12 @@ class BuiltinProcedureSymbol(Symbol):
         self.formal_params: list[Symbol] = []
 
     def __str__(self) -> str:
-        return "<{class_name}(name={name}, parameters={params})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            params=self.formal_params,
-        )
+        param_count = len(self.formal_params)
+        param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
+        params_str = ', '.join(param_names)
+        if param_count > 3:
+            params_str += f", ... ({param_count} total)"
+        return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}], builtin=True, scope_level={self.scope_level})>"
 
     __repr__ = __str__
 
@@ -1213,12 +1178,15 @@ class FunctionSymbol(Symbol):
         self.is_forward = False
 
     def __str__(self) -> str:
-        return "<{class_name}(name={name},return_type={return_type} parameters={params})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            return_type=self.return_type,
-            params=self.formal_params,
-        )
+        param_count = len(self.formal_params)
+        param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
+        params_str = ', '.join(param_names)
+        if param_count > 3:
+            params_str += f", ... ({param_count} total)"
+        return_type_name = self.return_type.name if hasattr(self.return_type, 'name') else str(self.return_type)
+        forward_info = ", forward=True" if self.is_forward else ""
+        has_body = ", has_body=True" if self.block_ast else ""
+        return f"<{self.__class__.__name__}(name='{self.name}', return_type='{return_type_name}', params=[{params_str}]{forward_info}{has_body}, scope_level={self.scope_level})>"
 
     __repr__ = __str__
 
@@ -1240,12 +1208,13 @@ class BuiltinFunctionSymbol(Symbol):
         self.block_ast: Block | None = None
 
     def __str__(self) -> str:
-        return "<{class_name}(name={name},return_type={return_type} parameters={params})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            return_type=self.return_type,
-            params=self.formal_params,
-        )
+        param_count = len(self.formal_params)
+        param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
+        params_str = ', '.join(param_names)
+        if param_count > 3:
+            params_str += f", ... ({param_count} total)"
+        return_type_name = self.return_type.name if hasattr(self.return_type, 'name') else str(self.return_type)
+        return f"<{self.__class__.__name__}(name='{self.name}', return_type='{return_type_name}', params=[{params_str}], builtin=True, scope_level={self.scope_level})>"
 
     __repr__ = __str__
 
@@ -1333,15 +1302,14 @@ class ProcedureTypeSymbol(TypeSymbol):
         return self.get_result_type("<>", other)
 
     def __str__(self) -> str:
-        param_names = [param.name for param in self.param_types]
-        return f"PROCEDURE({', '.join(param_names)})"
+        param_count = len(self.param_types)
+        param_names = [param.name for param in self.param_types[:3]]  # Show first 3 params
+        params_str = ', '.join(param_names)
+        if param_count > 3:
+            params_str += f", ... ({param_count} total)"
+        return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}], scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}', params={params})>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            params=[param.name for param in self.param_types],
-        )
+    __repr__ = __str__
 
 
 class FunctionTypeSymbol(TypeSymbol):
@@ -1441,16 +1409,15 @@ class FunctionTypeSymbol(TypeSymbol):
         return self.get_result_type("<>", other)
 
     def __str__(self) -> str:
-        param_names = [param.name for param in self.param_types]
-        return f"FUNCTION({', '.join(param_names)}) : {self.return_type.name}"
+        param_count = len(self.param_types)
+        param_names = [param.name for param in self.param_types[:3]]  # Show first 3 params
+        params_str = ', '.join(param_names)
+        if param_count > 3:
+            params_str += f", ... ({param_count} total)"
+        return_type_name = self.return_type.name if hasattr(self.return_type, 'name') else str(self.return_type)
+        return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}], return_type='{return_type_name}', scope_level={self.scope_level})>"
 
-    def __repr__(self) -> str:
-        return "<{class_name}(name='{name}', params={params}, return_type='{return_type}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            params=[param.name for param in self.param_types],
-            return_type=self.return_type.name,
-        )
+    __repr__ = __str__
 
 
 # Initialize singleton type symbol instances
@@ -1572,12 +1539,9 @@ class BuiltinTypeSymbol(TypeSymbol):
         return resolved.name
 
     def __str__(self) -> str:
-        return self.name
-
-    def __repr__(self) -> str:
         delegate_name = getattr(self._delegate_type, "name", str(self._delegate_type))
-        return "<{class_name}(name='{name}', delegate='{delegate}')>".format(
-            class_name=self.__class__.__name__,
-            name=self.name,
-            delegate=delegate_name,
-        )
+        is_primitive = self.is_builtin_primitive()
+        is_alias = self.is_alias()
+        return f"<{self.__class__.__name__}(name='{self.name}', delegate='{delegate_name}', primitive={is_primitive}, alias={is_alias}, scope_level={self.scope_level})>"
+
+    __repr__ = __str__

@@ -274,3 +274,4 @@ GLIST
 GPATH
 GRTAGS
 GTAGS
+.vscode/*.pas

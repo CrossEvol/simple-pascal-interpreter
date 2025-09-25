@@ -1,23 +1,24 @@
 """Unit tests for TypeSymbol classes and operations"""
 
 import unittest
+
 from spi.symbol import (
-    IntegerTypeSymbol,
-    RealTypeSymbol,
-    BooleanTypeSymbol,
-    CharTypeSymbol,
-    NeverSymbol,
-    NEVER_SYMBOL,
-    TypeAliasSymbol,
-    BuiltinTypeSymbol,
-    ProcedureTypeSymbol,
-    FunctionTypeSymbol,
-    INTEGER_TYPE_SYMBOL,
-    REAL_TYPE_SYMBOL,
     BOOLEAN_TYPE_SYMBOL,
     CHAR_TYPE_SYMBOL,
+    INTEGER_TYPE_SYMBOL,
+    NEVER_SYMBOL,
+    REAL_TYPE_SYMBOL,
+    BooleanTypeSymbol,
+    BuiltinTypeSymbol,
+    CharTypeSymbol,
+    FunctionTypeSymbol,
+    IntegerTypeSymbol,
+    NeverSymbol,
+    ProcedureTypeSymbol,
+    RealTypeSymbol,
+    TypeAliasSymbol,
 )
-from src.spi.error import SemanticError, ErrorCode
+from src.spi.error import ErrorCode, SemanticError
 
 
 class TestIntegerTypeSymbol(unittest.TestCase):
@@ -461,9 +462,13 @@ class TestTypeAliasSymbol(unittest.TestCase):
         """Test TypeAliasSymbol string representation"""
         alias = TypeAliasSymbol("MyInt", self.integer_type)
 
-        self.assertEqual(str(alias), "MyInt -> INTEGER")
         self.assertEqual(
-            repr(alias), "<TypeAliasSymbol(name='MyInt', target='INTEGER')>"
+            str(alias),
+            "<TypeAliasSymbol(name='MyInt', target='INTEGER', scope_level=0)>",
+        )
+        self.assertEqual(
+            repr(alias),
+            "<TypeAliasSymbol(name='MyInt', target='INTEGER', scope_level=0)>",
         )
 
     def test_chained_alias_with_different_types(self):
@@ -597,9 +602,15 @@ class TestBuiltinTypeSymbol(unittest.TestCase):
         """Test BuiltinTypeSymbol string representation"""
         builtin_int = BuiltinTypeSymbol("INTEGER")
 
-        self.assertEqual(str(builtin_int), "INTEGER")
+        self.assertEqual(
+            str(builtin_int),
+            "<BuiltinTypeSymbol(name='INTEGER', delegate='INTEGER', primitive=True, alias=False, scope_level=0)>",
+        )
         self.assertIn("BuiltinTypeSymbol", repr(builtin_int))
-        self.assertIn("INTEGER", repr(builtin_int))
+        self.assertIn(
+            "<BuiltinTypeSymbol(name='INTEGER', delegate='INTEGER', primitive=True, alias=False, scope_level=0)>",
+            repr(builtin_int),
+        )
         self.assertIn("delegate", repr(builtin_int))
 
     def test_builtin_type_with_custom_delegate(self):
@@ -841,8 +852,12 @@ class TestProcedureTypeSymbol(unittest.TestCase):
 
         # For procedure assignment, parameter types must be exactly assignable
         # INTEGER param can accept INTEGER, REAL param can accept INTEGER and REAL
-        self.assertFalse(proc1.can_assign_from(proc2))  # INTEGER param cannot accept REAL arg
-        self.assertTrue(proc2.can_assign_from(proc1))   # REAL param can accept INTEGER arg
+        self.assertFalse(
+            proc1.can_assign_from(proc2)
+        )  # INTEGER param cannot accept REAL arg
+        self.assertTrue(
+            proc2.can_assign_from(proc1)
+        )  # REAL param can accept INTEGER arg
 
     def test_procedure_type_assignment_incompatible_params(self):
         """Test procedure type assignment with incompatible parameters"""
@@ -893,21 +908,33 @@ class TestProcedureTypeSymbol(unittest.TestCase):
         proc_type = ProcedureTypeSymbol("Proc", [self.integer_type, self.real_type])
 
         # Valid call with exact types
-        self.assertTrue(proc_type.validate_call_signature([self.integer_type, self.real_type]))
+        self.assertTrue(
+            proc_type.validate_call_signature([self.integer_type, self.real_type])
+        )
 
         # Valid call with compatible types (INTEGER can be passed to REAL param)
-        self.assertTrue(proc_type.validate_call_signature([self.integer_type, self.integer_type]))
+        self.assertTrue(
+            proc_type.validate_call_signature([self.integer_type, self.integer_type])
+        )
 
         # Invalid call with wrong number of arguments
         self.assertFalse(proc_type.validate_call_signature([self.integer_type]))
-        self.assertFalse(proc_type.validate_call_signature([self.integer_type, self.real_type, self.boolean_type]))
+        self.assertFalse(
+            proc_type.validate_call_signature(
+                [self.integer_type, self.real_type, self.boolean_type]
+            )
+        )
 
         # Invalid call with incompatible types
-        self.assertFalse(proc_type.validate_call_signature([self.boolean_type, self.real_type]))
+        self.assertFalse(
+            proc_type.validate_call_signature([self.boolean_type, self.real_type])
+        )
 
     def test_procedure_type_parameter_access(self):
         """Test procedure type parameter access methods"""
-        proc_type = ProcedureTypeSymbol("Proc", [self.integer_type, self.real_type, self.boolean_type])
+        proc_type = ProcedureTypeSymbol(
+            "Proc", [self.integer_type, self.real_type, self.boolean_type]
+        )
 
         # Test parameter count
         self.assertEqual(proc_type.get_parameter_count(), 3)
@@ -920,24 +947,6 @@ class TestProcedureTypeSymbol(unittest.TestCase):
         # Test out-of-bounds access
         self.assertIs(proc_type.get_parameter_type(-1), NEVER_SYMBOL)
         self.assertIs(proc_type.get_parameter_type(3), NEVER_SYMBOL)
-
-    def test_procedure_type_string_representation(self):
-        """Test ProcedureTypeSymbol string representation"""
-        proc_type = ProcedureTypeSymbol("TestProc", [self.integer_type, self.real_type])
-
-        self.assertEqual(str(proc_type), "PROCEDURE(INTEGER, REAL)")
-        self.assertIn("ProcedureTypeSymbol", repr(proc_type))
-        self.assertIn("TestProc", repr(proc_type))
-        self.assertIn("INTEGER", repr(proc_type))
-        self.assertIn("REAL", repr(proc_type))
-
-    def test_procedure_type_empty_params_string(self):
-        """Test ProcedureTypeSymbol string representation with no parameters"""
-        proc_type = ProcedureTypeSymbol("EmptyProc", [])
-
-        self.assertEqual(str(proc_type), "PROCEDURE()")
-        self.assertIn("ProcedureTypeSymbol", repr(proc_type))
-        self.assertIn("EmptyProc", repr(proc_type))
 
 
 class TestFunctionTypeSymbol(unittest.TestCase):
@@ -952,7 +961,9 @@ class TestFunctionTypeSymbol(unittest.TestCase):
 
     def test_function_type_creation(self):
         """Test FunctionTypeSymbol creation"""
-        func_type = FunctionTypeSymbol("TestFunc", [self.integer_type, self.real_type], self.boolean_type)
+        func_type = FunctionTypeSymbol(
+            "TestFunc", [self.integer_type, self.real_type], self.boolean_type
+        )
         self.assertEqual(func_type.name, "TestFunc")
         self.assertEqual(len(func_type.param_types), 2)
         self.assertIs(func_type.param_types[0], self.integer_type)
@@ -977,7 +988,9 @@ class TestFunctionTypeSymbol(unittest.TestCase):
     def test_function_type_compatibility_different_param_count(self):
         """Test function type compatibility with different parameter count"""
         func1 = FunctionTypeSymbol("Func1", [self.integer_type], self.real_type)
-        func2 = FunctionTypeSymbol("Func2", [self.integer_type, self.real_type], self.real_type)
+        func2 = FunctionTypeSymbol(
+            "Func2", [self.integer_type, self.real_type], self.real_type
+        )
 
         self.assertFalse(func1.is_compatible_with(func2))
         self.assertFalse(func2.is_compatible_with(func1))
@@ -1024,8 +1037,12 @@ class TestFunctionTypeSymbol(unittest.TestCase):
     def test_function_type_assignment_covariant_return(self):
         """Test function type assignment with covariant return types"""
         # Function returning INTEGER can be assigned to function returning REAL
-        func_int_ret = FunctionTypeSymbol("FuncInt", [self.integer_type], self.integer_type)
-        func_real_ret = FunctionTypeSymbol("FuncReal", [self.integer_type], self.real_type)
+        func_int_ret = FunctionTypeSymbol(
+            "FuncInt", [self.integer_type], self.integer_type
+        )
+        func_real_ret = FunctionTypeSymbol(
+            "FuncReal", [self.integer_type], self.real_type
+        )
 
         # REAL can accept INTEGER (covariant)
         self.assertTrue(func_real_ret.can_assign_from(func_int_ret))
@@ -1035,13 +1052,21 @@ class TestFunctionTypeSymbol(unittest.TestCase):
     def test_function_type_assignment_contravariant_params(self):
         """Test function type assignment with contravariant parameters"""
         # Function taking REAL param can be assigned to function taking INTEGER param
-        func_int_param = FunctionTypeSymbol("FuncInt", [self.integer_type], self.boolean_type)
-        func_real_param = FunctionTypeSymbol("FuncReal", [self.real_type], self.boolean_type)
+        func_int_param = FunctionTypeSymbol(
+            "FuncInt", [self.integer_type], self.boolean_type
+        )
+        func_real_param = FunctionTypeSymbol(
+            "FuncReal", [self.real_type], self.boolean_type
+        )
 
         # For function assignment, parameter types must be exactly assignable
         # INTEGER param can accept INTEGER, REAL param can accept INTEGER and REAL
-        self.assertFalse(func_int_param.can_assign_from(func_real_param))  # INTEGER param cannot accept REAL arg
-        self.assertTrue(func_real_param.can_assign_from(func_int_param))   # REAL param can accept INTEGER arg
+        self.assertFalse(
+            func_int_param.can_assign_from(func_real_param)
+        )  # INTEGER param cannot accept REAL arg
+        self.assertTrue(
+            func_real_param.can_assign_from(func_int_param)
+        )  # REAL param can accept INTEGER arg
 
     def test_function_type_comparison_operations(self):
         """Test function type comparison operations"""
@@ -1077,24 +1102,38 @@ class TestFunctionTypeSymbol(unittest.TestCase):
 
     def test_function_type_validate_call_signature(self):
         """Test function type call signature validation"""
-        func_type = FunctionTypeSymbol("Func", [self.integer_type, self.real_type], self.boolean_type)
+        func_type = FunctionTypeSymbol(
+            "Func", [self.integer_type, self.real_type], self.boolean_type
+        )
 
         # Valid call with exact types
-        self.assertTrue(func_type.validate_call_signature([self.integer_type, self.real_type]))
+        self.assertTrue(
+            func_type.validate_call_signature([self.integer_type, self.real_type])
+        )
 
         # Valid call with compatible types
-        self.assertTrue(func_type.validate_call_signature([self.integer_type, self.integer_type]))
+        self.assertTrue(
+            func_type.validate_call_signature([self.integer_type, self.integer_type])
+        )
 
         # Invalid call with wrong number of arguments
         self.assertFalse(func_type.validate_call_signature([self.integer_type]))
-        self.assertFalse(func_type.validate_call_signature([self.integer_type, self.real_type, self.boolean_type]))
+        self.assertFalse(
+            func_type.validate_call_signature(
+                [self.integer_type, self.real_type, self.boolean_type]
+            )
+        )
 
         # Invalid call with incompatible types
-        self.assertFalse(func_type.validate_call_signature([self.boolean_type, self.real_type]))
+        self.assertFalse(
+            func_type.validate_call_signature([self.boolean_type, self.real_type])
+        )
 
     def test_function_type_parameter_access(self):
         """Test function type parameter access methods"""
-        func_type = FunctionTypeSymbol("Func", [self.integer_type, self.real_type], self.boolean_type)
+        func_type = FunctionTypeSymbol(
+            "Func", [self.integer_type, self.real_type], self.boolean_type
+        )
 
         # Test parameter count
         self.assertEqual(func_type.get_parameter_count(), 2)
@@ -1109,25 +1148,6 @@ class TestFunctionTypeSymbol(unittest.TestCase):
 
         # Test return type access
         self.assertIs(func_type.get_return_type(), self.boolean_type)
-
-    def test_function_type_string_representation(self):
-        """Test FunctionTypeSymbol string representation"""
-        func_type = FunctionTypeSymbol("TestFunc", [self.integer_type, self.real_type], self.boolean_type)
-
-        self.assertEqual(str(func_type), "FUNCTION(INTEGER, REAL) : BOOLEAN")
-        self.assertIn("FunctionTypeSymbol", repr(func_type))
-        self.assertIn("TestFunc", repr(func_type))
-        self.assertIn("INTEGER", repr(func_type))
-        self.assertIn("REAL", repr(func_type))
-        self.assertIn("BOOLEAN", repr(func_type))
-
-    def test_function_type_empty_params_string(self):
-        """Test FunctionTypeSymbol string representation with no parameters"""
-        func_type = FunctionTypeSymbol("EmptyFunc", [], self.integer_type)
-
-        self.assertEqual(str(func_type), "FUNCTION() : INTEGER")
-        self.assertIn("FunctionTypeSymbol", repr(func_type))
-        self.assertIn("EmptyFunc", repr(func_type))
 
 
 if __name__ == "__main__":

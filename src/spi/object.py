@@ -633,6 +633,8 @@ class RecordObject(Object):
         )
         return f"Record({fields_str})"
 
+    __repr__ = __str__
+
     def __getitem__(self, field_name: str):
         """获取字段值"""
         return self.fields.get(field_name, NullObject())
