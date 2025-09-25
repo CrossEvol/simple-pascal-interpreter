@@ -49,6 +49,7 @@ from spi.ast import (
     VariantPart,
     WhileStatement,
 )
+from spi.constants import CONFIG
 from spi.error import (
     ErrorCode,
     SemanticError,
@@ -83,9 +84,6 @@ from spi.symbol import (
 )
 from spi.token import Token, TokenType
 from spi.visitor import NodeVisitor
-
-_SHOULD_LOG_SCOPE = False  # see '--scope' command line option
-_SHOULD_LOG_STACK = False  # see '--stack' command line option
 
 
 class ScopedSymbolTable:
@@ -156,8 +154,12 @@ class ScopedSymbolTable:
     __repr__ = __str__
 
     def log(self, msg: str) -> None:
-        if _SHOULD_LOG_SCOPE:
-            print(msg)
+        if CONFIG.should_log_scope:
+            # 根据 indent_level 计算缩进的空格数
+            indent_spaces = " " * (self.scope_level * 8)  # 假设每个缩进级别是4个空格
+
+            # 使用 f-string 将缩进和消息拼接起来
+            print(f"{indent_spaces}{msg}")
 
     def insert(self, symbol: Symbol) -> None:
         self.log(f"Insert: {symbol.name}")
@@ -207,8 +209,17 @@ class SemanticAnalyzer(NodeVisitor):
         self.in_mark = False
 
     def log(self, msg) -> None:
-        if _SHOULD_LOG_SCOPE:
-            print(msg)
+        if CONFIG.should_log_scope:
+            if self.current_scope is not None:
+                # 根据 indent_level 计算缩进的空格数
+                indent_spaces = " " * (
+                    self.current_scope.scope_level * 8
+                )  # 假设每个缩进级别是4个空格
+
+                # 使用 f-string 将缩进和消息拼接起来
+                print(f"{indent_spaces}{msg}")
+            else:
+                print(msg)
 
     def enter_in_scope(self) -> None:
         self.in_mark = True

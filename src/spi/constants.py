@@ -4,8 +4,24 @@ from __future__ import annotations
 
 from enum import Enum
 
-_SHOULD_LOG_SCOPE = False  # see '--scope' command line option
-_SHOULD_LOG_STACK = False  # see '--stack' command line option
+
+class SpiConfig:
+    """Configuration class to manage SPI interpreter settings."""
+    def __init__(self) -> None:
+        self.should_log_scope: bool = False  # see '--scope' command line option
+        self.should_log_stack: bool = False  # see '--stack' command line option
+
+    def set_log_scope(self, value: bool) -> None:
+        """Set the scope logging flag."""
+        self.should_log_scope = value
+
+    def set_log_stack(self, value: bool) -> None:
+        """Set the stack logging flag."""
+        self.should_log_stack = value
+
+
+# Global configuration instance
+CONFIG = SpiConfig()
 
 
 class ElementType(Enum):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from spi.constants import CONFIG
 from spi.error import (
     LexerError,
     ParserError,
@@ -14,11 +15,6 @@ from spi.interpreter import Interpreter
 from spi.lexer import Lexer
 from spi.parser import Parser
 from spi.semantic_analyzer import SemanticAnalyzer
-
-_SHOULD_LOG_SCOPE = False  # see '--scope' command line option
-_SHOULD_LOG_STACK = False  # see '--stack' command line option
-
-RETURN_NUM_FOR_LENGTH = "RETURN_NUM_FOR_LENGTH"
 
 
 def runSpi() -> None:
@@ -36,9 +32,9 @@ def runSpi() -> None:
     )
     args = arg_parser.parse_args()
 
-    global _SHOULD_LOG_SCOPE, _SHOULD_LOG_STACK
-    _SHOULD_LOG_SCOPE = args.scope
-    _SHOULD_LOG_STACK = args.stack
+    # Set configuration based on command line arguments
+    CONFIG.set_log_scope(args.scope)
+    CONFIG.set_log_stack(args.stack)
 
     text = open(args.inputfile, "r", encoding="utf-8").read()
 

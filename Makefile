@@ -27,7 +27,7 @@ main:
 		echo "Error: Please specify a Pascal file with file=<filename>"; \
 		exit 1; \
 	fi
-	@$(UV_PYTHON) main.py $(file) --stack --scope
+	@$(PYTHON) main.py $(file) --stack --scope
 
 # 简单运行解释器
 .PHONY: run

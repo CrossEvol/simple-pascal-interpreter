@@ -51,14 +51,13 @@ from spi.ast import (
     VarDecl,
     WhileStatement,
 )
-from spi.constants import ElementType
+from spi.constants import CONFIG, ElementType
 from spi.error import (
     BreakSignal,
     ContinueSignal,
     ErrorCode,
     ExitSignal,
     InterpreterError,
-    SemanticError,
 )
 from spi.native import NativeMethod
 from spi.object import (
@@ -84,8 +83,6 @@ from spi.util import SpiUtil
 from spi.visitor import NodeVisitor
 
 RETURN_NUM_FOR_LENGTH = "RETURN_NUM_FOR_LENGTH"
-_SHOULD_LOG_SCOPE = False  # see '--scope' command line option
-_SHOULD_LOG_STACK = False  # see '--stack' command line option
 
 # Built-in procedures and functions registry
 BUILTIN_PROCEDURES: dict[str, Callable[..., None]] = {}
@@ -413,6 +410,7 @@ class CallStack:
 
     def __str__(self) -> str:
         s = "\n".join(repr(ar) for ar in reversed(self._records))
+        s = f"{s}"
         s = f"CALL STACK\n{s}\n\n"
         return s
 
@@ -448,15 +446,18 @@ class ActivationRecord:
         return cast(Object, self.members.get(key))
 
     def __str__(self) -> str:
+        # 根据 indent_level 计算缩进的空格数
+        indent_spaces = " " * self.nesting_level * 8  # 假设每个缩进级别是4个空格
         lines = [
-            "{level}: {type} {name}".format(
+            "{indent}{level}: {type} {name}".format(
+                indent=indent_spaces,
                 level=self.nesting_level,
                 type=self.type.value,
                 name=self.name,
             )
         ]
         for name, val in self.members.items():
-            lines.append(f"   {name}: {val}")
+            lines.append(f"{indent_spaces}   {name}: {val}")
 
         s = "\n".join(lines)
         return s
@@ -469,6 +470,7 @@ class Interpreter(NodeVisitor):
     def __init__(self, tree: Program) -> None:
         self.tree = tree
         self.call_stack = CallStack()
+        self.in_mark = False
 
         # Runtime procedure and function registries
         self.user_procedures: dict[str, ProcedureObject] = {}
@@ -498,8 +500,20 @@ class Interpreter(NodeVisitor):
         register_builtin_function(NativeMethod.CHR.name, handle_chr)
 
     def log(self, msg) -> None:
-        if _SHOULD_LOG_STACK:
-            print(msg)
+        if CONFIG.should_log_stack:
+            # 根据 indent_level 计算缩进的空格数
+            indent_spaces = " " * (
+                len(self.call_stack._records) * 8
+            )  # 假设每个缩进级别是4个空格
+
+            # 使用 f-string 将缩进和消息拼接起来
+            print(f"{indent_spaces}{msg}")
+
+    def enter_in_scope(self) -> None:
+        self.in_mark = True
+
+    def leave_in_scope(self) -> None:
+        self.in_mark = False
 
     def _resolve_type_alias(self, type_node: Type) -> Type:
         """解析类型别名，追随别名链直到找到实际类型"""
@@ -873,6 +887,11 @@ class Interpreter(NodeVisitor):
         # Evaluate lower and upper bounds at runtime
         lower_obj = self.visit(node.lower)
         upper_obj = self.visit(node.upper)
+
+        if isinstance(lower_obj, StringObject) and len(lower_obj.value) == 1:
+            lower_obj = IntegerObject(value=ord(lower_obj.value))
+        if isinstance(upper_obj, StringObject) and len(upper_obj.value) == 1:
+            upper_obj = IntegerObject(value=ord(upper_obj.value))
 
         # Extract numeric values
         if not isinstance(lower_obj, NumberObject):
