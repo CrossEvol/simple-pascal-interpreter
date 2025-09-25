@@ -82,8 +82,6 @@ from spi.token import Token, TokenType
 from spi.util import SpiUtil
 from spi.visitor import NodeVisitor
 
-RETURN_NUM_FOR_LENGTH = "RETURN_NUM_FOR_LENGTH"
-
 # Built-in procedures and functions registry
 BUILTIN_PROCEDURES: dict[str, Callable[..., None]] = {}
 BUILTIN_FUNCTIONS: dict[str, Callable[..., Object]] = {}
@@ -105,7 +103,7 @@ def handle_write(interpreter: Interpreter, node: ProcedureCall):
     proc_name = node.proc_name
     actual_params = node.actual_params
 
-    ar = interpreter.call_stack.peek()
+    _ = interpreter.call_stack.peek()
 
     interpreter.log(f"ENTER: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -128,7 +126,7 @@ def handle_writeln(interpreter: Interpreter, node: ProcedureCall):
     proc_name = node.proc_name
     actual_params = node.actual_params
 
-    ar = interpreter.call_stack.peek()
+    _ = interpreter.call_stack.peek()
 
     interpreter.log(f"ENTER: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -151,7 +149,7 @@ def handle_exit(interpreter: Interpreter, node: ProcedureCall):
     proc_name = node.proc_name
     actual_params = node.actual_params
 
-    ar = interpreter.call_stack.peek()
+    _ = interpreter.call_stack.peek()
 
     interpreter.log(f"ENTER: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -293,7 +291,7 @@ def handle_length(interpreter: Interpreter, node: FunctionCall):
     func_name = node.func_name
     actual_params = node.actual_params
 
-    ar = interpreter.call_stack.peek()
+    _ = interpreter.call_stack.peek()
 
     interpreter.log(f"ENTER: FUNCTION {func_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -306,7 +304,6 @@ def handle_length(interpreter: Interpreter, node: FunctionCall):
         length_value = 0
 
     result = IntegerObject(length_value)
-    ar[RETURN_NUM_FOR_LENGTH] = result
 
     interpreter.log(f"LEAVE: FUNCTION {func_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -319,7 +316,7 @@ def handle_ord(interpreter: Interpreter, node: FunctionCall) -> IntegerObject:
     func_name = node.func_name
     actual_params = node.actual_params
 
-    ar = interpreter.call_stack.peek()
+    _ = interpreter.call_stack.peek()
 
     interpreter.log(f"ENTER: FUNCTION {func_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -338,7 +335,6 @@ def handle_ord(interpreter: Interpreter, node: FunctionCall) -> IntegerObject:
         ascii_value = 0
 
     result = IntegerObject(ascii_value)
-    ar[RETURN_NUM_FOR_LENGTH] = result
 
     interpreter.log(f"LEAVE: FUNCTION {func_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -351,7 +347,7 @@ def handle_chr(interpreter: Interpreter, node: FunctionCall):
     func_name = node.func_name
     actual_params = node.actual_params
 
-    ar = interpreter.call_stack.peek()
+    _ = interpreter.call_stack.peek()
 
     interpreter.log(f"ENTER: FUNCTION {func_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -369,7 +365,6 @@ def handle_chr(interpreter: Interpreter, node: FunctionCall):
         char_value = ""
 
     result = CharObject(char_value)
-    ar[RETURN_NUM_FOR_LENGTH] = result
 
     interpreter.log(f"LEAVE: FUNCTION {func_name}")
     interpreter.log(str(interpreter.call_stack))

@@ -268,3 +268,9 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
+
+# pascal
+GLIST
+GPATH
+GRTAGS
+GTAGS
