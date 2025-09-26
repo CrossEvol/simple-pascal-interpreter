@@ -2,12 +2,14 @@ from enum import Enum
 
 
 class NativeMethod(Enum):
+    # procedure
     WRITE = "WRITE"
     WRITELN = "WRITELN"
-    LENGTH = "LENGTH"
     SETLENGTH = "SETLENGTH"
-    ORD = "ORD"
-    CHR = "CHR"
+    EXIT = "EXIT"
     INC = "INC"
     DEC = "DEC"
-    EXIT = "EXIT"
+    # function
+    ORD = "ORD"
+    LENGTH = "LENGTH"
+    CHR = "CHR"

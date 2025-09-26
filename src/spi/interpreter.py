@@ -387,16 +387,15 @@ class CallStack:
         self._records.append(ar)
 
     def pop(self) -> ActivationRecord:
-        if len(self._records) >= 2:
-            self._records[-2].copy_from(self._records[-1], True)
-            self._records[-2].refer_back(self._records[-1].mappings)
         return self._records.pop()
 
     @property
     def preMappingNodes(self) -> dict[AST, AST]:
         return self._records[-1].mappingNodes
 
-    def peek(self) -> ActivationRecord:
+    def peek(self) -> ActivationRecord | None:
+        if len(self._records) == 0:
+            return None
         return self._records[-1]
 
     @property
@@ -414,31 +413,39 @@ class CallStack:
 
 
 class ActivationRecord:
-    def __init__(self, name: str, type: ARType, nesting_level: int) -> None:
+    def __init__(
+        self,
+        name: str,
+        type: ARType,
+        nesting_level: int,
+        outer: ActivationRecord = None,
+    ) -> None:
         self.name = name
         self.type = type
         self.nesting_level = nesting_level
         self.members: dict[str | int, Object] = {}
         self.mappings: dict[str, str] = {}
         self.mappingNodes: dict[AST, AST] = {}
+        self.outer: ActivationRecord = outer
 
     def __setitem__(self, key: str | int, value: Object) -> None:
-        self.members[key] = value
+        if key in self.members:
+            self.members[key] = value
+        elif self.outer is not None:
+            self.outer[key] = value
+        else:
+            self.members[key] = value
 
     def __getitem__(self, key: str | int) -> Object:
-        return self.members[key]
-
-    def copy_from(self, other: "ActivationRecord", override: bool):
-        for name, val in other.members.items():
-            if override or name not in self.members:
-                self.members[name] = val
-
-    def refer_back(self, mappings: dict[str, str]) -> None:
-        for k, v in mappings.items():
-            self.members[k] = self.members[v]
+        if key in self.members:
+            return self.members[key]
+        elif self.outer is not None:
+            return self.outer[key]
+        else:
+            raise KeyError(f"Variable '{key}' not found in any scope.")
 
     def get(self, key: str) -> Object:
-        return cast(Object, self.members.get(key))
+        return cast(Object, self[key])
 
     def __str__(self) -> str:
         # 根据 indent_level 计算缩进的空格数
@@ -639,6 +646,7 @@ class Interpreter(NodeVisitor):
             name=program_name,
             type=ARType.PROGRAM,
             nesting_level=self.call_stack.nesting_level,
+            outer=self.call_stack.peek(),
         )
         self.call_stack.push(ar)
 
@@ -1359,15 +1367,18 @@ class Interpreter(NodeVisitor):
     def visit_Var(self, node: Var) -> Object:
         var_name = node.value
         ar = self.call_stack.peek()
-        var_value = ar.get(var_name)
+        var_value = NullObject()
+        try:
+            var_value = ar.get(var_name)
+        except KeyError as _:
+            # 如果在当前作用域中找不到该变量，检查它是否是枚举值
+            if isinstance(var_value, NullObject):
+                # 检查是否是已注册的枚举值
+                if var_name in self.enum_values:
+                    enum_info = self.enum_values[var_name]
+                    return EnumObject(enum_info["type"], var_name, enum_info["ordinal"])
 
-        # 如果在当前作用域中找不到该变量，检查它是否是枚举值
-        if var_value is None:
-            # 检查是否是已注册的枚举值
-            if var_name in self.enum_values:
-                enum_info = self.enum_values[var_name]
-                return EnumObject(enum_info["type"], var_name, enum_info["ordinal"])
-        return var_value if var_value is not None else NullObject()
+        return var_value
 
     def visit_AccessExpression(self, node: AccessExpression) -> Object:
         # Start with the base value
@@ -1501,26 +1512,25 @@ class Interpreter(NodeVisitor):
         # Check built-in procedures first
         if proc_name.upper() in BUILTIN_PROCEDURES:
             handler = BUILTIN_PROCEDURES[proc_name.upper()]
+            should_refer = proc_name.upper() in ["INC", "DEC"]
 
             # Create activation record for built-in procedure
             ar = ActivationRecord(
                 name=proc_name,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                outer=self.call_stack.peek(),
             )
-
-            pre_ar = self.call_stack.peek()
-            if pre_ar is not None:
-                ar.copy_from(pre_ar, False)
 
             # Prepare parameters
             actual_params = node.actual_params
             for i in range(0, len(actual_params)):
                 key = f"__PROCEDURE__{proc_name}__{i}"
                 ar[key] = self.visit(actual_params[i])
-                ar.mappingNodes[actual_params[i]] = Var(
-                    token=Token(type=TokenType.VAR, value=key)
-                )
+                if should_refer:
+                    ar.mappingNodes[actual_params[i]] = Var(
+                        token=Token(type=TokenType.VAR, value=key)
+                    )
 
             self.call_stack.push(ar)
 
@@ -1547,11 +1557,8 @@ class Interpreter(NodeVisitor):
                 name=proc_name,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                outer=self.call_stack.peek(),
             )
-
-            pre_ar = self.call_stack.peek()
-            if pre_ar is not None:
-                ar.copy_from(pre_ar, False)
 
             # Map actual parameters to formal parameters
             formal_params = proc_obj.formal_params
@@ -1638,15 +1645,12 @@ class Interpreter(NodeVisitor):
                 name=func_name,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                outer=self.call_stack.peek(),
             )
-
-            pre_ar = self.call_stack.peek()
-            if pre_ar is not None:
-                ar.copy_from(pre_ar, False)
 
             # Prepare parameters
             actual_params = node.actual_params
-            for i in range(0, len(actual_params)):
+            for i in range(1, len(actual_params)):
                 ar[f"__FUNCTION__{func_name}__{i}"] = self.visit(actual_params[i])
 
             self.call_stack.push(ar)
@@ -1674,17 +1678,21 @@ class Interpreter(NodeVisitor):
                 name=func_name,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                outer=self.call_stack.peek(),
             )
 
             pre_ar = self.call_stack.peek()
-            if pre_ar is not None:
-                ar.copy_from(pre_ar, False)
 
             # Map actual parameters to formal parameters
             formal_params = func_obj.formal_params
             actual_params = node.actual_params
+            key = f"__{formal_params[0].var_node.value}__{ar.nesting_level}__"
+            formal_params[0].var_node.value = key
+            actual_params[0].value = key
+            pre_ar[key] = NullObject()
+            ar[func_obj.name] = NullObject()
 
-            for param_node, argument_node in zip(formal_params, actual_params):
+            for param_node, argument_node in zip(formal_params[1:], actual_params[1:]):
                 param_name = param_node.var_node.value
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
