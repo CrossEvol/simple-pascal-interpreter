@@ -20,7 +20,11 @@ class Symbol:
         self.scope_level: int = 0
 
     def __str__(self) -> str:
-        type_name = self.type.name if self.type and hasattr(self.type, 'name') else str(self.type)
+        type_name = (
+            self.type.name
+            if self.type and hasattr(self.type, "name")
+            else str(self.type)
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', type='{type_name}', scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -455,127 +459,14 @@ class VarSymbol(Symbol):
         return self.is_const and not self.is_initialized
 
     def __str__(self) -> str:
-        type_name = self.type.name if self.type and hasattr(self.type, 'name') else str(self.type)
+        type_name = (
+            self.type.name
+            if self.type and hasattr(self.type, "name")
+            else str(self.type)
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', type='{type_name}', mutable={self.is_mutable}, initialized={self.is_initialized}, param_mode={self.param_mode.name}, scope_level={self.scope_level})>"
 
     __repr__ = __str__
-
-
-class MutabilityValidator:
-    """Helper class for validating variable mutability and const assignment rules"""
-
-    @staticmethod
-    def validate_const_assignment(
-        var_symbol: VarSymbol, is_initialization: bool = False
-    ) -> tuple[bool, str | None]:
-        """
-        Validate assignment to a const variable.
-
-        Args:
-            var_symbol: The variable symbol being assigned to
-            is_initialization: True if this is the initial assignment during declaration
-
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        if not isinstance(var_symbol, VarSymbol):
-            return True, None  # Not a variable, no validation needed
-
-        return var_symbol.validate_assignment(is_initialization)
-
-    @staticmethod
-    def validate_variable_modification(
-        var_symbol: VarSymbol,
-    ) -> tuple[bool, str | None]:
-        """
-        Validate if a variable can be modified.
-
-        Args:
-            var_symbol: The variable symbol being modified
-
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        if not isinstance(var_symbol, VarSymbol):
-            return True, None  # Not a variable, no validation needed
-
-        return var_symbol.validate_modification_permission()
-
-    @staticmethod
-    def check_initialization_requirements(
-        var_symbol: VarSymbol,
-    ) -> tuple[bool, str | None]:
-        """
-        Check if a const variable meets initialization requirements.
-
-        Args:
-            var_symbol: The variable symbol to check
-
-        Returns:
-            Tuple of (is_satisfied, error_message)
-        """
-        if not isinstance(var_symbol, VarSymbol):
-            return True, None  # Not a variable, no requirements
-
-        if var_symbol.is_initialization_required():
-            return False, f"Const variable '{var_symbol.name}' must be initialized"
-
-        return True, None
-
-    @staticmethod
-    def mark_variable_initialized(var_symbol: VarSymbol) -> None:
-        """
-        Mark a variable as initialized (for const variables).
-
-        Args:
-            var_symbol: The variable symbol to mark as initialized
-        """
-        if isinstance(var_symbol, VarSymbol):
-            var_symbol.mark_initialized()
-
-    @staticmethod
-    def is_const_variable(var_symbol: VarSymbol) -> bool:
-        """
-        Check if a variable is a const variable.
-
-        Args:
-            var_symbol: The variable symbol to check
-
-        Returns:
-            True if the variable is const, False otherwise
-        """
-        if not isinstance(var_symbol, VarSymbol):
-            return False
-
-        return var_symbol.is_const
-
-    @staticmethod
-    def get_mutability_info(var_symbol: VarSymbol) -> dict[str, bool]:
-        """
-        Get comprehensive mutability information for a variable.
-
-        Args:
-            var_symbol: The variable symbol to analyze
-
-        Returns:
-            Dictionary with mutability information
-        """
-        if not isinstance(var_symbol, VarSymbol):
-            return {
-                "is_mutable": True,
-                "is_const": False,
-                "is_initialized": True,
-                "can_modify": True,
-                "requires_initialization": False,
-            }
-
-        return {
-            "is_mutable": var_symbol.is_mutable,
-            "is_const": var_symbol.is_const,
-            "is_initialized": var_symbol.is_initialized,
-            "can_modify": var_symbol.can_modify(),
-            "requires_initialization": var_symbol.require_initialization_check(),
-        }
 
 
 class StringTypeSymbol(TypeSymbol):
@@ -728,7 +619,11 @@ class ArrayTypeSymbol(TypeSymbol):
         return self.get_result_type("<>", other)
 
     def __str__(self) -> str:
-        element_type_name = self.element_type.name if hasattr(self.element_type, 'name') else str(self.element_type)
+        element_type_name = (
+            self.element_type.name
+            if hasattr(self.element_type, "name")
+            else str(self.element_type)
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', element_type='{element_type_name}', scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -828,7 +723,11 @@ class EnumTypeSymbol(TypeSymbol):
         return self.get_result_type(">=", other)
 
     def __str__(self) -> str:
-        values_str = ', '.join(self.values) if len(self.values) <= 5 else f"{', '.join(self.values[:5])}, ... ({len(self.values)} total)"
+        values_str = (
+            ", ".join(self.values)
+            if len(self.values) <= 5
+            else f"{', '.join(self.values[:5])}, ... ({len(self.values)} total)"
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', values=[{values_str}], scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -962,8 +861,16 @@ class RecordTypeSymbol(TypeSymbol):
 
     def __str__(self) -> str:
         field_names = list(self.fields.keys())
-        fields_str = ', '.join(field_names) if len(field_names) <= 5 else f"{', '.join(field_names[:5])}, ... ({len(field_names)} total)"
-        variant_info = f", variant_part={self.variant_part is not None}" if self.variant_part else ""
+        fields_str = (
+            ", ".join(field_names)
+            if len(field_names) <= 5
+            else f"{', '.join(field_names[:5])}, ... ({len(field_names)} total)"
+        )
+        variant_info = (
+            f", variant_part={self.variant_part is not None}"
+            if self.variant_part
+            else ""
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', fields=[{fields_str}]{variant_info}, scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -1013,7 +920,7 @@ class RecordFieldSymbol(TypeSymbol):
         return NEVER_SYMBOL
 
     def __str__(self) -> str:
-        type_name = self.type.name if hasattr(self.type, 'name') else str(self.type)
+        type_name = self.type.name if hasattr(self.type, "name") else str(self.type)
         return f"<{self.__class__.__name__}(name='{self.name}', type='{type_name}', scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -1041,7 +948,9 @@ class VariantPartSymbol:
         return variant_fields
 
     def __str__(self) -> str:
-        tag_type_name = self.tag_type.name if hasattr(self.tag_type, 'name') else str(self.tag_type)
+        tag_type_name = (
+            self.tag_type.name if hasattr(self.tag_type, "name") else str(self.tag_type)
+        )
         cases_count = len(self.variant_cases)
         return f"<{self.__class__.__name__}(tag_field='{self.tag_field}', tag_type='{tag_type_name}', cases={cases_count})>"
 
@@ -1122,7 +1031,11 @@ class TypeAliasSymbol(TypeSymbol):
         return final_type.get_result_type(operation, other)
 
     def __str__(self) -> str:
-        target_name = self.target_type.name if hasattr(self.target_type, 'name') else str(self.target_type)
+        target_name = (
+            self.target_type.name
+            if hasattr(self.target_type, "name")
+            else str(self.target_type)
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', target='{target_name}', scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -1140,7 +1053,7 @@ class ProcedureSymbol(Symbol):
     def __str__(self) -> str:
         param_count = len(self.formal_params)
         param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
-        params_str = ', '.join(param_names)
+        params_str = ", ".join(param_names)
         if param_count > 3:
             params_str += f", ... ({param_count} total)"
         forward_info = ", forward=True" if self.is_forward else ""
@@ -1159,7 +1072,7 @@ class BuiltinProcedureSymbol(Symbol):
     def __str__(self) -> str:
         param_count = len(self.formal_params)
         param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
-        params_str = ', '.join(param_names)
+        params_str = ", ".join(param_names)
         if param_count > 3:
             params_str += f", ... ({param_count} total)"
         return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}], builtin=True, scope_level={self.scope_level})>"
@@ -1180,10 +1093,14 @@ class FunctionSymbol(Symbol):
     def __str__(self) -> str:
         param_count = len(self.formal_params)
         param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
-        params_str = ', '.join(param_names)
+        params_str = ", ".join(param_names)
         if param_count > 3:
             params_str += f", ... ({param_count} total)"
-        return_type_name = self.return_type.name if hasattr(self.return_type, 'name') else str(self.return_type)
+        return_type_name = (
+            self.return_type.name
+            if hasattr(self.return_type, "name")
+            else str(self.return_type)
+        )
         forward_info = ", forward=True" if self.is_forward else ""
         has_body = ", has_body=True" if self.block_ast else ""
         return f"<{self.__class__.__name__}(name='{self.name}', return_type='{return_type_name}', params=[{params_str}]{forward_info}{has_body}, scope_level={self.scope_level})>"
@@ -1210,10 +1127,14 @@ class BuiltinFunctionSymbol(Symbol):
     def __str__(self) -> str:
         param_count = len(self.formal_params)
         param_names = [p.name for p in self.formal_params[:3]]  # Show first 3 params
-        params_str = ', '.join(param_names)
+        params_str = ", ".join(param_names)
         if param_count > 3:
             params_str += f", ... ({param_count} total)"
-        return_type_name = self.return_type.name if hasattr(self.return_type, 'name') else str(self.return_type)
+        return_type_name = (
+            self.return_type.name
+            if hasattr(self.return_type, "name")
+            else str(self.return_type)
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', return_type='{return_type_name}', params=[{params_str}], builtin=True, scope_level={self.scope_level})>"
 
     __repr__ = __str__
@@ -1303,8 +1224,10 @@ class ProcedureTypeSymbol(TypeSymbol):
 
     def __str__(self) -> str:
         param_count = len(self.param_types)
-        param_names = [param.name for param in self.param_types[:3]]  # Show first 3 params
-        params_str = ', '.join(param_names)
+        param_names = [
+            param.name for param in self.param_types[:3]
+        ]  # Show first 3 params
+        params_str = ", ".join(param_names)
         if param_count > 3:
             params_str += f", ... ({param_count} total)"
         return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}], scope_level={self.scope_level})>"
@@ -1410,11 +1333,17 @@ class FunctionTypeSymbol(TypeSymbol):
 
     def __str__(self) -> str:
         param_count = len(self.param_types)
-        param_names = [param.name for param in self.param_types[:3]]  # Show first 3 params
-        params_str = ', '.join(param_names)
+        param_names = [
+            param.name for param in self.param_types[:3]
+        ]  # Show first 3 params
+        params_str = ", ".join(param_names)
         if param_count > 3:
             params_str += f", ... ({param_count} total)"
-        return_type_name = self.return_type.name if hasattr(self.return_type, 'name') else str(self.return_type)
+        return_type_name = (
+            self.return_type.name
+            if hasattr(self.return_type, "name")
+            else str(self.return_type)
+        )
         return f"<{self.__class__.__name__}(name='{self.name}', params=[{params_str}], return_type='{return_type_name}', scope_level={self.scope_level})>"
 
     __repr__ = __str__

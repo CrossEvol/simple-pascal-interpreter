@@ -44,11 +44,6 @@ run:
 test: 
 	$(UV_PYTEST) tests/* -v
 
-# Run only mutability tests  
-.PHONY: test_mutability
-test_mutability:
-	$(UV_PYTEST) tests/test_mutability_validation.py -v
-
 
 # Run only lexer tests
 .PHONY: test_lexer 
@@ -64,6 +59,12 @@ test_parser:
 .PHONY: test_semantic
 test_semantic:
 	$(UV_PYTEST) tests/test_semantic_analyzer.py -v
+
+# Run only object tests
+.PHONY: test_object
+test_object:
+	$(UV_PYTEST) tests/test_object.py -v
+
 
 # Run only interpreter tests  
 .PHONY: test_interpreter
@@ -97,16 +98,4 @@ clean:
 	@rm -f ast.dot ast.png
 	@echo "Cleaned generated files"
 
-# 示例运行目标（使用项目中的示例文件）
-.PHONY: example-basic
-example-basic:
-	@$(PYTHON) spi.py pas/basic_data_types.pas
-
-.PHONY: example-function
-example-function:
-	@$(PYTHON) spi.py pas/function.pas
-
-.PHONY: example-procedure
-example-procedure:
-	@$(PYTHON) spi.py pas/procedure.pas
 
