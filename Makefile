@@ -79,9 +79,13 @@ dot:
 		echo "Error: Please specify a Pascal file with file=<filename>"; \
 		exit 1; \
 	fi
-	@$(PYTHON) scripts/gen_ast_dot.py $(file) >> ast.dot
-	@$(DOT) -Tpng -o ast.png ast.dot
-	@echo "AST visualization generated: ast.png"
+	@$(PYTHON) scripts/gen_ast_dot.py $(file) > ast.dot
+	@echo "AST DOT file generated: ast.dot"
+	@if command -v $(DOT) >/dev/null 2>&1; then \
+		$(DOT) -Tpng -o ast.png ast.dot && echo "AST visualization generated: ast.png"; \
+	else \
+		echo "Graphviz not installed. Install it to generate PNG: https://graphviz.org/download/"; \
+	fi
 
 # 自动类型注解
 .PHONY: type

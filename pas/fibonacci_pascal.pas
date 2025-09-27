@@ -22,7 +22,7 @@ begin
   for i := 3 to 15 do
   begin
     temp := a + b;  { Calculate next term }
-    writeln('Term ', i:2, ': ', temp);
+    writeln('Term ', i, ': ', temp);
     a := b;         { Update a to previous term }
     b := temp;      { Update b to current term }
   end;
