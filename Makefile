@@ -75,11 +75,11 @@ test_interpreter:
 # 生成AST可视化
 .PHONY: dot
 dot:
-	@if [ -z "$(FILE)" ]; then \
-		echo "Error: Please specify a Pascal file with FILE=<filename>"; \
+	@if [ -z "$(file)" ]; then \
+		echo "Error: Please specify a Pascal file with file=<filename>"; \
 		exit 1; \
 	fi
-	@$(PYTHON) gen_ast_dot.py $(FILE) >> ast.dot
+	@$(PYTHON) scripts/gen_ast_dot.py $(file) >> ast.dot
 	@$(DOT) -Tpng -o ast.png ast.dot
 	@echo "AST visualization generated: ast.png"
 
@@ -90,7 +90,7 @@ type:
 		echo "Error: Please specify a Python file with FILE=<filename>"; \
 		exit 1; \
 	fi
-	@$(PYTHON) auto_type.py $(FILE)
+	@$(PYTHON) scripts/auto_type.py $(FILE)
 
 # 清理生成的文件
 .PHONY: clean
