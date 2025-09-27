@@ -232,7 +232,7 @@ def handle_inc(interpreter: Interpreter, node: ProcedureCall):
     interpreter.log(str(interpreter.call_stack))
 
     # Get the variable name and optional increment value
-    key = f"__PROCEDURE__{proc_name}__{0}"
+    key = f"__{ar.nesting_level}__PROCEDURE__{proc_name}__{0}"
     increment = 1  # Default increment
 
     if len(actual_params) > 1:
@@ -264,7 +264,7 @@ def handle_dec(interpreter: Interpreter, node: ProcedureCall):
     interpreter.log(str(interpreter.call_stack))
 
     # Get the variable name and optional decrement value
-    key = f"__PROCEDURE__{proc_name}__{0}"
+    key = f"__{ar.nesting_level}__PROCEDURE__{proc_name}__{0}"
     decrement = 1  # Default decrement
 
     if len(actual_params) > 1:
@@ -387,7 +387,24 @@ class CallStack:
         self._records.append(ar)
 
     def pop(self) -> ActivationRecord:
-        return self._records.pop()
+        if len(self._records) >= 2:
+            pre_ar = self._records[-1]
+            ar = self._records[-2]
+            for k in pre_ar._references:
+                ar.declare_local(k)
+                ar[k] = pre_ar[k]
+            mappingNodes = self.preMappingNodes
+            self._records.pop()
+            for k, v in mappingNodes.items():
+                assign = Assign(
+                    left=k,
+                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
+                    right=v,
+                )
+                ar.interpreter.visit(assign)
+            return pre_ar
+        else:
+            self._records.pop()
 
     @property
     def preMappingNodes(self) -> dict[AST, AST]:
@@ -418,6 +435,7 @@ class ActivationRecord:
         name: str,
         type: ARType,
         nesting_level: int,
+        interpreter: Interpreter,
         outer: ActivationRecord = None,
     ) -> None:
         self.name = name
@@ -426,23 +444,59 @@ class ActivationRecord:
         self.members: dict[str | int, Object] = {}
         self.mappings: dict[str, str] = {}
         self.mappingNodes: dict[AST, AST] = {}
+        self.interpreter = interpreter
         self.outer: ActivationRecord = outer
+        # 新增：记录当前作用域声明的局部变量
+        self._locals: set[str] = set()
+        self._references: set[set] = set()
+
+    def declare_local(self, name: str) -> None:
+        """在当前作用域声明局部变量"""
+        if name in self._locals:
+            pass
+            # raise Exception(f"Variable '{name}' already declared in this scope")
+        else:
+            self._locals.add(name)
+        self.members[name] = NullObject()  # 初始化为None或默认值
+
+    def declare_global(self, name: str) -> None:
+        """在全局作用域声明全局变量"""
+        # 找到全局作用域（最外层作用域）
+        global_scope = self
+        while global_scope.outer is not None:
+            global_scope = global_scope.outer
+
+        if name in global_scope._locals:
+            raise Exception(f"Global variable '{name}' already declared")
+        global_scope._locals.add(name)
+        global_scope.members[name] = NullObject()
 
     def __setitem__(self, key: str | int, value: Object) -> None:
-        if key in self.members:
+        """修改变量值（只修改当前作用域的变量）"""
+        if key in self._locals:
             self.members[key] = value
-        elif self.outer is not None:
-            self.outer[key] = value
         else:
-            self.members[key] = value
+            if self.outer is not None:
+                self.outer[key] = value
+            else:
+                # 如果变量未声明，则报错
+                raise KeyError(f"Variable '{key}' not declared in current scope")
+
+    def remove_item(self, key) -> None:
+        self._locals.remove(key)
+        del self.members[key]
 
     def __getitem__(self, key: str | int) -> Object:
+        """获取变量值（沿作用域链查找）"""
+        # 先检查当前作用域
         if key in self.members:
             return self.members[key]
+        # 然后检查外层作用域
         elif self.outer is not None:
             return self.outer[key]
+        # 最后检查全局作用域
         else:
-            raise KeyError(f"Variable '{key}' not found in any scope.")
+            raise KeyError(f"Variable '{key}' not found in any scope")
 
     def get(self, key: str) -> Object:
         return cast(Object, self[key])
@@ -646,6 +700,7 @@ class Interpreter(NodeVisitor):
             name=program_name,
             type=ARType.PROGRAM,
             nesting_level=self.call_stack.nesting_level,
+            interpreter=self,
             outer=self.call_stack.peek(),
         )
         self.call_stack.push(ar)
@@ -706,15 +761,19 @@ class Interpreter(NodeVisitor):
         # 处理基本类型
         if hasattr(resolved_type_node, "token"):
             if resolved_type_node.token.type == TokenType.BOOLEAN:
+                ar.declare_local(node.var_node.value)
                 ar[node.var_node.value] = BooleanObject(False)
                 return
             elif resolved_type_node.token.type == TokenType.INTEGER:
+                ar.declare_local(node.var_node.value)
                 ar[node.var_node.value] = IntegerObject(0)
                 return
             elif resolved_type_node.token.type == TokenType.REAL:
+                ar.declare_local(node.var_node.value)
                 ar[node.var_node.value] = RealObject(0.0)
                 return
             elif resolved_type_node.token.type == TokenType.CHAR:
+                ar.declare_local(node.var_node.value)
                 ar[node.var_node.value] = CharObject("")
                 return
             elif resolved_type_node.token.type == TokenType.STRING:
@@ -722,9 +781,11 @@ class Interpreter(NodeVisitor):
                 limit: int = 255
                 if string_node.limit is not None:
                     limit = self.visit(string_node.limit).value
+                ar.declare_local(node.var_node.value)
                 ar[node.var_node.value] = StringObject("", limit)
                 return
             elif resolved_type_node.token.type == TokenType.ARRAY:
+                ar.declare_local(node.var_node.value)
                 ar[node.var_node.value] = self.__initArray(resolved_type_node)
                 return
 
@@ -736,6 +797,7 @@ class Interpreter(NodeVisitor):
             record_obj = RecordObject(resolved_type_node)
             # 初始化复杂类型字段
             self._initialize_record_complex_fields(record_obj)
+            ar.declare_local(var_name)
             ar[var_name] = record_obj
             return
 
@@ -744,6 +806,7 @@ class Interpreter(NodeVisitor):
             type_name = resolved_type_node.value
             if type_name in self.enum_types:
                 enum_obj = self._enum_obj(type_name, 0)
+                ar.declare_local(var_name)
                 ar[var_name] = enum_obj
                 return
             elif type_name in self.record_types:
@@ -751,6 +814,7 @@ class Interpreter(NodeVisitor):
                 record_obj = RecordObject(record_type)
                 # 初始化复杂类型字段
                 self._initialize_record_complex_fields(record_obj)
+                ar.declare_local(var_name)
                 ar[var_name] = record_obj
                 return
 
@@ -771,8 +835,10 @@ class Interpreter(NodeVisitor):
                     record_obj = RecordObject(record_type)
                     # 初始化复杂类型字段
                     self._initialize_record_complex_fields(record_obj)
+                    ar.declare_local(var_name)
                     ar[var_name] = record_obj
                 else:
+                    self.call_stack.peek().declare_local(var_name)
                     ar[var_name] = NullObject()
             elif (
                 isinstance(type_symbol, EnumTypeSymbol)
@@ -780,18 +846,22 @@ class Interpreter(NodeVisitor):
             ):
                 # Handle enum type
                 enum_obj = self._enum_obj(type_symbol.name, 0)
+                ar.declare_local(var_name)
                 ar[var_name] = enum_obj
             else:
                 # For other custom types, treat as null for now
+                ar.declare_local(var_name)
                 ar[var_name] = NullObject()
         else:
             # 如果没有type_symbol，默认创建Null对象
+            ar.declare_local(var_name)
             ar[var_name] = NullObject()
 
     def visit_ConstDecl(self, node: ConstDecl) -> None:
         # Evaluate the const value expression and store it
         ar = self.call_stack.peek()
         const_value = self.visit(node.value_expr)
+        ar.declare_local(node.var_node.value)
         ar[node.var_node.value] = const_value
 
     def __initArray(self, node: ArrayType) -> ArrayObject:
@@ -1519,13 +1589,17 @@ class Interpreter(NodeVisitor):
                 name=proc_name,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
             # Prepare parameters
             actual_params = node.actual_params
             for i in range(0, len(actual_params)):
-                key = f"__PROCEDURE__{proc_name}__{i}"
+                key = f"__{ar.nesting_level + 1}__PROCEDURE__{proc_name}__{i}"
+                # 应该保证 key 在上一个栈帧中， 保证最后可以回传
+                ar._references.add(key)
+                ar.declare_local(key)
                 ar[key] = self.visit(actual_params[i])
                 if should_refer:
                     ar.mappingNodes[actual_params[i]] = Var(
@@ -1537,15 +1611,7 @@ class Interpreter(NodeVisitor):
             # Call the handler
             handler(self, node)
 
-            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
-            for k, v in mappingNodes.items():
-                assign = Assign(
-                    left=k,
-                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
-                    right=v,
-                )
-                self.visit(assign)
             return
 
         # Check user-defined procedures
@@ -1557,6 +1623,7 @@ class Interpreter(NodeVisitor):
                 name=proc_name,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
@@ -1566,8 +1633,10 @@ class Interpreter(NodeVisitor):
 
             for param_node, argument_node in zip(formal_params, actual_params):
                 param_name = param_node.var_node.value
+                ar.declare_local(param_name)
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
+                    ar._references.add(param_name)
                     ar.mappings[argument_node.value] = param_node.var_node.value
                     ar.mappingNodes[argument_node] = param_node.var_node
 
@@ -1590,15 +1659,7 @@ class Interpreter(NodeVisitor):
             self.log(f"LEAVE: PROCEDURE {proc_name}")
             self.log(str(self.call_stack))
 
-            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
-            for k, v in mappingNodes.items():
-                assign = Assign(
-                    left=k,
-                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
-                    right=v,
-                )
-                self.visit(assign)
             return
 
         # Unknown procedure
@@ -1645,28 +1706,23 @@ class Interpreter(NodeVisitor):
                 name=func_name,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
             # Prepare parameters
             actual_params = node.actual_params
             for i in range(1, len(actual_params)):
-                ar[f"__FUNCTION__{func_name}__{i}"] = self.visit(actual_params[i])
+                key = f"__FUNCTION__{func_name}__{i}"
+                ar.declare_local(key)
+                ar[key] = self.visit(actual_params[i])
 
             self.call_stack.push(ar)
 
             # Call the handler and get the result
             result = handler(self, node)
 
-            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
-            for k, v in mappingNodes.items():
-                assign = Assign(
-                    left=k,
-                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
-                    right=v,
-                )
-                self.visit(assign)
             return result
 
         # Check user-defined functions
@@ -1678,6 +1734,7 @@ class Interpreter(NodeVisitor):
                 name=func_name,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
+                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
@@ -1689,13 +1746,17 @@ class Interpreter(NodeVisitor):
             key = f"__{formal_params[0].var_node.value}__{ar.nesting_level}__"
             formal_params[0].var_node.value = key
             actual_params[0].value = key
+            pre_ar.declare_local(key)
             pre_ar[key] = NullObject()
+            ar.declare_local(func_obj.name)
             ar[func_obj.name] = NullObject()
 
             for param_node, argument_node in zip(formal_params[1:], actual_params[1:]):
                 param_name = param_node.var_node.value
+                ar.declare_local(param_name)
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
+                    ar._references.add(param_name)
                     ar.mappings[argument_node.value] = param_node.var_node.value
                     ar.mappingNodes[argument_node] = param_node.var_node
 
@@ -1720,16 +1781,7 @@ class Interpreter(NodeVisitor):
 
             # Get return value (function name is used as return variable)
             result = ar.get(func_name)
-            mappingNodes = self.call_stack.preMappingNodes
             self.call_stack.pop()
-            for k, v in mappingNodes.items():
-                assign = Assign(
-                    left=k,
-                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
-                    right=v,
-                )
-                self.visit(assign)
-
             return result if result is not None else NullObject()
 
         # Unknown function

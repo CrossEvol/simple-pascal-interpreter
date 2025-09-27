@@ -1,14 +1,14 @@
 program JSONParserNoPointers;
 
 const
-  MAX_JSON_DEPTH = 100;
-  MAX_STRING_LEN = 1000;
-  MAX_ARRAY_SIZE = 1000;
-  MAX_OBJECT_KEYS = 1000;
-  HASH_TABLE_SIZE = 1009;
-  MAX_VALUES = 5000; { 最大JSON值数量}
-  MAX_HASH_NODES = 5000; { 最大哈希节点数量}
-  MAX_INPUT_LEN = 10000; { 最大输入长度}
+  MAX_JSON_DEPTH  =  16;   { 最深嵌套 32 层，超过一般接口 10 倍 }
+  MAX_STRING_LEN  = 255;   { 单段字符串 ≤255 字符，UTF-8 汉字 80 个左右 }
+  MAX_ARRAY_SIZE  = 16;   { 数组元素 ≤256 个 }
+  MAX_OBJECT_KEYS = 32;   { 单个对象键值对 ≤256 个 }
+  HASH_TABLE_SIZE = 37;   { 质数，略大于 MAX_OBJECT_KEYS，降低冲突 }
+  MAX_VALUES      = 32;  { 总 JSON 值节点 ≤1 K，足够容纳 4 层嵌套的中等报文 }
+  MAX_HASH_NODES  = 32;  { 总哈希节点 ≤1 K，与 MAX_VALUES 1:1 预留 }
+  MAX_INPUT_LEN   = 1024;  { 原始文本 ≤4 KB，约 2 页 A4 英文 }
 
 type
   { JSON值类型枚举}

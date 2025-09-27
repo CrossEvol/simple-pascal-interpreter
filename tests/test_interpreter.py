@@ -1,6 +1,6 @@
 import unittest
 
-from spi.ast import AST, Var
+from spi.ast import AST, Assign, Var
 from spi.error import ErrorCode
 from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
@@ -61,7 +61,21 @@ class MockFunctionCallStack:
 
     def pop(self) -> ActivationRecord:
         if len(self._records) >= 2:
-            return self._records.pop()
+            pre_ar = self._records[-1]
+            ar = self._records[-2]
+            for k in pre_ar._references:
+                ar.declare_local(k)
+                ar[k] = pre_ar[k]
+            mappingNodes = self.preMappingNodes
+            self._records.pop()
+            for k, v in mappingNodes.items():
+                assign = Assign(
+                    left=k,
+                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
+                    right=v,
+                )
+                ar.interpreter.visit(assign)
+            return pre_ar
         else:
             pass
 
@@ -321,7 +335,9 @@ begin
     setLength(arr,5);
 end.
     """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -330,8 +346,7 @@ end.
         self.assertEqual(ar["k"].value, 10)
         for i in range(0, 5):
             self.assertEqual(ar["arr"].value[i].value, i + 1)
-        # MockCallStack will not pop ActivationRecord
-        self.assertEqual(ar.nesting_level, 5)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_length_builtin_function(self):
         text = """\
@@ -343,12 +358,14 @@ begin
   i := Length(arr);
 end.
     """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["i"].value, 5)
-        self.assertEqual(ar.nesting_level, 2)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_inc_procedure(self):
         text = """\
@@ -362,7 +379,9 @@ BEGIN
     Inc(i);
 END.
 """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -380,7 +399,9 @@ BEGIN
     Dec(i);
 END.
 """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
@@ -430,11 +451,13 @@ END.
             TestProc();
         end.
 """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["executed"].value, True)
-        self.assertEqual(ar.nesting_level, 3)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_exit_in_simple_function(self):
         """Test Exit in a simple function without nested structures"""
@@ -471,40 +494,42 @@ END.
 
         procedure Proc4;
         begin
-        count := count + 4;
+            count := count + 4;
         end;
 
         procedure Proc3;
         begin
-        count := count + 3;
-        {模拟某种条件，这里直接使用Exit提前退出}
-        if true then  {可以替换为实际条件}
-            Exit();  {提前退出Proc3，不会执行下面的代码}
-        Proc4();
+            count := count + 3;
+            {模拟某种条件，这里直接使用Exit提前退出}
+            if true then  {可以替换为实际条件}
+                Exit();  {提前退出Proc3，不会执行下面的代码}
+            Proc4();
         end;
 
         procedure Proc2;
         begin
-        count := count + 2;
-        Proc3();
+            count := count + 2;
+            Proc3();    
         end;
 
         procedure Proc1;
         begin
-        count := count + 1;
-        Proc2();
+            count := count + 1;
+            Proc2();
         end;
 
         begin
-        Proc1();
+            Proc1();
         end.
 """
-        interpreter = makeInterpreter(text)
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["count"].value, 6)
-        self.assertEqual(ar.nesting_level, 5)
+        self.assertEqual(ar.nesting_level, 1)
 
     def test_exit_for__nested_function_call(self):
         text = """\
@@ -2281,6 +2306,114 @@ end.  { Main }
         self.assertEqual(ar["formerItem"].value, 4)
         self.assertEqual(ar["afterAge"].value, 6)
         self.assertEqual(ar["afterItem"].value, 8)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_track_recursion_for_normal_param(self):
+        text = """\
+        program TrackRecursion;
+
+        var 
+            count : Integer;
+            i : Integer;
+            lastValueIndex : Integer;
+            track1 : Integer;
+            track2 : Integer;
+            track3 : Integer;
+            track4 : Integer;
+            track5 : Integer;
+
+        procedure CallIt(valueIndex:Integer);
+        begin
+            if track1 = 0 then
+                track1 := valueIndex
+            else if track2 = 0 then
+                track2 := valueIndex
+            else if track3 = 0 then
+                track3 := valueIndex
+            else if track4 = 0 then
+                track4 := valueIndex
+            else if track5 = 0 then
+                track5 := valueIndex;
+            if count < 5 then
+            begin
+                count := count + 1;
+                valueIndex := valueIndex + 1;
+                CallIt(valueIndex);
+            end;
+            lastValueIndex := valueIndex;
+        end;
+
+        begin
+            i := 0;
+            CallIt(i);
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["track1"].value, 1)
+        self.assertEqual(ar["track2"].value, 2)
+        self.assertEqual(ar["track3"].value, 3)
+        self.assertEqual(ar["track4"].value, 4)
+        self.assertEqual(ar["track5"].value, 5)
+        self.assertEqual(ar["lastValueIndex"].value, 1)
+        self.assertEqual(ar.nesting_level, 1)
+
+    def test_track_recursion_for_reference_param(self):
+        text = """\
+        program TrackRecursion;
+
+        var 
+            count : Integer;
+            i : Integer;
+            lastValueIndex : Integer;
+            track1 : Integer;
+            track2 : Integer;
+            track3 : Integer;
+            track4 : Integer;
+            track5 : Integer;
+
+        procedure CallIt(var valueIndex:Integer);
+        begin
+            if track1 = 0 then
+                track1 := valueIndex
+            else if track2 = 0 then
+                track2 := valueIndex
+            else if track3 = 0 then
+                track3 := valueIndex
+            else if track4 = 0 then
+                track4 := valueIndex
+            else if track5 = 0 then
+                track5 := valueIndex;
+            if count < 5 then
+            begin
+                count := count + 1;
+                valueIndex := valueIndex + 1;
+                CallIt(valueIndex);
+            end;
+            lastValueIndex := valueIndex;
+        end;
+
+        begin
+            i := 0;
+            CallIt(i);
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+        ar = interpreter.call_stack.peek()
+
+        self.assertEqual(ar["track1"].value, 1)
+        self.assertEqual(ar["track2"].value, 2)
+        self.assertEqual(ar["track3"].value, 3)
+        self.assertEqual(ar["track4"].value, 4)
+        self.assertEqual(ar["track5"].value, 5)
+        self.assertEqual(ar["lastValueIndex"].value, 5)
         self.assertEqual(ar.nesting_level, 1)
 
 
