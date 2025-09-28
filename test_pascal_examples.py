@@ -9,12 +9,12 @@ import sys
 
 def compile_and_run_pascal_tests():
     """
-    Compile and run all Pascal examples in the pascal_examples directory.
+    Compile and run all Pascal examples found recursively in the current directory.
     Clean up generated files after testing.
     """
-    # Change to the pascal_examples directory
+    # Change to the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    pascal_dir = os.path.join(script_dir, "pas/pascal_examples")
+    pascal_dir = os.path.join(script_dir, "pas")
 
     if not os.path.exists(pascal_dir):
         print(f"Error: Directory {pascal_dir} does not exist")
@@ -22,11 +22,11 @@ def compile_and_run_pascal_tests():
 
     os.chdir(pascal_dir)
 
-    # Find all .pas files
-    pas_files = sorted(glob.glob("*.pas"))
+    # Find all .pas files recursively in the current directory and subdirectories
+    pas_files = sorted(glob.glob("**/*.pas", recursive=True))
 
     if not pas_files:
-        print("No .pas files found in the directory")
+        print("No .pas files found in the directory and subdirectories")
         return False
 
     print(f"Found {len(pas_files)} Pascal files to test:")
@@ -43,7 +43,12 @@ def compile_and_run_pascal_tests():
         # Compile the Pascal file
         try:
             compile_result = subprocess.run(
-                ["fpc", pas_file], capture_output=True, text=True, timeout=30
+                ["fpc", pas_file],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding="utf-8",
+                errors="replace",
             )
 
             if compile_result.returncode != 0:
@@ -74,19 +79,24 @@ def compile_and_run_pascal_tests():
         # Run the executable
         try:
             run_result = subprocess.run(
-                [exe_file], capture_output=True, text=True, timeout=10
+                [exe_file],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                encoding="utf-8",
+                errors="replace",
             )
 
             if run_result.returncode == 0:
                 print(f"  PASSED: {pas_file}")
                 passed += 1
                 # Print output if there is any
-                if run_result.stdout.strip():
+                if run_result.stdout and run_result.stdout.strip():
                     print(f"    Output: {run_result.stdout.strip()}")
             else:
                 print(f"  FAILED: {pas_file}")
                 print(f"    Return code: {run_result.returncode}")
-                if run_result.stderr.strip():
+                if run_result.stderr and run_result.stderr.strip():
                     print(f"    Error: {run_result.stderr.strip()}")
                 failed += 1
 
@@ -97,13 +107,13 @@ def compile_and_run_pascal_tests():
             print(f"  RUN ERROR for {pas_file}: {e}")
             failed += 1
 
-    # Clean up generated files
+    # Clean up generated files recursively
     print("\nCleaning up generated files...")
-    patterns_to_delete = ["*.o", "*.exe", "*.ppu", "*.bak"]
+    patterns_to_delete = ["**/*.o", "**/*.exe", "**/*.ppu", "**/*.bak"]
     deleted_count = 0
 
     for pattern in patterns_to_delete:
-        files = glob.glob(pattern)
+        files = glob.glob(pattern, recursive=True)
         for file in files:
             try:
                 os.remove(file)
