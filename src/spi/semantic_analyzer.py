@@ -27,7 +27,6 @@ from spi.ast import (
     FunctionDecl,
     IfStatement,
     IndexSuffix,
-    InOperator,
     MemberSuffix,
     NoOp,
     Num,
@@ -46,7 +45,6 @@ from spi.ast import (
     UnaryOp,
     Var,
     VarDecl,
-    VariantPart,
     WhileStatement,
 )
 from spi.constants import CONFIG
@@ -55,6 +53,7 @@ from spi.error import (
     SemanticError,
 )
 from spi.native import NativeMethod
+from spi.semantic_analyzer_helper import SemanticAnalyzerHelper
 from spi.symbol import (
     BOOLEAN_TYPE_SYMBOL,
     CHAR_TYPE_SYMBOL,
@@ -79,7 +78,6 @@ from spi.symbol import (
     Symbol,
     TypeAliasSymbol,
     TypeSymbol,
-    VariantPartSymbol,
     VarSymbol,
 )
 from spi.token import Token, TokenType
@@ -207,6 +205,7 @@ class SemanticAnalyzer(NodeVisitor):
         # 循环作用域栈，用于跟踪当前是否在循环内部
         self.loop_stack: list[str] = []  # 存储循环类型 ('for' 或 'while')
         self.in_mark = False
+        self.semantic_helper = SemanticAnalyzerHelper(self)
 
     def log(self, msg) -> None:
         if CONFIG.should_log_scope:
@@ -433,10 +432,6 @@ class SemanticAnalyzer(NodeVisitor):
             self.loop_stack.pop()
             self.unmodified_vars.remove(var_name)
 
-    def _is_enum_type(self, type_symbol):
-        """Check if a type symbol is an enum type"""
-        return isinstance(type_symbol, EnumTypeSymbol)
-
     def visit_IfStatement(self, node: IfStatement) -> None:
         self.visit(node.condition)
         self.visit(node.then_branch)
@@ -492,7 +487,7 @@ class SemanticAnalyzer(NodeVisitor):
 
                 # 检查标签类型是否与case表达式匹配（仅当我们有case_type_name时）
                 if case_type_name:
-                    label_type = self._get_literal_type(label_value)
+                    label_type = self.semantic_helper.get_literal_type(label_value)
                     # 如果是枚举类型变量，检查标签是否是该枚举类型的值
                     if isinstance(var_symbol.type, EnumTypeSymbol):
                         # 对于枚举类型，标签必须是该枚举的值之一
@@ -501,7 +496,7 @@ class SemanticAnalyzer(NodeVisitor):
                                 error_code=ErrorCode.SEMANTIC_UNKNOWN_ENUM,
                                 token=node.case_expr.token,  # Use the case expression token for error reporting
                             )
-                    elif label_type and not self._types_compatible(
+                    elif label_type and not self.semantic_helper.check_types_compatible(
                         case_type_name, label_type
                     ):
                         self.error(
@@ -523,85 +518,6 @@ class SemanticAnalyzer(NodeVisitor):
         # 访问else语句（如果存在）
         if node.else_stmt:
             self.visit(node.else_stmt)
-
-    def _get_literal_type(self, value):
-        """Get the type name for a literal value"""
-        # Check bool first since bool is a subclass of int in Python
-        if isinstance(value, bool):
-            return "BOOLEAN"
-        elif isinstance(value, int):
-            return "INTEGER"
-        elif isinstance(value, str) and len(value) == 1:
-            return "CHAR"
-        elif self.enum_values[value]:
-            return self.enum_values[value]["type"]
-        else:
-            return None
-
-    def _types_compatible(self, case_type, label_type):
-        """Check if case expression type and label type are compatible"""
-        if case_type is None or label_type is None:
-            return False
-        return case_type == label_type
-
-    def _resolve_type_alias(self, symbol: Symbol) -> Symbol:
-        """Follow alias chain until finding the base type symbol."""
-        if symbol is None:
-            return symbol
-
-        visited = {symbol.name}
-        current_symbol = symbol
-
-        while (
-            hasattr(current_symbol, "type")
-            and current_symbol.type is not None
-            and current_symbol.type != current_symbol
-        ):
-            current_symbol = current_symbol.type
-
-            # Detect alias cycles
-            if current_symbol.name in visited:
-                # For simplicity, return the symbol as-is if we detect a cycle
-                # In a real implementation, we should throw an error
-                return symbol
-
-            visited.add(current_symbol.name)
-
-        return current_symbol
-
-    def _convert_to_type_symbol(self, symbol: Symbol) -> TypeSymbol:
-        """Convert a Symbol to TypeSymbol"""
-        if isinstance(symbol, TypeSymbol):
-            return symbol
-        elif isinstance(symbol, PrimitiveType):
-            return self.visit_PrimitiveType(symbol)
-        elif hasattr(symbol, "name"):
-            name = symbol.name.upper()
-            if name == "INTEGER":
-                return INTEGER_TYPE_SYMBOL
-            elif name == "REAL":
-                return REAL_TYPE_SYMBOL
-            elif name == "BOOLEAN":
-                return BOOLEAN_TYPE_SYMBOL
-            elif name == "CHAR":
-                return CHAR_TYPE_SYMBOL
-            elif name == "STRING" or name.startswith("STRING["):
-                return STRING_TYPE_SYMBOL
-            else:
-                return NEVER_SYMBOL
-        else:
-            return NEVER_SYMBOL
-
-    def _get_variable_type(self, var_symbol: Symbol) -> TypeSymbol:
-        """Get the TypeSymbol for a variable symbol"""
-        if var_symbol is None or var_symbol.type is None:
-            return NEVER_SYMBOL
-
-        # Convert to TypeSymbol if needed
-        if isinstance(var_symbol.type, TypeSymbol):
-            return var_symbol.type.resolve_final_type()
-        else:
-            return self._convert_to_type_symbol(var_symbol.type)
 
     def visit_BinOp(self, node: BinOp) -> TypeSymbol:
         # Visit operands and get their typedef
@@ -715,7 +631,7 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_RecordType(self, node: RecordType) -> RecordTypeSymbol:
         """访问记录类型定义节点"""
         # 创建记录类型符号
-        type_name = f"record_{self._get_record_type_counter()}"
+        type_name = f"record_{self.semantic_helper.get_record_type_counter()}"
         fields = {}
 
         # 处理常规字段
@@ -730,70 +646,14 @@ class SemanticAnalyzer(NodeVisitor):
         # 处理变体部分（如果存在）
         variant_part_symbol = None
         if node.variant_part:
-            variant_part_symbol = self._process_variant_part(node.variant_part, fields)
+            variant_part_symbol = self.semantic_helper.process_variant_part(
+                node.variant_part, fields
+            )
 
         # 创建记录类型符号
         record_type_symbol = RecordTypeSymbol(type_name, fields, variant_part_symbol)
         self.current_type = record_type_symbol
         return record_type_symbol
-
-    def _process_variant_part(
-        self, variant_part: VariantPart, existing_fields: dict[str, Symbol]
-    ) -> VariantPartSymbol:
-        """处理记录的变体部分"""
-        tag_field_name = variant_part.tag_field.value
-
-        tag_field_symbol: TypeSymbol = NEVER_SYMBOL
-        for field_type_symbol in existing_fields.values():
-            if tag_field_name == field_type_symbol.type.name:
-                tag_field_symbol = field_type_symbol
-                break
-
-        # 检查标签字段是否是已定义的枚举类型
-        if tag_field_symbol is NEVER_SYMBOL:
-            self.error(
-                error_code=ErrorCode.SEMANTIC_RECORD_VARIANT_INVALID_TAG_ERROR,
-                token=variant_part.tag_field.token,
-            )
-
-        if not isinstance(tag_field_symbol.type, EnumTypeSymbol):
-            self.error(
-                error_code=ErrorCode.SEMANTIC_ERROR, token=variant_part.tag_field.token
-            )
-
-        # 处理变体情况
-        variant_cases = {}
-        for variant_case in variant_part.variant_cases:
-            # 检查标签值是否有效
-            for tag_value in variant_case.tag_values:
-                if tag_value not in tag_field_symbol.type.values:
-                    self.error(
-                        error_code=ErrorCode.SEMANTIC_ERROR,
-                        token=variant_part.tag_field.token,
-                    )
-
-            # 处理变体字段
-            variant_fields = {}
-            for field in variant_case.fields:
-                field_name = field.name.value
-                field_type = cast(Symbol, self.visit(field.type_node))
-
-                # 创建字段符号并添加到变体字段中
-                field_symbol = RecordFieldSymbol(field_name, field_type)
-                variant_fields[field_name] = field_symbol
-
-            # 将变体字段添加到对应的标签值
-            for tag_value in variant_case.tag_values:
-                variant_cases[tag_value] = variant_fields
-
-        return VariantPartSymbol(tag_field_name, tag_field_symbol.type, variant_cases)
-
-    def _get_record_type_counter(self) -> int:
-        """获取记录类型计数器，用于生成唯一的记录类型名称"""
-        if not hasattr(self, "_record_type_counter"):
-            self._record_type_counter = 0
-        self._record_type_counter += 1
-        return self._record_type_counter
 
     def visit_VarDecl(self, node: VarDecl) -> None:
         type_name = node.type_node.value
@@ -818,7 +678,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         # Resolve type aliases to get the base type
         if type_symbol is not None:
-            resolved_type_symbol = self._resolve_type_alias(type_symbol)
+            resolved_type_symbol = self.semantic_helper.resolve_type_alias(type_symbol)
         else:
             resolved_type_symbol = type_symbol
 
@@ -948,7 +808,7 @@ class SemanticAnalyzer(NodeVisitor):
                             )
 
                 # Enhanced type compatibility checking (after specific validations)
-                left_type = self._get_variable_type(var_symbol)
+                left_type = self.semantic_helper.get_variable_type(var_symbol)
 
                 # Use TypeSymbol compatibility checking for general type mismatches
                 if isinstance(left_type, TypeSymbol) and isinstance(
@@ -1007,7 +867,7 @@ class SemanticAnalyzer(NodeVisitor):
             return var_symbol.type.resolve_final_type()
         else:
             # Convert builtin types to TypeSymbol
-            return self._convert_to_type_symbol(var_symbol.type)
+            return self.semantic_helper.to_type_symbol(var_symbol.type)
 
     def visit_AccessExpression(self, node: AccessExpression) -> TypeSymbol:
         # Start with the base expression type
@@ -1025,7 +885,7 @@ class SemanticAnalyzer(NodeVisitor):
                     if isinstance(current_type.element_type, TypeSymbol):
                         current_type = current_type.element_type.resolve_final_type()
                     else:
-                        current_type = self._convert_to_type_symbol(
+                        current_type = self.semantic_helper.to_type_symbol(
                             current_type.element_type
                         )
                 elif current_type == STRING_TYPE_SYMBOL:
@@ -1044,7 +904,7 @@ class SemanticAnalyzer(NodeVisitor):
                         if isinstance(field_symbol.type, TypeSymbol):
                             current_type = field_symbol.type.resolve_final_type()
                         else:
-                            current_type = self._convert_to_type_symbol(
+                            current_type = self.semantic_helper.to_type_symbol(
                                 field_symbol.type
                             )
                     elif field_name in current_type.variant_fields:
@@ -1052,7 +912,7 @@ class SemanticAnalyzer(NodeVisitor):
                         if isinstance(field_symbol.type, TypeSymbol):
                             current_type = field_symbol.type.resolve_final_type()
                         else:
-                            current_type = self._convert_to_type_symbol(
+                            current_type = self.semantic_helper.to_type_symbol(
                                 field_symbol.type
                             )
                     else:
@@ -1319,7 +1179,7 @@ class SemanticAnalyzer(NodeVisitor):
             elif isinstance(func_symbol.return_type, PrimitiveType):
                 return self.visit_PrimitiveType(func_symbol.return_type)
             else:
-                return self._convert_to_type_symbol(func_symbol.return_type)
+                return self.semantic_helper.to_type_symbol(func_symbol.return_type)
         else:
             return NEVER_SYMBOL
 
@@ -1421,40 +1281,15 @@ class SemanticAnalyzer(NodeVisitor):
         # Check type compatibility of all elements
         first_type = element_types[0]
         for i, element_type in enumerate(element_types[1:], 1):
-            if not self._are_set_element_types_compatible(first_type, element_type):
+            if not self.semantic_helper.check_set_element_types_compatible(
+                first_type, element_type
+            ):
                 self.error(
                     error_code=ErrorCode.SEMANTIC_SET_TYPE_MISMATCH,
                     token=node.token,
                 )
 
         return first_type
-
-    def _are_set_element_types_compatible(
-        self, type1: TypeSymbol, type2: TypeSymbol
-    ) -> bool:
-        """Check if two types are compatible for set elements"""
-        if type1 is None or type2 is None:
-            return False
-
-        # Same type is always compatible (use 'is' for identity comparison)
-        if type1 is type2:
-            return True
-
-        # Check by name for basic types
-        type1_name = getattr(type1, "name", str(type1))
-        type2_name = getattr(type2, "name", str(type2))
-
-        if type1_name == type2_name:
-            return True
-
-        # Integer and real are compatible in sets
-        if (type1_name == "INTEGER" and type2_name == "REAL") or (
-            type1_name == "REAL" and type2_name == "INTEGER"
-        ):
-            return True
-
-        # Different basic types are not compatible
-        return False
 
     def visit_InOperator(self, node) -> TypeSymbol:
         """Validate in operator operands"""
@@ -1481,7 +1316,9 @@ class SemanticAnalyzer(NodeVisitor):
                 )
 
         # Validate type compatibility between value and set elements
-        if not self._are_set_element_types_compatible(value_type, set_type):
+        if not self.semantic_helper.check_set_element_types_compatible(
+            value_type, set_type
+        ):
             self.error(
                 error_code=ErrorCode.SEMANTIC_INCOMPATIBLE_TYPES,
                 token=node.token,
@@ -1489,20 +1326,3 @@ class SemanticAnalyzer(NodeVisitor):
 
         # In operator always returns boolean
         return BOOLEAN_TYPE_SYMBOL
-
-    def _are_types_compatible(self, type1: TypeSymbol, type2: TypeSymbol) -> bool:
-        """Check if two types are compatible for operations"""
-        if type1 is None or type2 is None:
-            return False
-
-        # Same type is always compatible
-        if type1 == type2:
-            return True
-
-        # Integer and real are compatible
-        if (type1 == INTEGER_TYPE_SYMBOL and type2 == REAL_TYPE_SYMBOL) or (
-            type1 == REAL_TYPE_SYMBOL and type2 == INTEGER_TYPE_SYMBOL
-        ):
-            return True
-
-        return False
