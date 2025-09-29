@@ -71,6 +71,15 @@ test_object:
 test_interpreter:
 	$(UV_PYTEST) tests/test_interpreter.py -v
 
+# Run integration tests by fpc
+.PHONY: test_fpc
+test_fpc:
+	$(PYTHON) test_pascal_examples_by_fpc.py
+
+# Run integration tests by spi
+.PHONY: test_spi
+test_spi:
+	$(PYTHON) test_pascal_examples_by_spi.py -v
 
 # 生成AST可视化
 .PHONY: dot

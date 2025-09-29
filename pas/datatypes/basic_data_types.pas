@@ -11,7 +11,7 @@ begin
   boolVar := True;
 
   WriteLn('Integer: ', intVar);
-  WriteLn('Real: ', realVar:0:2);
+  WriteLn('Real: ', realVar);
   WriteLn('Char: ', charVar);
   WriteLn('Boolean: ', boolVar);
 end.

@@ -1,8 +1,6 @@
 program ConditionalStatements;
 
-{
-  演示条件语句
-}
+{演示条件语句}
 
 var
   number: Integer;

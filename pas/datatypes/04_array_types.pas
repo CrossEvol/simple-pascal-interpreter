@@ -1,8 +1,6 @@
 program ArrayTypes;
 
-{
-  演示数组类型
-}
+{演示数组类型}
 
 const
   MAX_SIZE = 5;
@@ -17,7 +15,7 @@ var
   i: Integer;
 
 begin
-  // 初始化数组
+  {初始化数组}
   for i := 1 to MAX_SIZE do
     numbers[i] := i * 10;
     
@@ -25,7 +23,7 @@ begin
   names[1] := 'Bob';
   names[2] := 'Charlie';
   
-  // 输出数组内容
+  {输出数组内容}
   writeln('Numbers:');
   for i := 1 to MAX_SIZE do
     writeln('  numbers[', i, '] = ', numbers[i]);

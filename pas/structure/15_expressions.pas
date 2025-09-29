@@ -1,13 +1,12 @@
 program Expressions;
 
-{
-  演示表达式和运算符
-}
+{演示表达式和运算符}
 
 var
   a, b: Integer;
   x, y: Real;
   result: Boolean;
+  ch : Char;
 
 begin
   a := 10;
@@ -15,16 +14,16 @@ begin
   x := 5.5;
   y := 2.2;
   
-  // 算术运算符
+  { 算术运算符 }
   writeln('Arithmetic Operations:');
   writeln(a, ' + ', b, ' = ', a + b);
   writeln(a, ' - ', b, ' = ', a - b);
   writeln(a, ' * ', b, ' = ', a * b);
-  writeln(a, ' / ', b, ' = ', a / b:0:2); // 注意：整数除法结果是实数
-  writeln(a, ' div ', b, ' = ', a div b); // 整数除法
-  writeln(a, ' mod ', b, ' = ', a mod b); // 取模
+  writeln(a, ' / ', b, ' = ', a / b); { 注意：整数除法结果是实数 }
+  writeln(a, ' div ', b, ' = ', a div b); { 整数除法 }
+  writeln(a, ' mod ', b, ' = ', a mod b); { 取模 }
   
-  // 比较运算符
+  { 比较运算符 }
   writeln('Comparison Operations:');
   writeln(a, ' = ', b, ' ? ', a = b);
   writeln(a, ' <> ', b, ' ? ', a <> b);
@@ -33,7 +32,7 @@ begin
   writeln(a, ' <= ', b, ' ? ', a <= b);
   writeln(a, ' >= ', b, ' ? ', a >= b);
   
-  // 逻辑运算符
+  { 逻辑运算符 }
   writeln('Logical Operations:');
   result := (a > 5) and (b < 5);
   writeln('(', a, ' > 5) and (', b, ' < 5) = ', result);
@@ -44,10 +43,11 @@ begin
   result := not (a = b);
   writeln('not (', a, ' = ', b, ') = ', result);
   
-  // 集合运算符
+  { 集合运算符 }
   writeln('Set Operations:');
-  if 'a' in ['a', 'b', 'c'] then
-    writeln('''a'' is in [''a'', ''b'', ''c'']');
+  ch := 'a';
+  if ch in ['a', 'b', 'c'] then
+    writeln('a in [a,b,c]');
     
   if 5 in [1..10] then
     writeln('5 is in [1..10]');

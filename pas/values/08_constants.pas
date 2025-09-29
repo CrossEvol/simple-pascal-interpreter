@@ -1,8 +1,6 @@
 program Constants;
 
-{
-  演示常量定义
-}
+{演示常量定义}
 
 const
   PI = 3.14159;
@@ -21,9 +19,9 @@ begin
   radius := 5.0;
   area := PI * radius * radius;
   
-  writeln('PI = ', PI:0:5);
-  writeln('Radius = ', radius:0:2);
-  writeln('Area = ', area:0:2);
+  writeln('PI = ', PI);
+  writeln('Radius = ', radius);
+  writeln('Area = ', area);
   writeln('Max Size = ', MAX_SIZE);
   writeln('Greeting: ', GREETING);
   

@@ -1,59 +1,47 @@
 program SpecialSyntax;
 
-{
-  演示特殊语法
-}
+{演示特殊语法}
 
 var
   ch: Char;
   i: Integer;
 
 begin
-  // 字符常量
+  { 字符常量 }
   writeln('Character constants:');
   writeln('Null character: ', Ord(#0));
   writeln('Tab character: ', Ord(#9));
   writeln('Line feed: ', Ord(#10));
   writeln('Carriage return: ', Ord(#13));
   
-  // 格式化输出
+  { 格式化输出 }
   writeln('Formatted output:');
-  writeln('Integer: ', 42:5); // 至少5个字符宽
-  writeln('Real: ', 3.14159:8:3); // 总宽8，小数点后3位
+  writeln('Integer: ', 42); { 至少5个字符宽 }
+  writeln('Real: ', 3.14159); { 总宽8，小数点后3位 }
   
-  // 注释
-  // 这是单行注释
-  {
-    这是多行注释
-    可以跨越多行
-  }
-  (*
-    这也是多行注释
-    另一种形式
-  *)
   
-  // 循环和条件控制
+  { 循环和条件控制 }
   writeln('Loop control:');
   for i := 1 to 10 do
   begin
     if i = 5 then
-      Continue; // 跳过本次循环
+      Continue; { 跳过本次循环 }
       
     if i = 8 then
-      Break; // 退出循环
+      Break; { 退出循环 }
       
     write(i, ' ');
   end;
-  writeln;
+  writeln();
   
-  // Exit语句
+  { Exit语句 }
   writeln('Exit example:');
   for i := 1 to 5 do
   begin
     if i = 3 then
     begin
       writeln('Exiting at i = ', i);
-      Exit; // 退出整个程序
+      Exit(); { 退出整个程序 }
     end;
     writeln('i = ', i);
   end;

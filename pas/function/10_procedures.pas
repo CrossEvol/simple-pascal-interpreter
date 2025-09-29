@@ -1,16 +1,14 @@
 program Procedures;
 
-{
-  演示过程定义和调用
-}
+{演示过程定义和调用}
 
-// 简单过程
+{ 简单过程 }
 procedure Greet(name: String);
 begin
   writeln('Hello, ', name, '!');
 end;
 
-// 带var参数的过程（可修改参数）
+{ 带var参数的过程（可修改参数） }
 procedure Swap(var a, b: Integer);
 var
   temp: Integer;
@@ -20,7 +18,7 @@ begin
   b := temp;
 end;
 
-// 带const参数的过程（不可修改参数）
+{ 带const参数的过程（不可修改参数） }
 procedure PrintValue(const value: Integer);
 begin
   writeln('Value is: ', value);

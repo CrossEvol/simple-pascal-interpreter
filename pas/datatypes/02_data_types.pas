@@ -1,8 +1,6 @@
 program DataTypes;
 
-{
-  演示Pascal中的数据类型
-}
+{演示Pascal中的数据类型}
 
 var
   intVar: Integer;
@@ -19,7 +17,7 @@ begin
   stringVar := 'Hello, Pascal!';
   
   writeln('Integer: ', intVar);
-  writeln('Real: ', realVar:0:5);
+  writeln('Real: ', realVar);
   writeln('Boolean: ', boolVar);
   writeln('Char: ', charVar);
   writeln('String: ', stringVar);
