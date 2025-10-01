@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Callable, cast
+from typing import Callable, Optional, cast
 
 from spi.ast import (
     AST,
@@ -411,7 +411,7 @@ class CallStack:
     def preMappingNodes(self) -> dict[AST, AST]:
         return self._records[-1].mappingNodes
 
-    def peek(self) -> ActivationRecord | None:
+    def peek(self) -> Optional[ActivationRecord]:
         if len(self._records) == 0:
             return None
         return self._records[-1]

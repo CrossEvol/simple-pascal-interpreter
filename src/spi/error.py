@@ -89,13 +89,19 @@ class Error(Exception):
 
     def __str__(self) -> str:
         # Include error code and message in the string representation
-        error_info = f"[{self.error_code.value}]" if self.error_code else "[Unknown Error]"
+        error_info = (
+            f"[{self.error_code.value}]" if self.error_code else "[Unknown Error]"
+        )
         if self.message:
             # Remove duplicate class name if it's already in the message
             msg = self.message
             if self.message.startswith(f"{self.__class__.__name__}: "):
-                msg = self.message[len(self.__class__.__name__) + 2:]
-            return f"{error_info} {self.__class__.__name__}: {msg}" if msg else f"{error_info} {self.__class__.__name__}: No message provided"
+                msg = self.message[len(self.__class__.__name__) + 2 :]
+            return (
+                f"{error_info} {self.__class__.__name__}: {msg}"
+                if msg
+                else f"{error_info} {self.__class__.__name__}: No message provided"
+            )
         return f"{error_info} {self.__class__.__name__}: No message provided"
 
     def __repr__(self) -> str:
@@ -183,7 +189,7 @@ class BreakSignal(Exception):
     """Special signal used for break statement control flow.
 
     This exception is used to implement Pascal's break statement, which allows
-    early termination from loops. It inherits directly from Exception (not from 
+    early termination from loops. It inherits directly from Exception (not from
     Error) to avoid being treated as an error condition.
     """
 
@@ -202,7 +208,7 @@ class ContinueSignal(Exception):
     """Special signal used for continue statement control flow.
 
     This exception is used to implement Pascal's continue statement, which allows
-    skipping the rest of the current loop iteration. It inherits directly from 
+    skipping the rest of the current loop iteration. It inherits directly from
     Exception (not from Error) to avoid being treated as an error condition.
     """
 

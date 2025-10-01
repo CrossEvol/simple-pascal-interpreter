@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from spi.token import Token
 
@@ -16,7 +16,7 @@ from spi.token import Token
 
 class AST:
     def __init__(self) -> None:
-        self._num: int | None = None
+        self._num: Optional[int] = None
         self.value: Any = None
 
     def __str__(self):
@@ -98,7 +98,7 @@ class PrimitiveType(Type):
 
 
 class StringType(Type):
-    def __init__(self, token, limit: Expression | None = None):
+    def __init__(self, token, limit: Optional[Expression] = None):
         super().__init__(token)
         self.limit = limit
 
@@ -111,7 +111,7 @@ class ArrayType(Type):
         self,
         token,
         element_type: Type,
-        bounds: SubrangeType | None = None,
+        bounds: Optional[SubrangeType] = None,
         dynamic: bool = False,
     ):
         super().__init__(token)
@@ -301,7 +301,7 @@ class IfStatement(Statement):
         condition: AST,
         then_branch: AST,
         else_if_branches: list[IfStatement],
-        else_branch: AST | None,
+        else_branch: Optional[AST],
     ) -> None:
         super().__init__()
         self.condition = condition
@@ -351,7 +351,10 @@ class CaseStatement(Statement):
     """Represents a 'CASE variable OF case_list (ELSE statement)? END' block"""
 
     def __init__(
-        self, case_expr: AST, case_items: list[CaseItem], else_stmt: AST | None = None
+        self,
+        case_expr: AST,
+        case_items: list[CaseItem],
+        else_stmt: Optional[AST] = None,
     ) -> None:
         super().__init__()
         self.case_expr = case_expr  # 被判断的表达式
@@ -669,7 +672,7 @@ class RecordType(Type):
         self,
         token: Token,
         fields: list[RecordField],
-        variant_part: VariantPart | None = None,
+        variant_part: Optional[VariantPart] = None,
     ):
         super().__init__(token=token)
         self.fields = fields  # 常规字段列表

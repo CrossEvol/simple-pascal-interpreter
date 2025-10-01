@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from spi.ast import Block, ParamMode, Type
 
@@ -14,7 +15,7 @@ from spi.ast import Block, ParamMode, Type
 
 
 class Symbol:
-    def __init__(self, name: str, type: Symbol | None = None) -> None:
+    def __init__(self, name: str, type: Optional[Symbol] = None) -> None:
         self.name = name
         self.type = type
         self.scope_level: int = 0
@@ -364,7 +365,7 @@ class VarSymbol(Symbol):
     def __init__(
         self,
         name: str,
-        type: Symbol | None,
+        type: Optional[Symbol],
         param_mode: ParamMode = ParamMode.CLONE,
     ) -> None:
         super().__init__(name, type or NEVER_SYMBOL)
@@ -394,7 +395,7 @@ class VarSymbol(Symbol):
 
     def validate_assignment(
         self, is_initialization: bool = False
-    ) -> tuple[bool, str | None]:
+    ) -> tuple[bool, Optional[str]]:
         """
         Validate if assignment to this variable is allowed.
 
@@ -425,7 +426,7 @@ class VarSymbol(Symbol):
                 f"Cannot assign to const variable '{self.name}' - must be initialized at declaration",
             )
 
-    def validate_modification_permission(self) -> tuple[bool, str | None]:
+    def validate_modification_permission(self) -> tuple[bool, Optional[str]]:
         """
         Check if this variable has permission to be modified.
 
@@ -678,20 +679,20 @@ class EnumTypeSymbol(TypeSymbol):
         """Get the ordinal value of an enum constant"""
         return self.value_ordinals.get(value, -1)
 
-    def get_value_at_ordinal(self, ordinal: int) -> str | None:
+    def get_value_at_ordinal(self, ordinal: int) -> Optional[str]:
         """Get the enum value at the given ordinal position"""
         if 0 <= ordinal < len(self.values):
             return self.values[ordinal]
         return None
 
-    def get_successor(self, value: str) -> str | None:
+    def get_successor(self, value: str) -> Optional[str]:
         """Get the successor of an enum value"""
         ordinal = self.get_ordinal(value)
         if ordinal >= 0 and ordinal < len(self.values) - 1:
             return self.values[ordinal + 1]
         return None
 
-    def get_predecessor(self, value: str) -> str | None:
+    def get_predecessor(self, value: str) -> Optional[str]:
         """Get the predecessor of an enum value"""
         ordinal = self.get_ordinal(value)
         if ordinal > 0:
@@ -740,7 +741,7 @@ class RecordTypeSymbol(TypeSymbol):
         self,
         name: str,
         fields: dict[str, Symbol],
-        variant_part: VariantPartSymbol | None = None,
+        variant_part: Optional[VariantPartSymbol] = None,
     ):
         super().__init__(name)
         self.fields = fields  # 字段名到字段符号的映射
@@ -823,7 +824,7 @@ class RecordTypeSymbol(TypeSymbol):
         # Records don't support arithmetic operations
         return NEVER_SYMBOL
 
-    def get_field_type(self, field_name: str) -> Symbol | None:
+    def get_field_type(self, field_name: str) -> Optional[Symbol]:
         """Get the type of a specific field"""
         return self.fields.get(field_name)
 
@@ -1047,7 +1048,7 @@ class ProcedureSymbol(Symbol):
         # a list of VarSymbol objects
         self.formal_params: list[VarSymbol] = []
         # a reference to procedure's body (AST sub-tree)
-        self.block_ast: Block | None = None
+        self.block_ast: Optional[Block] = None
         self.is_forward = False
 
     def __str__(self) -> str:
@@ -1087,7 +1088,7 @@ class FunctionSymbol(Symbol):
         self.formal_params: list[VarSymbol] = []
         self.return_type = return_type
         # a reference to procedure's body (AST sub-tree)
-        self.block_ast: Block | None = None
+        self.block_ast: Optional[Block] = None
         self.is_forward = False
 
     def __str__(self) -> str:
@@ -1113,7 +1114,7 @@ class BuiltinFunctionSymbol(Symbol):
         self,
         name: str,
         return_type: TypeSymbol,
-        formal_params: list[Symbol] | None = None,
+        formal_params: Optional[list[Symbol]] = None,
     ) -> None:
         super().__init__(name)
         # a list of VarSymbol objects
@@ -1122,7 +1123,7 @@ class BuiltinFunctionSymbol(Symbol):
         )
         self.return_type = return_type
         # a reference to procedure's body (AST sub-tree)
-        self.block_ast: Block | None = None
+        self.block_ast: Optional[Block] = None
 
     def __str__(self) -> str:
         param_count = len(self.formal_params)

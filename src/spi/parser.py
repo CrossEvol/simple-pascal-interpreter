@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from spi.ast import (
     AST,
     AccessExpression,
@@ -494,7 +496,7 @@ class Parser:
         """
         token = self.current_token
         self.eat(TokenType.ARRAY)
-        bounds: SubrangeType | None = None
+        bounds: Optional[SubrangeType] = None
         dynamic: bool = True
 
         if self.current_token.type == TokenType.LBRACKET:
@@ -700,7 +702,7 @@ class Parser:
         )
 
         else_if_branches: list[IfStatement] = []
-        else_branch: AST | None = None
+        else_branch: Optional[AST] = None
         while self.current_token.type == TokenType.ELSE:
             self.eat(TokenType.ELSE)
             if self.current_token.type == TokenType.IF:
@@ -778,7 +780,7 @@ class Parser:
         case_expr = self.variable()
         self.eat(TokenType.OF)
         case_items = self.case_list()
-        else_stmt: Statement | None = None
+        else_stmt: Optional[Statement] = None
         if self.current_token.type == TokenType.ELSE:
             self.eat(TokenType.ELSE)
             else_stmt = (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Optional
 
 
 class TokenType(Enum):
@@ -76,10 +77,10 @@ class TokenType(Enum):
 class Token:
     def __init__(
         self,
-        type: TokenType | None,
+        type: Optional[TokenType],
         value,
-        lineno: int | None = None,
-        column: int | None = None,
+        lineno: Optional[int] = None,
+        column: Optional[int] = None,
     ) -> None:
         self.type = type
         self.value = value

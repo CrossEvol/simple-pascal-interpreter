@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from spi.error import (
     ErrorCode,
@@ -23,7 +24,7 @@ RESERVED_KEYWORDS: dict[str, TokenType] = _build_reserved_keywords()
 @dataclass
 class LexerStatus:
     pos: int
-    current_char: str | None
+    current_char: Optional[str]
     lineno: int
     column: int
 
@@ -34,7 +35,7 @@ class Lexer:
         self.text = text
         # self.pos is an index into self.text
         self.pos = 0
-        self.current_char: str | None = self.text[self.pos]
+        self.current_char: Optional[str] = self.text[self.pos]
         # token line number and column number
         self.lineno = 1
         self.column = 1
@@ -185,7 +186,9 @@ class Lexer:
         token = Token(type=None, value=None, lineno=self.lineno, column=self.column)
 
         value = ""
-        while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
+        while self.current_char is not None and (
+            self.current_char.isalnum() or self.current_char == "_"
+        ):
             value += self.current_char
             self.advance()
 

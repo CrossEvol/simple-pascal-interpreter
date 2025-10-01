@@ -89,7 +89,7 @@ class ScopedSymbolTable:
         self,
         scope_name: str,
         scope_level: int,
-        enclosing_scope: "ScopedSymbolTable" | None,
+        enclosing_scope: Optional["ScopedSymbolTable"],
     ) -> None:
         self._symbols: dict[str, Symbol] = {}
         self.func_symbol: Optional[FunctionSymbol] = None
@@ -165,7 +165,7 @@ class ScopedSymbolTable:
         symbol.scope_level = self.scope_level
         self._symbols[symbol.name] = symbol
 
-    def lookup(self, name: str, current_scope_only: bool = False) -> Symbol | None:
+    def lookup(self, name: str, current_scope_only: bool = False) -> Optional[Symbol]:
         self.log(f"Lookup: {name}. (Scope name: {self.scope_name})")
         # 'symbol' is either an instance of the Symbol class or None
         symbol = self._symbols.get(name)
@@ -191,8 +191,8 @@ class SemanticAnalyzer(NodeVisitor):
     __STRING_TYPE_LIMIT: int = 255
 
     def __init__(self) -> None:
-        self.current_scope: ScopedSymbolTable | None = None
-        self.current_type: Symbol | None = None
+        self.current_scope: Optional[ScopedSymbolTable] = None
+        self.current_type: Optional[Symbol] = None
         self.unmodified_vars: list[str] = []
         # 枚举类型和值的注册表
         self.enum_types: dict[
