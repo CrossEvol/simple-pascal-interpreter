@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Optional, cast
 
 from spi.ast import (
     AccessExpression,
@@ -92,6 +92,7 @@ class ScopedSymbolTable:
         enclosing_scope: "ScopedSymbolTable" | None,
     ) -> None:
         self._symbols: dict[str, Symbol] = {}
+        self.func_symbol: Optional[FunctionSymbol] = None
         self.scope_name = scope_name
         self.scope_level = scope_level
         self.enclosing_scope = enclosing_scope
@@ -1116,6 +1117,7 @@ class SemanticAnalyzer(NodeVisitor):
             scope_level=self.current_scope.scope_level + 1,
             enclosing_scope=self.current_scope,
         )
+        function_scope.func_symbol = func_symbol
         self.current_scope = function_scope
 
         # insert return value into the function scope
@@ -1154,7 +1156,12 @@ class SemanticAnalyzer(NodeVisitor):
             self.error(error_code=ErrorCode.CURRENT_SCOPE_NOT_FOUND, token=node.token)
             return NEVER_SYMBOL
 
-        func_symbol = cast(FunctionSymbol, self.current_scope.lookup(node.func_name))
+        func_symbol = (
+            self.current_scope.func_symbol
+            if self.current_scope.func_symbol
+            and self.current_scope.func_symbol.name == node.func_name
+            else cast(FunctionSymbol, self.current_scope.lookup(node.func_name))
+        )
         if func_symbol is None:
             self.error(error_code=ErrorCode.ID_NOT_FOUND, token=node.func_name)
 

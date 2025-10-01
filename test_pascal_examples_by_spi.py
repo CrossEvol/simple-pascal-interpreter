@@ -51,7 +51,7 @@ def run_pascal_tests():
                 errors="replace",
             )
         except subprocess.TimeoutExpired:
-            print(f"  TIMEOUT")
+            print("  TIMEOUT")
             failed += 1
             continue
         except Exception as e:
@@ -60,7 +60,7 @@ def run_pascal_tests():
             continue
 
         if result.returncode == 0:
-            print(f"  PASSED")
+            print("  PASSED")
             if result.stdout and result.stdout.strip():
                 print(f"    Output: {result.stdout.strip()}")
             passed += 1

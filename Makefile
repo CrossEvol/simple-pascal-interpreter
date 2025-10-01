@@ -12,6 +12,7 @@ help:
 	@echo "  type FILE=<file>    - Run auto type annotation"
 	@echo "  clean               - Clean generated files"
 	@echo "  help                - Show this help message"
+	@echo "  build 			     - Build onefile executable"
 
 # 变量定义
 PYTHON := python
@@ -38,6 +39,11 @@ run:
 	fi
 	@$(PYTHON) main.py $(file)
 
+
+# 运行测试
+.PHONY: build
+build: 
+	pyinstaller --onefile main.py
 
 # 运行测试
 .PHONY: test
@@ -109,6 +115,7 @@ type:
 .PHONY: clean
 clean:
 	@rm -f ast.dot ast.png
+	@rm -f dist/main.exe
 	@echo "Cleaned generated files"
 
 
