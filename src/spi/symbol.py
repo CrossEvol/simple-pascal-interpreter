@@ -55,7 +55,9 @@ class TypeSymbol(Symbol, ABC):
         pass
 
     @abstractmethod
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get the result type of an operation with another type"""
         pass
 
@@ -92,7 +94,9 @@ class NeverSymbol(TypeSymbol):
         """Never type cannot be assigned from anything"""
         return False
 
-    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
+    def get_result_type_for_bin_op(
+        self, operation: str, other: TypeSymbol
+    ) -> TypeSymbol:
         """Never type operations always result in Never type"""
         return self
 
@@ -145,7 +149,9 @@ class IntegerTypeSymbol(PrimitiveTypeSymbol):
             return False
         return isinstance(other, IntegerTypeSymbol)
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with INTEGER"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -167,19 +173,19 @@ class IntegerTypeSymbol(PrimitiveTypeSymbol):
 
     def __add__(self, other: "TypeSymbol") -> "TypeSymbol":
         """INTEGER + INTEGER → INTEGER, INTEGER + REAL → REAL"""
-        return self.get_result_type("+", other)
+        return self.get_result_type_for_bin_op("+", other)
 
     def __sub__(self, other: "TypeSymbol") -> "TypeSymbol":
         """INTEGER - INTEGER → INTEGER, INTEGER - REAL → REAL"""
-        return self.get_result_type("-", other)
+        return self.get_result_type_for_bin_op("-", other)
 
     def __mul__(self, other: "TypeSymbol") -> "TypeSymbol":
         """INTEGER * INTEGER → INTEGER, INTEGER * REAL → REAL"""
-        return self.get_result_type("*", other)
+        return self.get_result_type_for_bin_op("*", other)
 
     def __truediv__(self, other: "TypeSymbol") -> "TypeSymbol":
         """INTEGER / INTEGER → REAL, INTEGER / REAL → REAL"""
-        return self.get_result_type("/", other)
+        return self.get_result_type_for_bin_op("/", other)
 
     def __str__(self) -> str:
         return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
@@ -205,7 +211,9 @@ class RealTypeSymbol(PrimitiveTypeSymbol):
             return False
         return isinstance(other, (IntegerTypeSymbol, RealTypeSymbol))
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with REAL"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -221,19 +229,19 @@ class RealTypeSymbol(PrimitiveTypeSymbol):
 
     def __add__(self, other: "TypeSymbol") -> "TypeSymbol":
         """REAL + INTEGER → REAL, REAL + REAL → REAL"""
-        return self.get_result_type("+", other)
+        return self.get_result_type_for_bin_op("+", other)
 
     def __sub__(self, other: "TypeSymbol") -> "TypeSymbol":
         """REAL - INTEGER → REAL, REAL - REAL → REAL"""
-        return self.get_result_type("-", other)
+        return self.get_result_type_for_bin_op("-", other)
 
     def __mul__(self, other: "TypeSymbol") -> "TypeSymbol":
         """REAL * INTEGER → REAL, REAL * REAL → REAL"""
-        return self.get_result_type("*", other)
+        return self.get_result_type_for_bin_op("*", other)
 
     def __truediv__(self, other: "TypeSymbol") -> "TypeSymbol":
         """REAL / INTEGER → REAL, REAL / REAL → REAL"""
-        return self.get_result_type("/", other)
+        return self.get_result_type_for_bin_op("/", other)
 
     def __str__(self) -> str:
         return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
@@ -259,7 +267,9 @@ class BooleanTypeSymbol(PrimitiveTypeSymbol):
             return False
         return isinstance(other, BooleanTypeSymbol)
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with BOOLEAN"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -278,15 +288,15 @@ class BooleanTypeSymbol(PrimitiveTypeSymbol):
 
     def __and__(self, other: "TypeSymbol") -> "TypeSymbol":
         """BOOLEAN AND BOOLEAN → BOOLEAN"""
-        return self.get_result_type("AND", other)
+        return self.get_result_type_for_bin_op("AND", other)
 
     def __or__(self, other: "TypeSymbol") -> "TypeSymbol":
         """BOOLEAN OR BOOLEAN → BOOLEAN"""
-        return self.get_result_type("OR", other)
+        return self.get_result_type_for_bin_op("OR", other)
 
     def logical_not(self) -> "TypeSymbol":
         """NOT BOOLEAN → BOOLEAN"""
-        return self.get_result_type("NOT", self)
+        return self.get_result_type_for_bin_op("NOT", self)
 
     def __str__(self) -> str:
         return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
@@ -312,7 +322,9 @@ class CharTypeSymbol(PrimitiveTypeSymbol):
             return False
         return isinstance(other, CharTypeSymbol)
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with CHAR"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -329,31 +341,31 @@ class CharTypeSymbol(PrimitiveTypeSymbol):
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR = CHAR → BOOLEAN"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR <> CHAR → BOOLEAN"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     def __lt__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR < CHAR → BOOLEAN"""
-        return self.get_result_type("<", other)
+        return self.get_result_type_for_bin_op("<", other)
 
     def __le__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR <= CHAR → BOOLEAN"""
-        return self.get_result_type("<=", other)
+        return self.get_result_type_for_bin_op("<=", other)
 
     def __gt__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR > CHAR → BOOLEAN"""
-        return self.get_result_type(">", other)
+        return self.get_result_type_for_bin_op(">", other)
 
     def __ge__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR >= CHAR → BOOLEAN"""
-        return self.get_result_type(">=", other)
+        return self.get_result_type_for_bin_op(">=", other)
 
     def __add__(self, other: "TypeSymbol") -> "TypeSymbol":
         """CHAR + CHAR/STRING → STRING (concatenation)"""
-        return self.get_result_type("+", other)
+        return self.get_result_type_for_bin_op("+", other)
 
     def __str__(self) -> str:
         return f"<{self.__class__.__name__}(name='{self.name}', scope_level={self.scope_level})>"
@@ -487,7 +499,9 @@ class StringTypeSymbol(TypeSymbol):
             return False
         return isinstance(other, (StringTypeSymbol, CharTypeSymbol))
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with STRING"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -505,31 +519,31 @@ class StringTypeSymbol(TypeSymbol):
 
     def __add__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING + STRING/CHAR → STRING (concatenation)"""
-        return self.get_result_type("+", other)
+        return self.get_result_type_for_bin_op("+", other)
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING = STRING → BOOLEAN"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING <> STRING → BOOLEAN"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     def __lt__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING < STRING → BOOLEAN"""
-        return self.get_result_type("<", other)
+        return self.get_result_type_for_bin_op("<", other)
 
     def __le__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING <= STRING → BOOLEAN"""
-        return self.get_result_type("<=", other)
+        return self.get_result_type_for_bin_op("<=", other)
 
     def __gt__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING > STRING → BOOLEAN"""
-        return self.get_result_type(">", other)
+        return self.get_result_type_for_bin_op(">", other)
 
     def __ge__(self, other: "TypeSymbol") -> "TypeSymbol":
         """STRING >= STRING → BOOLEAN"""
-        return self.get_result_type(">=", other)
+        return self.get_result_type_for_bin_op(">=", other)
 
     def __str__(self) -> str:
         return f"<{self.__class__.__name__}(name='{self.name}', limit={self.limit}, scope_level={self.scope_level})>"
@@ -574,7 +588,9 @@ class ArrayTypeSymbol(TypeSymbol):
         # Fallback to name comparison for non-TypeSymbol element types
         return self.element_type.name == other.element_type.name
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with arrays"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -613,11 +629,11 @@ class ArrayTypeSymbol(TypeSymbol):
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Array = Array → BOOLEAN (if compatible)"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Array <> Array → BOOLEAN (if compatible)"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     def __str__(self) -> str:
         element_type_name = (
@@ -657,7 +673,9 @@ class EnumTypeSymbol(TypeSymbol):
         # Enums can be assigned only from the same type
         return self.name == other.name and self.values == other.values
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with enums"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -701,27 +719,27 @@ class EnumTypeSymbol(TypeSymbol):
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Enum = Enum → BOOLEAN (if same enum type)"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Enum <> Enum → BOOLEAN (if same enum type)"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     def __lt__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Enum < Enum → BOOLEAN (ordinal comparison)"""
-        return self.get_result_type("<", other)
+        return self.get_result_type_for_bin_op("<", other)
 
     def __le__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Enum <= Enum → BOOLEAN (ordinal comparison)"""
-        return self.get_result_type("<=", other)
+        return self.get_result_type_for_bin_op("<=", other)
 
     def __gt__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Enum > Enum → BOOLEAN (ordinal comparison)"""
-        return self.get_result_type(">", other)
+        return self.get_result_type_for_bin_op(">", other)
 
     def __ge__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Enum >= Enum → BOOLEAN (ordinal comparison)"""
-        return self.get_result_type(">=", other)
+        return self.get_result_type_for_bin_op(">=", other)
 
     def __str__(self) -> str:
         values_str = (
@@ -811,7 +829,9 @@ class RecordTypeSymbol(TypeSymbol):
 
         return True
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with records"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -850,11 +870,11 @@ class RecordTypeSymbol(TypeSymbol):
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Record = Record → BOOLEAN (if compatible)"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Record <> Record → BOOLEAN (if compatible)"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     @property
     def variant_fields(self) -> dict[str, Symbol]:
@@ -908,14 +928,16 @@ class RecordFieldSymbol(TypeSymbol):
         # Fallback for non-TypeSymbol field types
         return self.type.name == other.name if hasattr(other, "name") else False
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get the result type of an operation with another type"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
 
         # Delegate to the actual field type
         if isinstance(self.type, TypeSymbol):
-            return self.type.get_result_type(operation, other)
+            return self.type.get_result_type_for_bin_op(operation, other)
 
         # Fallback for non-TypeSymbol field types - no operations supported
         return NEVER_SYMBOL
@@ -1017,7 +1039,9 @@ class TypeAliasSymbol(TypeSymbol):
 
         return final_type.can_assign_from(other)
 
-    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
+    def get_result_type_for_bin_op(
+        self, operation: str, other: TypeSymbol
+    ) -> TypeSymbol:
         """Delegate to final resolved type"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -1027,9 +1051,9 @@ class TypeAliasSymbol(TypeSymbol):
         # If other is also a type alias, resolve it too
         if isinstance(other, TypeAliasSymbol):
             other_final_type = other.resolve_final_type()
-            return final_type.get_result_type(operation, other_final_type)
+            return final_type.get_result_type_for_bin_op(operation, other_final_type)
 
-        return final_type.get_result_type(operation, other)
+        return final_type.get_result_type_for_bin_op(operation, other)
 
     def __str__(self) -> str:
         target_name = (
@@ -1180,7 +1204,9 @@ class ProcedureTypeSymbol(TypeSymbol):
             for p1, p2 in zip(self.param_types, other.param_types)
         )
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with procedure types"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -1217,11 +1243,11 @@ class ProcedureTypeSymbol(TypeSymbol):
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Procedure = Procedure → BOOLEAN (if compatible)"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Procedure <> Procedure → BOOLEAN (if compatible)"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     def __str__(self) -> str:
         param_count = len(self.param_types)
@@ -1284,7 +1310,9 @@ class FunctionTypeSymbol(TypeSymbol):
             for p1, p2 in zip(self.param_types, other.param_types)
         )
 
-    def get_result_type(self, operation: str, other: "TypeSymbol") -> "TypeSymbol":
+    def get_result_type_for_bin_op(
+        self, operation: str, other: "TypeSymbol"
+    ) -> "TypeSymbol":
         """Get result type for operations with function types"""
         if isinstance(other, NeverSymbol):
             return NEVER_SYMBOL
@@ -1326,11 +1354,11 @@ class FunctionTypeSymbol(TypeSymbol):
 
     def __eq__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Function = Function → BOOLEAN (if compatible)"""
-        return self.get_result_type("=", other)
+        return self.get_result_type_for_bin_op("=", other)
 
     def __ne__(self, other: "TypeSymbol") -> "TypeSymbol":
         """Function <> Function → BOOLEAN (if compatible)"""
-        return self.get_result_type("<>", other)
+        return self.get_result_type_for_bin_op("<>", other)
 
     def __str__(self) -> str:
         param_count = len(self.param_types)
@@ -1443,11 +1471,15 @@ class BuiltinTypeSymbol(TypeSymbol):
             return self._delegate_type.can_assign_from(other._delegate_type)
         return self._delegate_type.can_assign_from(other)
 
-    def get_result_type(self, operation: str, other: TypeSymbol) -> TypeSymbol:
+    def get_result_type_for_bin_op(
+        self, operation: str, other: TypeSymbol
+    ) -> TypeSymbol:
         """Delegate operation result type to the underlying type"""
         if isinstance(other, BuiltinTypeSymbol):
-            return self._delegate_type.get_result_type(operation, other._delegate_type)
-        return self._delegate_type.get_result_type(operation, other)
+            return self._delegate_type.get_result_type_for_bin_op(
+                operation, other._delegate_type
+            )
+        return self._delegate_type.get_result_type_for_bin_op(operation, other)
 
     def is_builtin_primitive(self) -> bool:
         """Check if this builtin type represents a primitive type"""

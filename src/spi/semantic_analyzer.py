@@ -87,13 +87,11 @@ from spi.visitor import NodeVisitor
 class ScopedSymbolTable:
     def __init__(
         self,
-        scope_name: str,
         scope_level: int,
         enclosing_scope: Optional["ScopedSymbolTable"],
     ) -> None:
         self._symbols: dict[str, Symbol] = {}
         self.func_symbol: Optional[FunctionSymbol] = None
-        self.scope_name = scope_name
         self.scope_level = scope_level
         self.enclosing_scope = enclosing_scope
 
@@ -152,6 +150,14 @@ class ScopedSymbolTable:
 
     __repr__ = __str__
 
+    @property
+    def scope_name(self) -> str:
+        return self.func_symbol.name if self.func_symbol else "global"
+
+    # @scope_name.setter
+    # def scope_name(self, value) -> None:
+    #     pass
+
     def log(self, msg: str) -> None:
         if CONFIG.should_log_scope:
             # 根据 indent_level 计算缩进的空格数
@@ -205,6 +211,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.type_mappings: dict[str, Symbol] = {}  # { type_name -> type_symbol }
         # 循环作用域栈，用于跟踪当前是否在循环内部
         self.loop_stack: list[str] = []  # 存储循环类型 ('for' 或 'while')
+        # 追踪在 in [...] scope 中， 是否是可以将长度 1 的字符串视作字符
         self.in_mark = False
         self.semantic_helper = SemanticAnalyzerHelper(self)
 
@@ -246,7 +253,6 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Program(self, node: Program) -> None:
         self.log("ENTER scope: global")
         global_scope = ScopedSymbolTable(
-            scope_name="global",
             scope_level=1,
             enclosing_scope=self.current_scope,  # None
         )
@@ -530,7 +536,7 @@ class SemanticAnalyzer(NodeVisitor):
         # Use TypeSymbol operations for type checking
         if isinstance(left_type, TypeSymbol) and isinstance(right_type, TypeSymbol):
             operation = node.op.value
-            result_type = left_type.get_result_type(operation, right_type)
+            result_type = left_type.get_result_type_for_bin_op(operation, right_type)
 
             # Check for incompatible type operations
             if result_type is NEVER_SYMBOL:
@@ -1034,10 +1040,10 @@ class SemanticAnalyzer(NodeVisitor):
         self.log(f"ENTER scope: {proc_name}")
         # Scope for parameters and local variables
         procedure_scope = ScopedSymbolTable(
-            scope_name=proc_name,
             scope_level=self.current_scope.scope_level + 1,
             enclosing_scope=self.current_scope,
         )
+        procedure_scope.func_symbol = proc_symbol
         self.current_scope = procedure_scope
 
         # Insert parameters into the procedure scope
@@ -1113,7 +1119,6 @@ class SemanticAnalyzer(NodeVisitor):
         self.log(f"ENTER scope: {func_name}")
         # Scope for parameters and local variables
         function_scope = ScopedSymbolTable(
-            scope_name=func_name,
             scope_level=self.current_scope.scope_level + 1,
             enclosing_scope=self.current_scope,
         )

@@ -1,30 +1,41 @@
 program Fibonacci;
 
-{ Calculate Fibonacci sequence in Pascal }
+{ Calculate Fibonacci sequence in Pascal using memoized recursion }
 
 var
   i: integer;
-  a, b, temp: integer;
+  memo: array[1..30] of integer;
+
+procedure init_memo;
+var
+  j: integer;
+begin
+  for j := 1 to 30 do
+    memo[j] := 0;  { 0 means not computed }
+end;
+
+function fib(n: integer): integer;
+begin
+  if memo[n] <> 0 then
+    fib := memo[n]
+  else
+  begin
+    if n <= 2 then
+      fib := 1
+    else
+      fib := fib(n - 1) + fib(n - 2);
+    memo[n] := fib;
+  end;
+end;
 
 begin
-  writeln('Fibonacci sequence (first 15 terms):');
+  init_memo();
+  writeln('Fibonacci sequence (first 30 terms):');
   writeln('------------------------------------');
   
-  { Initialize first two terms }
-  a := 1;
-  b := 1;
-  
-  { Output first and second terms }
-  writeln('Term  1: ', a);
-  writeln('Term  2: ', b);
-  
-  { Calculate and output terms 3 to 15 }
-  for i := 3 to 15 do
+  for i := 1 to 30 do
   begin
-    temp := a + b;  { Calculate next term }
-    writeln('Term ', i, ': ', temp);
-    a := b;         { Update a to previous term }
-    b := temp;      { Update b to current term }
+    writeln('Term ', i, ': ', fib(i));
   end;
   
   writeln('------------------------------------');

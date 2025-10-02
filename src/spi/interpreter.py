@@ -1453,7 +1453,6 @@ class Interpreter(NodeVisitor):
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
                     ar._references.add(param_name)
-                    ar.mappings[argument_node.value] = param_node.var_node.value
                     ar.mappingNodes[argument_node] = param_node.var_node
 
             self.call_stack.push(ar)
@@ -1573,7 +1572,6 @@ class Interpreter(NodeVisitor):
                 ar[param_name] = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
                     ar._references.add(param_name)
-                    ar.mappings[argument_node.value] = param_node.var_node.value
                     ar.mappingNodes[argument_node] = param_node.var_node
 
             self.call_stack.push(ar)
