@@ -85,6 +85,17 @@ class NumberObject(Object):
             return self._create_result(self.value // other.value)
         return NotImplemented
 
+    def __mod__(self, other) -> Object:
+        if isinstance(other, NumberObject):
+            # MOD 运算符应该返回整数余数
+            # 在 Pascal 中，MOD 只对整数有效，因此我们需要转换为整数
+            left_val = int(self.value) if isinstance(self, RealObject) else self.value
+            right_val = (
+                int(other.value) if isinstance(other, RealObject) else other.value
+            )
+            return IntegerObject(left_val % right_val)
+        return NotImplemented
+
     def __pos__(self) -> Object:
         return self._create_result(+self.value)
 
@@ -113,13 +124,13 @@ class NumberObject(Object):
 
     def __eq__(self, other):
         if isinstance(other, NumberObject):
-            return self.value == other.value
-        return NotImplemented
+            return BooleanObject(self.value == other.value)
+        return BooleanObject(False)
 
     def __ne__(self, other):
         if isinstance(other, NumberObject):
-            return self.value != other.value
-        return NotImplemented
+            return BooleanObject(self.value != other.value)
+        return BooleanObject(True)
 
     def _create_result(self, value) -> Object:
         """Create appropriate result type based on value"""
@@ -174,12 +185,16 @@ class BooleanObject(Object):
     def __eq__(self, other):
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value == other.value)
-        return NotImplemented
+        elif isinstance(other, Object):
+            return BooleanObject(self.value == other.value)
+        return BooleanObject(False)
 
     def __ne__(self, other):
         if isinstance(other, BooleanObject):
             return BooleanObject(self.value != other.value)
-        return NotImplemented
+        elif isinstance(other, Object):
+            return BooleanObject(self.value != other.value)
+        return BooleanObject(True)
 
 
 class StringObject(Object):
@@ -196,7 +211,18 @@ class StringObject(Object):
             result_value = self.value + other.value
             # Don't apply limits during concatenation operations
             return StringObject(result_value, -1)
-        return NotImplemented
+        # Handle string + other types conversion
+        elif hasattr(other, "value"):
+            return StringObject(self.value + str(other.value), -1)
+        else:
+            return StringObject(self.value + str(other), -1)
+
+    def __radd__(self, other) -> Object:
+        """Handle addition when string is on the right side (other + string)"""
+        if hasattr(other, "value"):
+            return StringObject(str(other.value) + self.value, -1)
+        else:
+            return StringObject(str(other) + self.value, -1)
 
     def __getitem__(self, index) -> Object:
         """Get character at index (1-based indexing for Pascal)"""
@@ -223,6 +249,26 @@ class StringObject(Object):
     def __len__(self):
         return len(self.value)
 
+    def __eq__(self, other) -> Object:
+        """Equal comparison with other StringObject or CharObject"""
+        if isinstance(other, StringObject):
+            return BooleanObject(self.value == other.value)
+        elif isinstance(other, CharObject):
+            # When comparing string with char, compare with first character of string
+            return BooleanObject(
+                self.value == other.value if len(self.value) == 1 else False
+            )
+        return BooleanObject(False)
+
+    def __ne__(self, other) -> Object:
+        """Not equal comparison with other StringObject or CharObject"""
+        if isinstance(other, StringObject):
+            return BooleanObject(self.value != other.value)
+        elif isinstance(other, CharObject):
+            # When comparing string with char, compare with first character of string
+            return BooleanObject(self.value != other.value or len(self.value) != 1)
+        return BooleanObject(True)
+
     def set_length(self, new_length: int):
         """Set new length for string"""
         if new_length < len(self.value):
@@ -240,36 +286,62 @@ class CharObject(Object):
         """Less than comparison based on ASCII value"""
         if isinstance(other, CharObject):
             return BooleanObject(ord(self.value) < ord(other.value))
+        elif isinstance(other, StringObject):
+            # When comparing char with string, compare with first character of string
+            return BooleanObject(
+                ord(self.value) < ord(other.value[0]) if other.value else 0
+            )
         return NotImplemented
 
     def __gt__(self, other) -> Object:
         """Greater than comparison based on ASCII value"""
         if isinstance(other, CharObject):
             return BooleanObject(ord(self.value) > ord(other.value))
+        elif isinstance(other, StringObject):
+            # When comparing char with string, compare with first character of string
+            return BooleanObject(
+                ord(self.value) > ord(other.value[0]) if other.value else 0
+            )
         return NotImplemented
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other) -> Object:
         """Equal comparison based on ASCII value"""
         if isinstance(other, CharObject):
-            return ord(self.value) == ord(other.value)
+            return BooleanObject(ord(self.value) == ord(other.value))
+        elif isinstance(other, StringObject):
+            # When comparing char with string, compare with first character of string
+            return BooleanObject(self.value == other.value[0] if other.value else 0)
         return NotImplemented
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other) -> Object:
         """Not equal comparison based on ASCII value"""
         if isinstance(other, CharObject):
-            return ord(self.value) != ord(other.value)
+            return BooleanObject(ord(self.value) != ord(other.value))
+        elif isinstance(other, StringObject):
+            # When comparing char with string, compare with first character of string
+            return BooleanObject(self.value != other.value[0] if other.value else 0)
         return NotImplemented
 
     def __le__(self, other) -> Object:
         """Less than or equal comparison based on ASCII value"""
         if isinstance(other, CharObject):
             return BooleanObject(ord(self.value) <= ord(other.value))
+        elif isinstance(other, StringObject):
+            # When comparing char with string, compare with first character of string
+            return BooleanObject(
+                ord(self.value) <= ord(other.value[0]) if other.value else 0
+            )
         return NotImplemented
 
     def __ge__(self, other) -> Object:
         """Greater than or equal comparison based on ASCII value"""
         if isinstance(other, CharObject):
             return BooleanObject(ord(self.value) >= ord(other.value))
+        elif isinstance(other, StringObject):
+            # When comparing char with string, compare with first character of string
+            return BooleanObject(
+                ord(self.value) >= ord(other.value[0]) if other.value else 0
+            )
         return NotImplemented
 
 
@@ -423,15 +495,15 @@ class EnumObject(Object):
         return self.name
 
     # 比较基于 ordinal
-    def __eq__(self, other) -> bool:
-        return (
-            isinstance(other, EnumObject)
-            and self.type_name == other.type_name
-            and self.ordinal == other.ordinal
-        )
+    def __eq__(self, other) -> Object:
+        if isinstance(other, EnumObject) and self.type_name == other.type_name:
+            return BooleanObject(self.ordinal == other.ordinal)
+        return BooleanObject(False)
 
-    def __ne__(self, other) -> bool:
-        return not self.__eq__(other)
+    def __ne__(self, other) -> Object:
+        if isinstance(other, EnumObject) and self.type_name == other.type_name:
+            return BooleanObject(self.ordinal != other.ordinal)
+        return BooleanObject(True)
 
     def __lt__(self, other) -> Object:
         if isinstance(other, EnumObject) and self.type_name == other.type_name:

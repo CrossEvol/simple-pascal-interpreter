@@ -558,6 +558,29 @@ class Interpreter(NodeVisitor):
         register_builtin_function(NativeMethod.ORD.name, handle_ord)
         register_builtin_function(NativeMethod.CHR.name, handle_chr)
 
+        # Define operation dispatch table
+        self.op_dispatch = {
+            # Logic operators
+            # 这里的 AND 已经使用了 left, right
+            TokenType.AND: lambda left, right: left & right,
+            # OR 同样应该使用 left, right
+            TokenType.OR: lambda left, right: left | right,
+            # Arithmetic operators
+            TokenType.PLUS: lambda left, right: left + right,
+            TokenType.MINUS: lambda left, right: left - right,
+            TokenType.MUL: lambda left, right: left * right,
+            TokenType.INTEGER_DIV: lambda left, right: left // right,
+            TokenType.FLOAT_DIV: lambda left, right: left / right,
+            TokenType.MOD: lambda left, right: left % right,
+            # Comparison operators
+            TokenType.LT: lambda left, right: left < right,
+            TokenType.GT: lambda left, right: left > right,
+            TokenType.EQ: lambda left, right: left == right,
+            TokenType.NE: lambda left, right: left != right,
+            TokenType.LE: lambda left, right: left <= right,
+            TokenType.GE: lambda left, right: left >= right,
+        }
+
     def log(self, msg) -> None:
         if CONFIG.should_log_stack:
             # 根据 indent_level 计算缩进的空格数
@@ -891,157 +914,11 @@ class Interpreter(NodeVisitor):
         left_obj = self.visit(node.left)
         right_obj = self.visit(node.right)
 
-        # logic operator
-        if node.op.type == TokenType.AND:
-            if isinstance(left_obj, BooleanObject) and isinstance(
-                right_obj, BooleanObject
-            ):
-                return left_obj & right_obj
-        elif node.op.type == TokenType.OR:
-            if isinstance(left_obj, BooleanObject) and isinstance(
-                right_obj, BooleanObject
-            ):
-                return left_obj | right_obj
-
-        # arithmetic operator
-        if node.op.type == TokenType.PLUS:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj + right_obj
-            elif isinstance(left_obj, StringObject) and isinstance(
-                right_obj, StringObject
-            ):
-                # For string concatenation, don't apply limits during intermediate operations
-                return StringObject(left_obj.value + right_obj.value, -1)
-            # Handle string + other types conversion
-            elif isinstance(left_obj, StringObject):
-                if hasattr(right_obj, "value"):
-                    return StringObject(left_obj.value + str(right_obj.value), -1)
-                else:
-                    return StringObject(left_obj.value + str(right_obj), -1)
-            elif isinstance(right_obj, StringObject):
-                if hasattr(left_obj, "value"):
-                    return StringObject(str(left_obj.value) + right_obj.value, -1)
-                else:
-                    return StringObject(str(left_obj) + right_obj.value, -1)
-        elif node.op.type == TokenType.MINUS:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj - right_obj
-        elif node.op.type == TokenType.MUL:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj * right_obj
-        elif node.op.type == TokenType.INTEGER_DIV:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj // right_obj
-        elif node.op.type == TokenType.FLOAT_DIV:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj / right_obj
-        elif node.op.type == TokenType.MOD:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                # MOD 运算符应该返回整数余数
-                # 在 Pascal 中，MOD 只对整数有效，因此我们需要转换为整数
-                left_val = (
-                    int(left_obj.value)
-                    if isinstance(left_obj, RealObject)
-                    else left_obj.value
-                )
-                right_val = (
-                    int(right_obj.value)
-                    if isinstance(right_obj, RealObject)
-                    else right_obj.value
-                )
-                return IntegerObject(left_val % right_val)
-
-        # comparison operator
-        if node.op.type == TokenType.LT:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj < right_obj
-            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
-                return left_obj < right_obj
-            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
-                return left_obj < right_obj
-        elif node.op.type == TokenType.GT:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj > right_obj
-            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
-                return left_obj > right_obj
-            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
-                return left_obj > right_obj
-        elif node.op.type == TokenType.EQ:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return BooleanObject(value=left_obj == right_obj)
-            elif isinstance(left_obj, BooleanObject) and isinstance(
-                right_obj, BooleanObject
-            ):
-                return BooleanObject(value=left_obj == right_obj)
-            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
-                return BooleanObject(value=left_obj == right_obj)
-            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
-                return BooleanObject(value=left_obj == right_obj)
-            elif isinstance(left_obj, CharObject) and isinstance(
-                right_obj, StringObject
-            ):
-                return BooleanObject(value=left_obj.value == right_obj.value)
-            elif isinstance(left_obj, StringObject) and isinstance(
-                right_obj, CharObject
-            ):
-                return BooleanObject(value=left_obj.value == right_obj.value)
-        elif node.op.type == TokenType.NE:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return BooleanObject(value=left_obj != right_obj)
-            elif isinstance(left_obj, BooleanObject) and isinstance(
-                right_obj, BooleanObject
-            ):
-                return BooleanObject(value=left_obj != right_obj)
-            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
-                return BooleanObject(value=left_obj != right_obj)
-            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
-                return BooleanObject(value=left_obj != right_obj)
-            elif isinstance(left_obj, CharObject) and isinstance(
-                right_obj, StringObject
-            ):
-                return BooleanObject(value=left_obj.value != right_obj.value)
-            elif isinstance(left_obj, StringObject) and isinstance(
-                right_obj, CharObject
-            ):
-                return BooleanObject(value=left_obj.value != right_obj.value)
-        elif node.op.type == TokenType.LE:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj <= right_obj
-            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
-                return left_obj <= right_obj
-            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
-                return left_obj <= right_obj
-        elif node.op.type == TokenType.GE:
-            if isinstance(left_obj, NumberObject) and isinstance(
-                right_obj, NumberObject
-            ):
-                return left_obj >= right_obj
-            elif isinstance(left_obj, CharObject) and isinstance(right_obj, CharObject):
-                return left_obj >= right_obj
-            elif isinstance(left_obj, EnumObject) and isinstance(right_obj, EnumObject):
-                return left_obj >= right_obj
+        # Check if operation is supported
+        if node.op.type in self.op_dispatch:
+            result = self.op_dispatch[node.op.type](left_obj, right_obj)
+            if result is not NotImplemented:
+                return result
 
         # !!
         raise InterpreterError(
