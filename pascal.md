@@ -1,41 +1,40 @@
-# Pascal语法子集总结
 
-这个Pascal JSON解析器程序使用了Pascal语言的核心语法特性。以下是按语法类别整理的总结，以及每个语法点的示例代码。
 
-此外，我还创建了一个独立的`pascal_examples`目录，其中包含了每个Pascal语法特性的独立示例程序，方便您学习和测试每个语法点。
+# Pascal Syntax Subset Summary
 
-## 1. 程序结构
+This Pascal JSON parser program uses core syntax features of the Pascal language. The following is a summary organized by syntax category, along with example code for each syntax point.
 
-### program语句
+Additionally, I have created a separate `pascal_examples` directory containing independent example programs for each Pascal syntax feature, making it convenient for you to learn and test each syntax point.
+
+## 1. Program Structure
+
+### program statement
 ```pascal
 program JSONParser;
 ```
 
-### uses子句（未使用）
-此程序未使用任何单元（units）。
+## 2. Data Types
 
-## 2. 数据类型
+### Basic Data Types
+- `Integer` - Integer type
+- `Real` - Floating-point type
+- `Boolean` - Boolean type
+- `Char` - Character type
+- `String` - String type
 
-### 基本数据类型
-- `Integer` - 整数类型
-- `Real` - 浮点数类型
-- `Boolean` - 布尔类型
-- `Char` - 字符类型
-- `String` - 字符串类型
-
-### 枚举类型
+### Enumeration Type
 ```pascal
 type
   TJSONType = (jtNull, jtBoolean, jtNumber, jtString, jtArray, jtObject);
 ```
 
-### 数组类型
+### Array Type
 ```pascal
 type
   TJSONString = array[1..MAX_STRING_LEN] of Char;
 ```
 
-### 记录（结构体）类型
+### Record (Struct) Type
 ```pascal
 type
   TJSONArray = record
@@ -44,13 +43,7 @@ type
   end;
 ```
 
-### 指针类型
-```pascal
-type
-  PJSONValue = ^TJSONValue;
-```
-
-### 变体记录类型
+### Variant Record Type
 ```pascal
 type
   TJSONValue = record
@@ -65,7 +58,7 @@ type
   end;
 ```
 
-## 3. 常量定义
+## 3. Constant Definitions
 
 ```pascal
 const
@@ -73,16 +66,16 @@ const
   MAX_STRING_LEN = 1000;
 ```
 
-## 4. 变量声明
+## 4. Variable Declarations
 
-### 全局变量
+### Global Variables
 ```pascal
 var
   ParseError: Boolean;
   ErrorMessage: String;
 ```
 
-### 局部变量
+### Local Variables
 ```pascal
 procedure Example;
 var
@@ -93,9 +86,9 @@ begin
 end;
 ```
 
-## 5. 过程和函数
+## 5. Procedures and Functions
 
-### 过程定义
+### Procedure Definition
 ```pascal
 procedure SetError(const Msg: String);
 begin
@@ -104,7 +97,7 @@ begin
 end;
 ```
 
-### 函数定义
+### Function Definition
 ```pascal
 function StrEqual(const S1: TJSONString; Len1: Integer; const S2: TJSONString; Len2: Integer): Boolean;
 var
@@ -129,36 +122,37 @@ begin
 end;
 ```
 
-### 参数传递
-- `const`参数：按引用传递但不可修改
-- 默认参数：按值传递（简单类型）或按引用传递（复杂类型）
+### Parameter Passing
+- `const` parameters: Passed by reference but cannot be modified
+- `var` parameters: Passed by reference and can be modified
+- Default parameters: Passed by value (simple types) or by reference (complex types)
 
-### 前向声明
+### Forward Declaration
 ```pascal
 function ParseValue(var Lexer: TLexer): PJSONValue; forward;
 ```
 
-## 6. 控制结构
+## 6. Control Structures
 
-### 条件语句
+### Conditional Statements
 
-#### if语句
+#### if statement
 ```pascal
 if SrcLen > MAX_STRING_LEN then
   SrcLen := MAX_STRING_LEN;
 ```
 
-#### if-else语句
+#### if-else statement
 ```pascal
 if Value = nil then
   Exit
 else
 begin
-  // 处理Value
+  // Handle Value
 end;
 ```
 
-#### case语句
+#### case statement
 ```pascal
 case Value^.JSONType of
   jtNull: Write('null');
@@ -167,98 +161,92 @@ case Value^.JSONType of
   jtNumber: Write(Value^.NumValue:0:6);
   jtString:
   begin
-    // 处理字符串
+    // Handle string
   end;
   jtArray: 
   begin
-    // 处理数组
+    // Handle array
   end;
 end;
 ```
 
-### 循环语句
+### Loop Statements
 
-#### for循环（计数循环）
+#### for loop (counting loop)
 ```pascal
 for i := 1 to SrcLen do
   Dest[i] := Src[i];
 ```
 
-#### while循环
+#### while loop
 ```pascal
 while (Lexer.CurrentChar = ' ') or (Lexer.CurrentChar = #9) or 
       (Lexer.CurrentChar = #10) or (Lexer.CurrentChar = #13) do
   NextChar(Lexer);
 ```
 
-#### repeat循环（未使用）
+## 7. Expressions and Operators
 
-## 7. 表达式和运算符
+### Arithmetic Operators
+- `+` Addition
+- `-` Subtraction
+- `*` Multiplication
+- `/` Division
+- `mod` Modulo
 
-### 算术运算符
-- `+` 加法
-- `-` 减法
-- `*` 乘法
-- `/` 除法
-- `mod` 取模
+### Comparison Operators
+- `=` Equal to
+- `<>` Not equal to
+- `<` Less than
+- `>` Greater than
+- `<=` Less than or equal to
+- `>=` Greater than or equal to
 
-### 比较运算符
-- `=` 等于
-- `<>` 不等于
-- `<` 小于
-- `>` 大于
-- `<=` 小于等于
-- `>=` 大于等于
+### Logical Operators
+- `and` Logical AND
+- `or` Logical OR
+- `not` Logical NOT
 
-### 逻辑运算符
-- `and` 逻辑与
-- `or` 逻辑或
-- `not` 逻辑非
-
-### 集合运算符
+### Set Operators
 ```pascal
 if c in ['0'..'9'] then
 ```
 
-### 字符和字符串处理
-- `Ord(c)` - 获取字符的ASCII码
-- `Chr(value)` - 将ASCII码转换为字符
-- `Length(str)` - 获取字符串长度
+### Character and String Handling
+- `Ord(c)` - Get ASCII code of a character
+- `Chr(value)` - Convert ASCII code to character
+- `Length(str)` - Get string length
 
-## 8. 标准函数和过程
+## 8. Standard Functions and Procedures
 
-### 输入输出
-- `Write()` - 输出（不换行）
-- `WriteLn()` - 输出（换行）
+### Input/Output
+- `Write()` - Output (without newline)
+- `WriteLn()` - Output (with newline)
 
-### 动态内存管理
-- `New(ptr)` - 分配内存
-- `Dispose(ptr)` - 释放内存
+### Other Functions
+- `Inc(var)` - Increment variable by 1
+- `Dec(var)` - Decrement variable by 1
+- `Exit` - Exit procedure or function
+- `SetLength(arr, count)`
+- `Ord(ch)`
+- `Chr(ch)`
+- `Length(collection)`
 
-### 其他函数
-- `Inc(var)` - 变量加1
-- `Dec(var)` - 变量减1
-- `Exit` - 退出过程或函数
+## 9. Special Syntax
 
-## 9. 特殊语法
-
-### 注释
+### Comments
 ```pascal
-// 单行注释
-
-{
-  多行注释
-}
+{ Only single-line comments are supported }
 ```
 
-### 字符常量
+### Character Constants
 ```pascal
-#0   // 空字符
-#8   // 退格符
-#10  // 换行符
+#0   // Null character
+#8   // Backspace
+#10  // Line feed
 ```
 
-### 格式化输出
+### Formatted Output (not supported)
 ```pascal
-Write(Value^.NumValue:0:6);  // 输出浮点数，保留6位小数
+Write(Value^.NumValue:0:6);  // Output floating-point number with 6 decimal places
 ```
