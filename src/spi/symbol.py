@@ -1089,10 +1089,10 @@ class ProcedureSymbol(Symbol):
 
 
 class BuiltinProcedureSymbol(Symbol):
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, formal_params: list[Symbol] = []) -> None:
         super().__init__(name)
         # a list of VarSymbol objects
-        self.formal_params: list[Symbol] = []
+        self.formal_params = formal_params
 
     def __str__(self) -> str:
         param_count = len(self.formal_params)

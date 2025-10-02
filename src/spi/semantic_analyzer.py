@@ -101,11 +101,41 @@ class ScopedSymbolTable:
         self.insert(BuiltinTypeSymbol("BOOLEAN"))
         self.insert(BuiltinTypeSymbol("STRING"))
         self.insert(BuiltinTypeSymbol("CHAR"))
-        self.insert(BuiltinProcedureSymbol(name=NativeMethod.WRITE.name))
+        self.insert(
+            BuiltinProcedureSymbol(
+                name=NativeMethod.WRITE.name,
+            )
+        )
         self.insert(BuiltinProcedureSymbol(name=NativeMethod.WRITELN.name))
-        self.insert(BuiltinProcedureSymbol(name=NativeMethod.SETLENGTH.name))
-        self.insert(BuiltinProcedureSymbol(name=NativeMethod.INC.name))
-        self.insert(BuiltinProcedureSymbol(name=NativeMethod.DEC.name))
+        self.insert(
+            BuiltinProcedureSymbol(
+                name=NativeMethod.SETLENGTH.name,
+                formal_params=[
+                    VarSymbol(name="arr", type=None, param_mode=ParamMode.REFER),
+                    VarSymbol(
+                        name="count",
+                        type=INTEGER_TYPE_SYMBOL,
+                        param_mode=ParamMode.CLONE,
+                    ),
+                ],
+            )
+        )
+        self.insert(
+            BuiltinProcedureSymbol(
+                name=NativeMethod.INC.name,
+                formal_params=[
+                    VarSymbol(name="i", type=None, param_mode=ParamMode.REFER),
+                ],
+            )
+        )
+        self.insert(
+            BuiltinProcedureSymbol(
+                name=NativeMethod.DEC.name,
+                formal_params=[
+                    VarSymbol(name="i", type=None, param_mode=ParamMode.REFER),
+                ],
+            )
+        )
         self.insert(BuiltinProcedureSymbol(name=NativeMethod.EXIT.name))
         self.insert(
             BuiltinFunctionSymbol(
@@ -692,10 +722,6 @@ class SemanticAnalyzer(NodeVisitor):
         # We have all the information we need to create a variable symbol.
         # Create the symbol and insert it into the symbol table.
         var_name = node.var_node.value
-
-        # Determine mutability - for now, all VAR declarations are mutable
-        # TODO: Add support for CONST declarations in parser
-        is_mutable = True  # All current declarations are VAR declarations
 
         # Create VarSymbol with mutability information
         var_symbol = VarSymbol(

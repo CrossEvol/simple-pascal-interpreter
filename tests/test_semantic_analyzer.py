@@ -994,6 +994,96 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             """
         )
 
+    def test_set_length_should_pass_var_or_access_expr(self):
+        self.runSemanticAnalyzer(
+            """
+            program SimpleSetLength;
+
+            var
+                myArray: array of Integer;
+
+            begin
+                {  Set the length of the dynamic array to 3 }
+                SetLength(myArray, 3);
+            
+            end.
+            """
+        )
+
+    def test_set_length_pass_string(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program SimpleSetLength;
+            begin
+                {  Set the length of the string constant to 3 }
+                SetLength('abc', 3);
+            
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
+        )
+        self.assertEqual(the_exception.token.value, "SetLength")
+
+    def test_inc_should_pass_var_or_access_expr(self):
+        self.runSemanticAnalyzer(
+            """
+            program SimpleInc;
+            var
+                i : Integer;
+            begin
+                inc(i);
+            end.
+            """
+        )
+
+    def test_inc_pass_string(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program SimpleInc;
+            begin
+                inc('a');
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
+        )
+        self.assertEqual(the_exception.token.value, "inc")
+
+    def test_dec_should_pass_var_or_access_expr(self):
+        self.runSemanticAnalyzer(
+            """
+            program SimpleDec;
+            var
+                i : Integer;
+            begin
+                dec(i);
+            end.
+            """
+        )
+
+    def test_dec_pass_string(self):
+        with self.assertRaises(SemanticError) as cm:
+            self.runSemanticAnalyzer(
+                """
+            program SimpleDec;
+            begin
+                dec('a');
+            end.
+            """
+            )
+        the_exception = cm.exception
+        self.assertEqual(
+            the_exception.error_code, ErrorCode.SEMANTIC_VARIABLE_IDENTIFIER_EXPECTED
+        )
+        self.assertEqual(the_exception.token.value, "dec")
+
     def test_function_invoker_should__decl_after(self):
         self.runSemanticAnalyzer(
             """
