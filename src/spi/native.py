@@ -13,3 +13,4 @@ class NativeMethod(Enum):
     ORD = "ORD"
     LENGTH = "LENGTH"
     CHR = "CHR"
+    GETTICKCOUNT = "GETTICKCOUNT"

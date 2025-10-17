@@ -1,5 +1,8 @@
 program JSONParserNoPointers;
 
+uses
+  SysUtils;
+
 const
   MAX_JSON_DEPTH  =  16;   { 最深嵌套 32 层，超过一般接口 10 倍 }
   MAX_STRING_LEN  = 255;   { 单段字符串 ≤255 字符，UTF-8 汉字 80 个左右 }
@@ -75,6 +78,9 @@ var
   { 主程序入口点}
   TestJSON: String;
   ParsedValueIndex: Integer;
+
+  StartTime, EndTime: Integer;
+  ElapsedTime: Integer;
   
 
 { 初始化内存管理}
@@ -1133,6 +1139,10 @@ end;
 
 
 begin
+
+  { 记录开始时间（单位：毫秒）}
+  StartTime := GetTickCount();
+
   { 初始化内存管理器}
   InitMemoryManager();
   
@@ -1158,4 +1168,15 @@ begin
   { 清理内存}
   if ParsedValueIndex > 0 then
     FreeJSONValue(ParsedValueIndex);
+
+  { 记录结束时间 }
+  EndTime := GetTickCount();
+
+  { 计算耗时 }
+  ElapsedTime := EndTime - StartTime;
+  
+  WriteLn('========== 执行结果 ==========');
+  WriteLn('总耗时: ', ElapsedTime, ' 毫秒');
+  WriteLn('总耗时: ', ElapsedTime div 1000, ' 秒');
+  WriteLn();
 end.

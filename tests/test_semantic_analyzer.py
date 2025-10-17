@@ -1040,6 +1040,26 @@ class SemanticAnalyzerTestCase(unittest.TestCase):
             """
         )
 
+    def test_get_tick_count_should_pass(self):
+        self.runSemanticAnalyzer(
+            """
+            program TimerTest;
+
+            uses
+                SysUtils;
+
+            var
+                StartTime : Integer;
+
+            begin
+                
+                { 记录开始时间（单位：毫秒）}
+                StartTime := GetTickCount();
+            
+            end.
+            """
+        )
+
     def test_inc_pass_string(self):
         with self.assertRaises(SemanticError) as cm:
             self.runSemanticAnalyzer(

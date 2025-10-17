@@ -432,6 +432,31 @@ END.
         self.assertEqual(ar["n2"].value, 66)
         self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
 
+    def test_get_tick_count_functions(self):
+        text = """\
+        program TimerTest;
+
+        uses
+            SysUtils;
+
+        var
+            StartTime : Integer;
+
+        begin
+            
+            { 记录开始时间（单位：毫秒）}
+            StartTime := GetTickCount();
+        
+        end.
+"""
+        interpreter = makeInterpreter(
+            text=text, mock_call_stack=MockFunctionCallStack()
+        )
+        interpreter.interpret()
+
+        ar = interpreter.call_stack.peek()
+        self.assertIn("StartTime", ar.members)
+
     def test_exit_in_simple_procedure(self):
         """Test Exit in a simple procedure without nested structures"""
         text = """\

@@ -159,6 +159,13 @@ class ScopedSymbolTable:
                 formal_params=[],
             )
         )
+        self.insert(
+            BuiltinFunctionSymbol(
+                name=NativeMethod.GETTICKCOUNT.name,
+                return_type=IntegerTypeSymbol(),
+                formal_params=[],
+            )
+        )
 
     def __str__(self) -> str:
         h1 = "SCOPE (SCOPED SYMBOL TABLE)"

@@ -374,6 +374,25 @@ def handle_chr(interpreter: Interpreter, node: FunctionCall):
     return result
 
 
+def handle_get_tick_count(interpreter: Interpreter, node: FunctionCall):
+    """Handle GetTickCount built-in function - get the current milliseconds"""
+    func_name = node.func_name
+
+    _ = interpreter.call_stack.peek()
+
+    interpreter.log(f"ENTER: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    import time
+
+    result = IntegerObject(value=int(round(time.time() * 1000)))
+
+    interpreter.log(f"LEAVE: FUNCTION {func_name}")
+    interpreter.log(str(interpreter.call_stack))
+
+    return result
+
+
 class ARType(Enum):
     PROGRAM = "PROGRAM"
     PROCEDURE = "PROCEDURE"
@@ -558,6 +577,7 @@ class Interpreter(NodeVisitor):
         register_builtin_function(NativeMethod.LENGTH.name, handle_length)
         register_builtin_function(NativeMethod.ORD.name, handle_ord)
         register_builtin_function(NativeMethod.CHR.name, handle_chr)
+        register_builtin_function(NativeMethod.GETTICKCOUNT.name, handle_get_tick_count)
 
         # Define operation dispatch table
         self.op_dispatch = {
