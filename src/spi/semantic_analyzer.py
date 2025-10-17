@@ -43,6 +43,7 @@ from spi.ast import (
     Type,
     TypeDeclaration,
     UnaryOp,
+    UsesDeclaration,
     Var,
     VarDecl,
     WhileStatement,
@@ -300,6 +301,9 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Compound(self, node: Compound) -> None:
         for child in node.children:
             self.visit(child)
+
+    def visit_UsesDeclaration(self, node: UsesDeclaration) -> None:
+        pass
 
     def visit_TypeDeclaration(self, node: TypeDeclaration) -> None:
         type_name = node.type_name.value

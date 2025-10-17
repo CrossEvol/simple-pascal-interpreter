@@ -55,6 +55,7 @@ from spi import (
     VariantPart,
     WhileStatement,
 )
+from spi.ast import UsesDeclaration
 
 
 class ASTVisualizer(NodeVisitor):
@@ -271,6 +272,17 @@ class ASTVisualizer(NodeVisitor):
         self.visit(node.value_expr)
         s = "  node{} -> node{}\n".format(node._num, node.value_expr._num)
         self.dot_body.append(s)
+
+    def visit_UsesDeclaration(self, node: UsesDeclaration) -> None:
+        s = '  node{} [label="UsesDeclaration"]\n'.format(self.n_count)
+        self.dot_body.append(s)
+        node._num = self.n_count
+        self.n_count += 1
+
+        for unit_name in node.unit_names:
+            self.visit(unit_name)
+            s = "  node{} -> node{}\n".format(node._num, unit_name._num)
+            self.dot_body.append(s)
 
     def visit_TypeDeclaration(self, node: TypeDeclaration) -> None:
         s = '  node{} [label="TypeDecl"]\n'.format(self.n_count)

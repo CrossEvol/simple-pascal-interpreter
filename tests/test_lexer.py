@@ -33,6 +33,7 @@ class LexerTestCase(unittest.TestCase):
             ("FUNCTION", TokenType.FUNCTION, "FUNCTION"),
             ("FORWARD", TokenType.FORWARD, "FORWARD"),
             ("CONST", TokenType.CONST, "CONST"),
+            ("USES", TokenType.USES, "USES"),
             ("true", TokenType.TRUE, "TRUE"),
             ("false", TokenType.FALSE, "FALSE"),
             ("and", TokenType.AND, "AND"),
@@ -106,16 +107,44 @@ class LexerTestCase(unittest.TestCase):
             ("BREAK;", [TokenType.BREAK, TokenType.SEMI]),
             ("continue;", [TokenType.CONTINUE, TokenType.SEMI]),
             ("CONTINUE;", [TokenType.CONTINUE, TokenType.SEMI]),
-            ("if i = 5 then break;", [TokenType.IF, TokenType.ID, TokenType.EQ, TokenType.INTEGER_CONST, TokenType.THEN, TokenType.BREAK, TokenType.SEMI]),
-            ("if i mod 2 = 0 then continue;", [TokenType.IF, TokenType.ID, TokenType.MOD, TokenType.INTEGER_CONST, TokenType.EQ, TokenType.INTEGER_CONST, TokenType.THEN, TokenType.CONTINUE, TokenType.SEMI]),
+            (
+                "if i = 5 then break;",
+                [
+                    TokenType.IF,
+                    TokenType.ID,
+                    TokenType.EQ,
+                    TokenType.INTEGER_CONST,
+                    TokenType.THEN,
+                    TokenType.BREAK,
+                    TokenType.SEMI,
+                ],
+            ),
+            (
+                "if i mod 2 = 0 then continue;",
+                [
+                    TokenType.IF,
+                    TokenType.ID,
+                    TokenType.MOD,
+                    TokenType.INTEGER_CONST,
+                    TokenType.EQ,
+                    TokenType.INTEGER_CONST,
+                    TokenType.THEN,
+                    TokenType.CONTINUE,
+                    TokenType.SEMI,
+                ],
+            ),
         ]
-        
+
         for text, expected_types in test_cases:
             lexer = self.makeLexer(text)
             for expected_type in expected_types:
                 token = lexer.get_next_token()
-                self.assertEqual(token.type, expected_type, f"Failed for text '{text}', expected {expected_type}, got {token.type}")
-            
+                self.assertEqual(
+                    token.type,
+                    expected_type,
+                    f"Failed for text '{text}', expected {expected_type}, got {token.type}",
+                )
+
             # Verify EOF
             token = lexer.get_next_token()
             self.assertEqual(token.type, TokenType.EOF)

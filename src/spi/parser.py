@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from spi.ast import (
     AST,
@@ -53,6 +53,7 @@ from spi.ast import (
     Type,
     TypeDeclaration,
     UnaryOp,
+    UsesDeclaration,
     Var,
     VarDecl,
     VariantCase,
@@ -132,13 +133,18 @@ class Parser:
 
         # Continuously check for declaration keywords until none are found
         while self.current_token.type in (
+            TokenType.USES,
             TokenType.TYPE,
             TokenType.CONST,
             TokenType.VAR,
             TokenType.PROCEDURE,
             TokenType.FUNCTION,
         ):
-            if self.current_token.type == TokenType.TYPE:
+            if self.current_token.type == TokenType.USES:
+                self.eat(TokenType.USES)
+                uses_decl = self.uses_declaration()
+                declarations.append(uses_decl)
+            elif self.current_token.type == TokenType.TYPE:
                 type_decls = self.type_declarations()
                 declarations.extend(type_decls)
             elif self.current_token.type == TokenType.CONST:
@@ -175,6 +181,17 @@ class Parser:
             self.eat(TokenType.SEMI)
 
         return type_decls
+
+    def uses_declaration(self) -> Declaration:
+        """
+        uses_declarations : USES  STRING_CONST (COMMA STRING_CONST )?
+        """
+        unit_names: List[String] = [self.factor()]
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            unit_names.append(self.factor())
+        self.eat(TokenType.SEMI)
+        return UsesDeclaration(unit_names=unit_names)
 
     def type_declaration(self) -> Declaration:
         """
@@ -1235,6 +1252,8 @@ class Parser:
                         procedure_declaration |
                         function_declaration
                        )*
+
+        uses_declarations : USES  STRING_CONST (COMMA STRING_CONST )?
 
         type_declarations : TYPE (type_declaration SEMI)+
 

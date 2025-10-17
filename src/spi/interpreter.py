@@ -47,6 +47,7 @@ from spi.ast import (
     Type,
     TypeDeclaration,
     UnaryOp,
+    UsesDeclaration,
     Var,
     VarDecl,
     WhileStatement,
@@ -631,6 +632,9 @@ class Interpreter(NodeVisitor):
         for declaration in node.declarations:
             self.visit(declaration)
         self.visit(node.compound_statement)
+
+    def visit_UsesDeclaration(self, node: UsesDeclaration) -> None:
+        pass
 
     def visit_TypeDeclaration(self, node: TypeDeclaration) -> None:
         # 在解释器中处理枚举类型声明，将枚举类型和枚举值注册到本地注册表中

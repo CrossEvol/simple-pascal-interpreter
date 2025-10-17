@@ -60,6 +60,7 @@ class TokenType(Enum):
     PROCEDURE = "PROCEDURE"
     FORWARD = "FORWARD"
     TYPE = "TYPE"
+    USES = "USES"
     BEGIN = "BEGIN"
     END = "END"  # marks the end of the block
     # misc

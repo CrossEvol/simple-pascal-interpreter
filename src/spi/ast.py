@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from spi.token import Token
 
@@ -42,6 +42,27 @@ class Declaration(Statement):
         super().__init__()
 
     def __str__(self):
+        return f"{self.__class__.__name__}()"
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class UsesDeclaration(Declaration):
+    """
+    表示 Pascal 中的 'uses' 语句。
+    例如: uses SysUtils, Classes;
+    """
+
+    def __init__(self, unit_names: List[String]):
+        super().__init__()
+        self.unit_names = unit_names
+
+    def __str__(self):
+        # 使用 ', '.join() 来美观地连接列表中的单元名
+        if self.unit_names:
+            units_str = ", ".join(str(name) for name in self.unit_names)
+            return f"{self.__class__.__name__}({units_str})"
         return f"{self.__class__.__name__}()"
 
     def __repr__(self):

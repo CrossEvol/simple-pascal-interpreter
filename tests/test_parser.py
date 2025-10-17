@@ -272,6 +272,21 @@ class ParserTestCase(unittest.TestCase):
         tree = parser.parse()
         self.assertIsNotNone(tree)
 
+    def test_uses_declaration(self):
+        """Test that uses declaration are parsed correctly"""
+        parser = self.makeParser(
+            """
+            PROGRAM TestConstParams;
+            uses A,B,C;
+            
+            BEGIN
+            END.
+            """
+        )
+        # Should parse without errors
+        tree = parser.parse()
+        self.assertIsNotNone(tree)
+
     def test_function_const_parameter_parsing(self):
         """Test that const parameters in functions are parsed correctly"""
         parser = self.makeParser(
@@ -592,7 +607,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(len(type_decls), 2)
 
         # Check first subrange type (1..10)
-        from spi.ast import SubrangeType, Num
+        from spi.ast import Num, SubrangeType
 
         range1_decl = type_decls[0]
         self.assertIsInstance(range1_decl.type_def, SubrangeType)
@@ -701,7 +716,7 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(len(var_decls), 2)
 
         # Check first array with bounds
-        from spi.ast import ArrayType, SubrangeType, Num
+        from spi.ast import ArrayType, Num, SubrangeType
 
         arr1_decl = var_decls[0]
         self.assertIsInstance(arr1_decl.type_node, ArrayType)
@@ -773,7 +788,7 @@ class ParserTestCase(unittest.TestCase):
 
         # Get the assignment statement
         assignment = tree.block.compound_statement.children[0]
-        from spi.ast import Assign, SetLiteral, Num
+        from spi.ast import Assign, Num, SetLiteral
 
         self.assertIsInstance(assignment, Assign)
         self.assertIsInstance(assignment.right, SetLiteral)
@@ -807,7 +822,7 @@ class ParserTestCase(unittest.TestCase):
 
         # Get the assignment statement
         assignment = tree.block.compound_statement.children[0]
-        from spi.ast import Assign, SetLiteral, SubrangeType, Num
+        from spi.ast import Assign, Num, SetLiteral, SubrangeType
 
         self.assertIsInstance(assignment, Assign)
         self.assertIsInstance(assignment.right, SetLiteral)
@@ -849,7 +864,7 @@ class ParserTestCase(unittest.TestCase):
 
         # Get the assignment statement
         assignment = tree.block.compound_statement.children[0]
-        from spi.ast import Assign, SetLiteral, SubrangeType, Num
+        from spi.ast import Assign, Num, SetLiteral, SubrangeType
 
         self.assertIsInstance(assignment, Assign)
         self.assertIsInstance(assignment.right, SetLiteral)
@@ -895,7 +910,7 @@ class ParserTestCase(unittest.TestCase):
 
         # Get the assignment statement
         assignment = tree.block.compound_statement.children[0]
-        from spi.ast import Assign, SetLiteral, SubrangeType, String
+        from spi.ast import Assign, SetLiteral, String, SubrangeType
 
         self.assertIsInstance(assignment, Assign)
         self.assertIsInstance(assignment.right, SetLiteral)
@@ -939,17 +954,17 @@ class ParserTestCase(unittest.TestCase):
         # Get the assignment statement
         compound = tree.block.compound_statement
         assignment = compound.children[0]
-        
-        from spi.ast import InOperator, Var, SetLiteral
-        
+
+        from spi.ast import InOperator, SetLiteral, Var
+
         # Check that the right side is an InOperator
         self.assertIsInstance(assignment.right, InOperator)
         in_op = assignment.right
-        
+
         # Check left operand (value being tested)
         self.assertIsInstance(in_op.value, Var)
         self.assertEqual(in_op.value.value, "x")
-        
+
         # Check right operand (set literal)
         self.assertIsInstance(in_op.set_expr, SetLiteral)
         set_literal = in_op.set_expr
@@ -974,17 +989,17 @@ class ParserTestCase(unittest.TestCase):
         # Get the assignment statement
         compound = tree.block.compound_statement
         assignment = compound.children[0]
-        
-        from spi.ast import InOperator, Var, SubrangeType
-        
+
+        from spi.ast import InOperator, SubrangeType, Var
+
         # Check that the right side is an InOperator
         self.assertIsInstance(assignment.right, InOperator)
         in_op = assignment.right
-        
+
         # Check left operand (value being tested)
         self.assertIsInstance(in_op.value, Var)
         self.assertEqual(in_op.value.value, "x")
-        
+
         # Check right operand (subrange)
         self.assertIsInstance(in_op.set_expr, SubrangeType)
 
@@ -1008,17 +1023,17 @@ class ParserTestCase(unittest.TestCase):
         # Get the assignment statement
         compound = tree.block.compound_statement
         assignment = compound.children[0]
-        
+
         from spi.ast import InOperator, Var
-        
+
         # Check that the right side is an InOperator
         self.assertIsInstance(assignment.right, InOperator)
         in_op = assignment.right
-        
+
         # Check left operand (value being tested)
         self.assertIsInstance(in_op.value, Var)
         self.assertEqual(in_op.value.value, "x")
-        
+
         # Check right operand (variable)
         self.assertIsInstance(in_op.set_expr, Var)
         self.assertEqual(in_op.set_expr.value, "mySet")
@@ -1042,16 +1057,16 @@ class ParserTestCase(unittest.TestCase):
         # Get the if statement
         compound = tree.block.compound_statement
         if_stmt = compound.children[0]
-        
-        from spi.ast import IfStatement, InOperator, Var, SetLiteral
-        
+
+        from spi.ast import IfStatement, InOperator, SetLiteral, Var
+
         # Check that it's an if statement
         self.assertIsInstance(if_stmt, IfStatement)
-        
+
         # Check that the condition is an InOperator
         self.assertIsInstance(if_stmt.condition, InOperator)
         in_op = if_stmt.condition
-        
+
         # Check operands
         self.assertIsInstance(in_op.value, Var)
         self.assertEqual(in_op.value.value, "x")
@@ -1076,16 +1091,16 @@ class ParserTestCase(unittest.TestCase):
         # Get the assignment statement
         compound = tree.block.compound_statement
         assignment = compound.children[0]
-        
-        from spi.ast import InOperator, BinOp, SetLiteral
-        
+
+        from spi.ast import BinOp, InOperator, SetLiteral
+
         # Check that the right side is an InOperator
         self.assertIsInstance(assignment.right, InOperator)
         in_op = assignment.right
-        
+
         # Check left operand is a binary operation (x + y)
         self.assertIsInstance(in_op.value, BinOp)
-        
+
         # Check right operand is a set literal
         self.assertIsInstance(in_op.set_expr, SetLiteral)
         set_literal = in_op.set_expr
