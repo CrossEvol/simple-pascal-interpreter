@@ -1100,7 +1100,7 @@ class Interpreter(NodeVisitor):
                         tag_field_name = (
                             current_obj.record_type.variant_part.tag_field.value
                         )
-                        tag_field_value = current_obj.fields.get(tag_field_name)
+                        tag_field_value = current_obj.value.get(tag_field_name)
                         if tag_field_value and hasattr(tag_field_value, "value"):
                             if isinstance(tag_field_value, EnumObject):
                                 current_obj._init_variant_fields(tag_field_value.name)

@@ -43,8 +43,22 @@ class Object:
 class NullObject(Object):
     """Default null/empty type object"""
 
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+
+        return cls._instance
+
+    _initialized = False
+
     def __init__(self):
+        if NullObject._initialized:
+            return
+
         super().__init__(None)
+        NullObject._initialized = True
 
     def __str__(self):
         return "None"
@@ -391,7 +405,7 @@ class ArrayObject(Object):
             for i in range(lower_bound, upper_bound + 1):
                 self.value[i] = self._create_default_element()
 
-    def _create_default_element(self):
+    def _create_default_element(self) -> Object:
         """Create default element based on element type"""
         if self.element_type == ElementType.INTEGER:
             return IntegerObject(0)
@@ -584,8 +598,12 @@ class SetObject(Object):
     def __init__(self, elements: set[int] = None):
         if elements is None:
             elements = set()
-        super().__init__(elements)
-        self.elements = elements
+        super().__init__()
+        self.value = elements
+
+    @property
+    def elements(self) -> set[int]:
+        return self.value
 
     def contains(self, value: int) -> bool:
         """Check if value is in the set"""
@@ -634,12 +652,16 @@ class RecordObject(Object):
 
     def __init__(self, record_type: RecordType):
         super().__init__()
-        self.fields: dict[str, Object] = {}  # 字段名到字段对象的映射
+        self.value: dict[str, Object] = {}  # 字段名到字段对象的映射
         self.record_type = record_type  # 记录类型模板，相当于元信息
         self.pending_fields: dict[str, Type] = {}
 
         # 初始化常规字段
         self._init_regular_fields()
+
+    @property
+    def fields(self) -> dict[str, Object]:
+        return self.value
 
     @property
     def pending_field_name(self) -> list[str]:
@@ -650,7 +672,7 @@ class RecordObject(Object):
         for field in self.record_type.fields:
             field_name = field.name.value
             field_type = field.type_node
-            self.fields[field_name] = self._create_default_object_from_type_node(
+            self.value[field_name] = self._create_default_object_from_type_node(
                 field_type
             )
 
@@ -684,8 +706,8 @@ class RecordObject(Object):
                 variant_fields.add(field.name.value)
 
         for field_name in variant_fields:
-            if field_name in self.fields:
-                del self.fields[field_name]
+            if field_name in self.value:
+                del self.value[field_name]
 
         # 添加新的变体字段
         for variant_case in self.record_type.variant_part.variant_cases:
@@ -695,13 +717,13 @@ class RecordObject(Object):
                     default_object = self._create_default_object_from_type_node(
                         field.type_node
                     )
-                    self.fields[field_name] = default_object
+                    self.value[field_name] = default_object
                     if isinstance(default_object, NullObject):
                         self.pending_fields[field_name] = field.type_node
 
     def __str__(self):
         fields_str = ", ".join(
-            [f"{name}={value}" for name, value in self.fields.items()]
+            [f"{name}={value}" for name, value in self.value.items()]
         )
         return f"Record({fields_str})"
 
@@ -709,7 +731,7 @@ class RecordObject(Object):
 
     def __getitem__(self, field_name: str):
         """获取字段值"""
-        return self.fields.get(field_name, NullObject())
+        return self.value.get(field_name, NullObject())
 
     def __setitem__(self, field_name: str, value: Object):
         """设置字段值"""
@@ -721,7 +743,7 @@ class RecordObject(Object):
             is_valid_field = self._is_variant_field(field_name)
 
         if is_valid_field:
-            self.fields[field_name] = value
+            self.value[field_name] = value
             if isinstance(value, EnumObject):
                 enum_obj = cast(EnumObject, value)
                 # 如果设置的是标签字段，需要重新初始化变体字段
