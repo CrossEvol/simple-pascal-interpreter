@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 from enum import Enum
 from typing import Callable, Optional, cast
 
@@ -74,6 +75,7 @@ from spi.object import (
     ProcedureObject,
     RealObject,
     RecordObject,
+    ReferenceObject,
     SetObject,
     StringObject,
     SubrangeObject,
@@ -410,26 +412,10 @@ class CallStack:
     def pop(self) -> ActivationRecord:
         if len(self._records) >= 2:
             pre_ar = self._records[-1]
-            ar = self._records[-2]
-            for k in pre_ar._references:
-                ar.declare_local(k)
-                ar[k] = pre_ar[k]
-            mappingNodes = self.preMappingNodes
             self._records.pop()
-            for k, v in mappingNodes.items():
-                assign = Assign(
-                    left=k,
-                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
-                    right=v,
-                )
-                ar.interpreter.visit(assign)
             return pre_ar
         else:
             self._records.pop()
-
-    @property
-    def preMappingNodes(self) -> dict[AST, AST]:
-        return self._records[-1].mappingNodes
 
     def peek(self) -> Optional[ActivationRecord]:
         if len(self._records) == 0:
@@ -456,20 +442,15 @@ class ActivationRecord:
         name: str,
         type: ARType,
         nesting_level: int,
-        interpreter: Interpreter,
         outer: ActivationRecord = None,
     ) -> None:
         self.name = name
         self.type = type
         self.nesting_level = nesting_level
         self.members: dict[str | int, Object] = {}
-        self.mappings: dict[str, str] = {}
-        self.mappingNodes: dict[AST, AST] = {}
-        self.interpreter = interpreter
         self.outer: ActivationRecord = outer
         # 新增：记录当前作用域声明的局部变量
         self._locals: set[str] = set()
-        self._references: set[set] = set()
 
     def declare_local(self, name: str) -> None:
         """在当前作用域声明局部变量"""
@@ -495,7 +476,10 @@ class ActivationRecord:
     def __setitem__(self, key: str | int, value: Object) -> None:
         """修改变量值（只修改当前作用域的变量）"""
         if key in self._locals:
-            self.members[key] = value
+            if isinstance(self.members[key], ReferenceObject):
+                self.members[key].value.value = value.value
+            else:
+                self.members[key] = value
         else:
             if self.outer is not None:
                 self.outer[key] = value
@@ -511,6 +495,8 @@ class ActivationRecord:
         """获取变量值（沿作用域链查找）"""
         # 先检查当前作用域
         if key in self.members:
+            if isinstance(self.members[key], ReferenceObject):
+                return self.members[key].value
             return self.members[key]
         # 然后检查外层作用域
         elif self.outer is not None:
@@ -626,7 +612,6 @@ class Interpreter(NodeVisitor):
             name=program_name,
             type=ARType.PROGRAM,
             nesting_level=self.call_stack.nesting_level,
-            interpreter=self,
             outer=self.call_stack.peek(),
         )
         self.call_stack.push(ar)
@@ -1146,8 +1131,10 @@ class Interpreter(NodeVisitor):
             var_value, StringObject
         ):
             ar[var_name] = CharObject(value=var_value.value)
-        else:
+        elif isinstance(existing_var, ReferenceObject):
             ar[var_name] = var_value
+        else:
+            ar[var_name] = copy.copy(var_value)
 
     def visit_Var(self, node: Var) -> Object:
         var_name = node.value
@@ -1306,7 +1293,6 @@ class Interpreter(NodeVisitor):
                 name=proc_name,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
-                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
@@ -1314,14 +1300,12 @@ class Interpreter(NodeVisitor):
             actual_params = node.actual_params
             for i in range(0, len(actual_params)):
                 key = f"__{ar.nesting_level + 1}__PROCEDURE__{proc_name}__{i}"
-                # 应该保证 key 在上一个栈帧中， 保证最后可以回传
-                ar._references.add(key)
                 ar.declare_local(key)
-                ar[key] = self.visit(actual_params[i])
+                value_to_passed = self.visit(actual_params[i])
                 if should_refer:
-                    ar.mappingNodes[actual_params[i]] = Var(
-                        token=Token(type=TokenType.VAR, value=key)
-                    )
+                    ar[key] = ReferenceObject(inner=value_to_passed)
+                else:
+                    ar[key] = value_to_passed
 
             self.call_stack.push(ar)
 
@@ -1340,7 +1324,6 @@ class Interpreter(NodeVisitor):
                 name=proc_name,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
-                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
@@ -1351,10 +1334,11 @@ class Interpreter(NodeVisitor):
             for param_node, argument_node in zip(formal_params, actual_params):
                 param_name = param_node.var_node.value
                 ar.declare_local(param_name)
-                ar[param_name] = self.visit(argument_node)
+                value_to_passed = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
-                    ar._references.add(param_name)
-                    ar.mappingNodes[argument_node] = param_node.var_node
+                    ar[param_name] = ReferenceObject(inner=value_to_passed)
+                else:
+                    ar[param_name] = value_to_passed
 
             self.call_stack.push(ar)
 
@@ -1422,7 +1406,6 @@ class Interpreter(NodeVisitor):
                 name=func_name,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
-                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
@@ -1450,7 +1433,6 @@ class Interpreter(NodeVisitor):
                 name=func_name,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
-                interpreter=self,
                 outer=self.call_stack.peek(),
             )
 
@@ -1470,10 +1452,11 @@ class Interpreter(NodeVisitor):
             for param_node, argument_node in zip(formal_params[1:], actual_params[1:]):
                 param_name = param_node.var_node.value
                 ar.declare_local(param_name)
-                ar[param_name] = self.visit(argument_node)
+                value_to_passed = self.visit(argument_node)
                 if param_node.param_mode == ParamMode.REFER:
-                    ar._references.add(param_name)
-                    ar.mappingNodes[argument_node] = param_node.var_node
+                    ar[param_name] = ReferenceObject(inner=value_to_passed)
+                else:
+                    ar[param_name] = value_to_passed
 
             self.call_stack.push(ar)
 

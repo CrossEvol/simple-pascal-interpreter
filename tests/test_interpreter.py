@@ -62,19 +62,7 @@ class MockFunctionCallStack:
     def pop(self) -> ActivationRecord:
         if len(self._records) >= 2:
             pre_ar = self._records[-1]
-            ar = self._records[-2]
-            for k in pre_ar._references:
-                ar.declare_local(k)
-                ar[k] = pre_ar[k]
-            mappingNodes = self.preMappingNodes
             self._records.pop()
-            for k, v in mappingNodes.items():
-                assign = Assign(
-                    left=k,
-                    op=Token(type=TokenType.ASSIGN, value=TokenType.ASSIGN),
-                    right=v,
-                )
-                ar.interpreter.visit(assign)
             return pre_ar
         else:
             pass
@@ -83,10 +71,6 @@ class MockFunctionCallStack:
         if len(self._records) == 0:
             return None
         return self._records[-1]
-
-    @property
-    def preMappingNodes(self) -> dict[AST, AST]:
-        return self._records[-1].mappingNodes
 
     @property
     def nesting_level(self) -> int:
@@ -2295,11 +2279,11 @@ end.  { Main }
             end;
 
         FUNCTION ADD(var x , y : Integer): Integer;
-        begin
-            x := x * 2;
-            y := y * 2;
-            ADD := x + y;
-        end;
+            begin
+                x := x * 2;
+                y := y * 2;
+                ADD := x + y;
+            end;
 
         var 
             person : TPerson;
@@ -2748,16 +2732,16 @@ class InterpreterConstTestCase(unittest.TestCase):
             temp : INTEGER;
         
         PROCEDURE Outer(CONST a : INTEGER);
-            PROCEDURE Inner(CONST b : INTEGER; VAR c : INTEGER);
+                PROCEDURE Inner(CONST b : INTEGER; VAR c : INTEGER);
+                    BEGIN
+                        c := a + b;  { Use const from outer scope and inner parameter }
+                    END;
+                
             BEGIN
-                c := a + b;  { Use const from outer scope and inner parameter }
+                temp := 0;
+                Inner(a, temp);
+                result := temp;
             END;
-            
-        BEGIN
-            temp := 0;
-            Inner(a, temp);
-            result := temp;
-        END;
         
         BEGIN
             Outer(10);  { Should result in result = 10 + 10 = 20 }

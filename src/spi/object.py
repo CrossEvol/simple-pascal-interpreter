@@ -40,6 +40,23 @@ class Object:
         return bool(self.value)
 
 
+class ReferenceObject(Object):
+    def __init__(self, inner: Object):
+        self.value = inner
+
+    def get(self) -> Object:
+        return self.value
+
+    def set(self, new_obj: Object):
+        self.value = new_obj
+
+    def __str__(self):
+        return str(self.value)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.value})"
+
+
 class NullObject(Object):
     """Default null/empty type object"""
 
