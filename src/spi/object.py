@@ -234,26 +234,27 @@ class StringObject(Object):
     def __init__(self, value: str = "", limit: int = -1):
         if limit > 0 and len(value) > limit:
             value = value[:limit]
-        super().__init__(str(value))
+        super().__init__()
+        self.value = list(value)
         self.limit = limit
 
     def __add__(self, other) -> Object:
         if isinstance(other, StringObject):
-            result_value = self.value + other.value
+            result_value = "".join(self.value) + "".join(other.value)
             # Don't apply limits during concatenation operations
             return StringObject(result_value, -1)
         # Handle string + other types conversion
         elif hasattr(other, "value"):
-            return StringObject(self.value + str(other.value), -1)
+            return StringObject("".join(self.value) + str(other.value), -1)
         else:
-            return StringObject(self.value + str(other), -1)
+            return StringObject("".join(self.value) + str(other), -1)
 
     def __radd__(self, other) -> Object:
         """Handle addition when string is on the right side (other + string)"""
         if hasattr(other, "value"):
-            return StringObject(str(other.value) + self.value, -1)
+            return StringObject(str(other.value) + "".join(self.value), -1)
         else:
-            return StringObject(str(other) + self.value, -1)
+            return StringObject(str(other) + "".join(self.value), -1)
 
     def __getitem__(self, index) -> Object:
         """Get character at index (1-based indexing for Pascal)"""
@@ -268,14 +269,12 @@ class StringObject(Object):
             if isinstance(value, CharObject):
                 char_value = value.value
             elif isinstance(value, StringObject):
-                char_value = value.value[:1] if value.value else ""
+                char_value = value.value[0] if value.value else ""
             else:
-                char_value = str(value)[:1] if hasattr(value, "value") else ""
+                char_value = str(value)[0] if hasattr(value, "value") else ""
 
             # Modify the string at the specified index
-            value_list = list(self.value)
-            value_list[index - 1] = char_value
-            self.value = "".join(value_list)
+            self.value[index - 1] = char_value
 
     def __len__(self):
         return len(self.value)
@@ -283,21 +282,21 @@ class StringObject(Object):
     def __eq__(self, other) -> Object:
         """Equal comparison with other StringObject or CharObject"""
         if isinstance(other, StringObject):
-            return BooleanObject(self.value == other.value)
+            return BooleanObject("".join(self.value) == "".join(other.value))
         elif isinstance(other, CharObject):
             # When comparing string with char, compare with first character of string
             return BooleanObject(
-                self.value == other.value if len(self.value) == 1 else False
+                self.value[0] == other.value if len(self.value) == 1 else False
             )
         return BooleanObject(False)
 
     def __ne__(self, other) -> Object:
         """Not equal comparison with other StringObject or CharObject"""
         if isinstance(other, StringObject):
-            return BooleanObject(self.value != other.value)
+            return BooleanObject("".join(self.value) != "".join(other.value))
         elif isinstance(other, CharObject):
             # When comparing string with char, compare with first character of string
-            return BooleanObject(self.value != other.value or len(self.value) != 1)
+            return BooleanObject(self.value[0] != other.value or len(self.value) != 1)
         return BooleanObject(True)
 
     def set_length(self, new_length: int):
@@ -305,6 +304,12 @@ class StringObject(Object):
         if new_length < len(self.value):
             self.value = self.value[:new_length]
         # Note: Pascal strings don't automatically extend with spaces
+
+    def __str__(self):
+        return "".join(self.value)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({''.join(self.value)})"
 
 
 class CharObject(Object):

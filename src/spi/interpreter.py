@@ -119,7 +119,7 @@ def handle_write(interpreter: Interpreter, node: ProcedureCall):
         if isinstance(obj, EnumObject):
             print(obj.name, end="")
         else:
-            print(obj.value if hasattr(obj, "value") else obj, end="")
+            print(obj, end="")
 
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -142,7 +142,7 @@ def handle_writeln(interpreter: Interpreter, node: ProcedureCall):
         if isinstance(obj, EnumObject):
             print(obj.name, end="")
         else:
-            print(obj.value if hasattr(obj, "value") else obj, end="")
+            print(obj, end="")
     print()
     interpreter.log(f"LEAVE: PROCEDURE {proc_name}")
     interpreter.log(str(interpreter.call_stack))
@@ -808,9 +808,9 @@ class Interpreter(NodeVisitor):
         upper_obj = self.visit(node.upper)
 
         if isinstance(lower_obj, StringObject) and len(lower_obj.value) == 1:
-            lower_obj = IntegerObject(value=ord(lower_obj.value))
+            lower_obj = IntegerObject(value=ord(lower_obj.value[0]))
         if isinstance(upper_obj, StringObject) and len(upper_obj.value) == 1:
-            upper_obj = IntegerObject(value=ord(upper_obj.value))
+            upper_obj = IntegerObject(value=ord(upper_obj.value[0]))
 
         # Extract numeric values
         if not isinstance(lower_obj, NumberObject):
@@ -871,7 +871,7 @@ class Interpreter(NodeVisitor):
                     and len(element_obj.value) == 1
                 ):
                     # Convert one-length string to char then to ASCII value for set membership
-                    elements.add(ord(element_obj.value) if element_obj.value else 0)
+                    elements.add(ord(element_obj.value[0]) if element_obj.value else 0)
                 else:
                     raise InterpreterError(
                         error_code=ErrorCode.INTERPRETER_SET_INVALID,
@@ -892,7 +892,7 @@ class Interpreter(NodeVisitor):
         elif isinstance(value_obj, CharObject):
             test_value = ord(value_obj.value) if value_obj.value else 0
         elif isinstance(value_obj, StringObject) and len(value_obj.value) == 1:
-            test_value = ord(value_obj.value) if value_obj.value else 0
+            test_value = ord(value_obj.value[0]) if value_obj.value else 0
         else:
             raise InterpreterError(
                 error_code=ErrorCode.INTERPRETER_IN_OPERATOR_INVALID,
@@ -1064,7 +1064,7 @@ class Interpreter(NodeVisitor):
                         isinstance(var_value, StringObject)
                         and len(var_value.value) == 1
                     ):
-                        current_obj[index] = CharObject(var_value.value)
+                        current_obj[index] = CharObject(var_value.value[0])
                     elif isinstance(var_value, CharObject):
                         current_obj[index] = var_value
                 elif isinstance(current_obj, ArrayObject):
@@ -1130,7 +1130,7 @@ class Interpreter(NodeVisitor):
         elif isinstance(existing_var, CharObject) and isinstance(
             var_value, StringObject
         ):
-            ar[var_name] = CharObject(value=var_value.value)
+            ar[var_name] = CharObject(value=var_value.value[0])
         elif isinstance(existing_var, ReferenceObject):
             ar[var_name] = var_value
         else:

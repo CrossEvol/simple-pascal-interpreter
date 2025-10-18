@@ -412,8 +412,8 @@ END.
 
         ar = interpreter.call_stack.peek()
         self.assertEqual(ar["c1"].value, "Z")
-        self.assertEqual(ar["n1"].value, 90)  # ASCII code for 'Z'
-        self.assertEqual(ar["n2"].value, 66)
+        self.assertEqual(ar["n1"], 90)  # ASCII code for 'Z'
+        self.assertEqual(ar["n2"], 66)
         self.assertEqual(ar["c2"].value, "B")  # Chr(66) = 'B'
 
     def test_get_tick_count_functions(self):
@@ -1300,16 +1300,16 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["str1"].value, "abcdefg")
-        self.assertEqual(ar["str2"].value, "abcdefghijklmnopqrstuvwxyz")
-        self.assertEqual(ar["str3"].value, "abcdefghijklmn")
+        self.assertEqual(ar["str1"], "abcdefg")
+        self.assertEqual(ar["str2"], "abcdefghijklmnopqrstuvwxyz")
+        self.assertEqual(ar["str3"], "abcdefghijklmn")
         self.assertEqual(ar["l1"].value, 7)
         self.assertEqual(ar["l2"].value, 26)
         self.assertEqual(ar["l3"].value, 14)
         self.assertEqual(ar["a"].value, "a")
         self.assertEqual(ar["b"].value, "")
-        self.assertEqual(ar["concat1"].value, "abcdefg123456a")
-        self.assertEqual(ar["concat2"].value, "abcdefg")
+        self.assertEqual(ar["concat1"], "abcdefg123456a")
+        self.assertEqual(ar["concat2"], "abcdefg")
         # MockCallStack will not pop ActivationRecord
         self.assertEqual(ar.nesting_level, 5)
 
@@ -1333,9 +1333,9 @@ END.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        self.assertEqual(ar["chars"].value[1].value, "H")
+        self.assertEqual(ar["chars"].value[1], "H")
         self.assertEqual(ar["chars"].value[2].value, "e")
-        self.assertEqual(ar["chars"].value[3].value, "y")
+        self.assertEqual(ar["chars"].value[3], "y")
         self.assertEqual(ar["i"].value, 101)
 
     def test_enum_types(self):
@@ -1498,7 +1498,7 @@ end.
         self.assertIn("person1", ar.members)
         self.assertIsInstance(ar["person1"], RecordObject)
         self.assertIsInstance(ar["name"], StringObject)
-        self.assertEqual(ar["name"].value, "Alice")
+        self.assertEqual(ar["name"], "Alice")
         self.assertIsInstance(ar["age"], IntegerObject)
         self.assertEqual(ar["age"].value, 30)
         self.assertIsInstance(ar["height"], RealObject)
@@ -1558,7 +1558,7 @@ end.
         self.assertIn("person1", ar.members)
         self.assertIsInstance(ar["person1"], RecordObject)
         self.assertIsInstance(ar["name"], StringObject)
-        self.assertEqual(ar["name"].value, "Alice")
+        self.assertEqual(ar["name"], "Alice")
         self.assertIsInstance(ar["age"], IntegerObject)
         self.assertEqual(ar["age"].value, 30)
         self.assertIsInstance(ar["height"], RealObject)
@@ -1605,11 +1605,11 @@ end.
         self.assertIn("person", ar.members)
         self.assertIsInstance(ar["person"], RecordObject)
         self.assertIsInstance(ar["name"], StringObject)
-        self.assertEqual(ar["name"].value, "John Doe")
+        self.assertEqual(ar["name"], "John Doe")
         self.assertIsInstance(ar["street"], StringObject)
-        self.assertEqual(ar["street"].value, "123 Main St")
+        self.assertEqual(ar["street"], "123 Main St")
         self.assertIsInstance(ar["city"], StringObject)
-        self.assertEqual(ar["city"].value, "Anytown")
+        self.assertEqual(ar["city"], "Anytown")
         # In a more complete implementation, we would check the actual values
 
     def test_simple_variant_record(self):
@@ -1795,7 +1795,7 @@ END.
         # Check that the nested record was created and accessed
         self.assertIn("s", ar.members)
         self.assertIsInstance(ar["s"], StringObject)
-        self.assertEqual(ar["s"].value, "ABC")
+        self.assertEqual(ar["s"], "ABC")
         # In a more complete implementation, we would check the actual values
 
     def test_chained_alias_for_enum_type(self):
@@ -1904,7 +1904,7 @@ end.
         self.assertIsInstance(ar["charToAccess"], CharObject)
         self.assertEqual(ar["charToAccess"].value, "a")
         self.assertIsInstance(ar["testString"], StringObject)
-        self.assertEqual(ar["testString"].value, "Charlie")
+        self.assertEqual(ar["testString"], "Charlie")
         self.assertIsInstance(ar["testCharIndex"], IntegerObject)
         self.assertEqual(ar["testCharIndex"].value, 3)
 
@@ -2540,7 +2540,7 @@ class InterpreterConstTestCase(unittest.TestCase):
 
         self.assertEqual(ar["pi_val"].value, 3.14159)
         self.assertEqual(ar["size_val"].value, 100)
-        self.assertEqual(ar["msg_val"].value, "Hello World")
+        self.assertEqual(ar["msg_val"], "Hello World")
         self.assertEqual(ar["flag_val"].value, True)
 
     def test_const_in_expressions(self):
@@ -2721,7 +2721,7 @@ class InterpreterConstTestCase(unittest.TestCase):
         self.assertEqual(ar["r"].value, 3.14)
         self.assertEqual(ar["b"].value, True)
         self.assertEqual(ar["c"].value, "A")
-        self.assertEqual(ar["s"].value, "Hello")
+        self.assertEqual(ar["s"], "Hello")
 
     def test_const_in_nested_procedures(self):
         """Test const parameters in nested procedure calls"""
@@ -3404,4 +3404,4 @@ class InterpreterSubrangeSetTestCase(unittest.TestCase):
         interpreter.interpret()
         ar = interpreter.call_stack.peek()
 
-        self.assertEqual(ar["result"].value, "B")  # 85 is in range 80..89
+        self.assertEqual(ar["result"], "B")  # 85 is in range 80..89
