@@ -245,12 +245,12 @@ class StringObject(Object):
 
     def __add__(self, other) -> Object:
         if isinstance(other, StringObject):
-            result_value = "".join(self.value) + "".join(other.value)
-            # Don't apply limits during concatenation operations
-            return StringObject(result_value, -1)
+            self.value.extend(other.value)
+            return self
         # Handle string + other types conversion
         else:
-            return StringObject("".join(self.value) + str(other.value), -1)
+            self.value.extend(list(str(other.value)))
+            return self
 
     def __radd__(self, other) -> Object:
         """Handle addition when string is on the right side (other + string)"""
@@ -265,11 +265,7 @@ class StringObject(Object):
     def __setitem__(self, index: int, value: Object) -> None:
         """Set character at index (1-based indexing for Pascal)"""
         if 1 <= index <= len(self.value):
-            # Convert value to string character
-            if isinstance(value, CharObject):
-                char_value = value.value
-            else:
-                char_value = value.value[0] if value.value else ""
+            char_value = value.value
 
             # Modify the string at the specified index
             self.value[index - 1] = char_value
@@ -280,7 +276,7 @@ class StringObject(Object):
     def __eq__(self, other) -> BooleanObject:
         """Equal comparison with other StringObject or CharObject"""
         if isinstance(other, StringObject):
-            return BooleanObject("".join(self.value) == "".join(other.value))
+            return BooleanObject(self.value == other.value)
         elif isinstance(other, CharObject):
             # When comparing string with char, compare with first character of string
             return BooleanObject(
@@ -297,11 +293,15 @@ class StringObject(Object):
         if new_length < len(self.value):
             self.value = self.value[:new_length]
 
-    def __str__(self):
+    @property
+    def inner_str(self) -> str:
         return "".join(self.value)
 
+    def __str__(self):
+        return self.inner_str
+
     def __repr__(self):
-        return f"{self.__class__.__name__}({''.join(self.value)})"
+        return f"{self.__class__.__name__}({self.inner_str})"
 
 
 class CharObject(Object):
