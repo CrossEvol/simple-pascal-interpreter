@@ -228,8 +228,10 @@ class BooleanObject(Object):
             return BooleanObject(self.value != other.value)
         return TrueObject
 
+
 TrueObject = BooleanObject(value=True)
 FalseObject = BooleanObject(value=False)
+
 
 class StringObject(Object):
     """String value object"""
@@ -294,7 +296,6 @@ class StringObject(Object):
         """Set new length for string"""
         if new_length < len(self.value):
             self.value = self.value[:new_length]
-        # Note: Pascal strings don't automatically extend with spaces
 
     def __str__(self):
         return "".join(self.value)
@@ -402,16 +403,10 @@ class ArrayObject(Object):
         super().__init__({})
         self.element_type = element_type
         self.dynamic = dynamic
-        self.bounds_subrange = (
-            bounds_subrange  # Optional SubrangeObject for bounds checking
-        )
+        self.bounds_subrange = bounds_subrange
 
-        lower_bound = bounds_subrange.lower
-        upper_bound = bounds_subrange.upper
         # Initialize static arrays
-        if not dynamic and lower_bound <= upper_bound:
-            for i in range(lower_bound, upper_bound + 1):
-                self.value[i] = self._create_default_element()
+        self.value = {}
 
     def _create_default_element(self) -> Object:
         """Create default element based on element type"""
@@ -459,23 +454,19 @@ class ArrayObject(Object):
                     message=f"Array index {index} out of bounds {self.bounds_subrange}",
                 )
 
-        if index in self.value:
-            return self.value[index]
-        else:
-            # Return default value for out-of-bounds access
-            return self._create_default_element()
+        if index not in self.value:
+            self.value[index] = self._create_default_element()
+        return self.value[index]
 
     def __setitem__(self, index, value):
         """Set element at index"""
         # For static arrays, check bounds using SubrangeObject if available
-        if not self.dynamic and self.bounds_subrange:
-            if not self.bounds_subrange.contains(index):
-                raise InterpreterError(
-                    error_code=ErrorCode.INTERPRETER_ARRAY_INDEX_OUT_OF_BOUNDS,
-                    token=None,
-                    message=f"Array index {index} out of bounds {self.bounds_subrange}",
-                )
-
+        if not self.dynamic and not self.bounds_subrange.contains(index):
+            raise InterpreterError(
+                error_code=ErrorCode.INTERPRETER_ARRAY_INDEX_OUT_OF_BOUNDS,
+                token=None,
+                message=f"Array index {index} out of bounds {self.bounds_subrange}",
+            )
         self.value[index] = value
 
     def __len__(self):

@@ -1198,10 +1198,9 @@ end.
         interpreter.interpret()
 
         ar = interpreter.call_stack.peek()
-        for i in range(1, 2):
-            self.assertEqual(ar["intArr"].value[i].value, 0)
-            self.assertEqual(ar["boolArr"].value[i].value, False)
-            self.assertEqual(ar["realArr"].value[i].value, 0.0)
+        self.assertEqual(len(ar["intArr"].value), 0)
+        self.assertEqual(len(ar["boolArr"].value), 0)
+        self.assertEqual(len(ar["realArr"].value), 0)
         self.assertEqual(ar.nesting_level, 1)
 
     def test_array_range_invalid(self):
