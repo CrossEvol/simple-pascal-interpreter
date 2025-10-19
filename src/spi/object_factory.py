@@ -23,19 +23,102 @@ from spi.token import TokenType
 if TYPE_CHECKING:
     from spi.interpreter import Interpreter
 
+from typing import List, Optional
+
+
+class UnionSet:
+    def __init__(self, canonicals: Optional[List[str]] = None) -> None:
+        """
+        初始化 UnionSet，用于类型别名解析。
+        :param canonicals: 可选，最终类型列表（如 ["Integer", "String"]），每个为独立根。
+        """
+        self.parent: dict[str, str] = {}  # 父节点映射
+
+        # 添加最终类型
+        if canonicals:
+            for canon in canonicals:
+                self.add_canonical(canon)
+
+    def add_canonical(self, canonical: str) -> None:
+        """
+        添加最终类型：如果不存在，则作为新独立根添加。
+        :param canonical: 最终类型字符串
+        """
+        if not isinstance(canonical, str):
+            raise ValueError("最终类型必须是字符串")
+        if canonical in self.parent:
+            return  # 已存在，忽略
+
+        self.parent[canonical] = canonical
+
+    def find(self, key: str) -> str:
+        """
+        查找 key 的根节点（最终类型，路径压缩）。
+        :param key: 类型名（别名或最终类型）
+        :return: 最终类型字符串
+        """
+        if key not in self.parent:
+            # 如果 key 不存在，视作新最终类型
+            self.add_canonical(key)
+            return key
+
+        if self.parent[key] != key:
+            self.parent[key] = self.find(self.parent[key])
+        return self.parent[key]
+
+    def union(self, key1: str, key2: str) -> None:
+        """
+        合并 key1 和 key2 所属的集合（按秩合并）。
+        :param key1: 第一个类型名
+        :param key2: 第二个类型名
+        """
+        root1 = self.find(key1)
+        root2 = self.find(key2)
+        if root1 == root2:
+            return
+
+        self.parent[root1] = root2
+
+    def add_alias(self, alias: str, canonical: str) -> None:
+        """
+        添加别名：将 alias 合并到最终类型 canonical。
+        :param alias: 别名字符串
+        :param canonical: 最终类型字符串
+        """
+        self.union(alias, canonical)
+
+    def resolve_type(self, key: str) -> str:
+        """
+        解析类型别名，返回最终类型。
+        :param key: 类型名
+        :return: 最终类型字符串
+        """
+        return self.find(key)
+
+    def is_connected(self, key1: str, key2: str) -> bool:
+        """
+        检查两个类型是否解析到同一最终类型。
+        :param key1: 第一个类型名
+        :param key2: 第二个类型名
+        :return: bool
+        """
+        return self.find(key1) == self.find(key2)
+
 
 class ObjectFactory:
     def __init__(self, interpreter: "Interpreter"):
         self.interpreter = interpreter
+        # 类型别名映射表：alias_name -> actual_type_node
+        self.type_aliases: dict[str, Type] = {}
 
     def resolve_type_alias(self, type_node: Type) -> Type:
         """解析类型别名，追随别名链直到找到实际类型"""
         if hasattr(type_node, "value"):
             type_name = type_node.value
             # 检查是否是类型别名
-            if type_name in self.interpreter.type_aliases:
+            if type_name in self.type_aliases:
                 # 递归解析别名链
-                return self.resolve_type_alias(self.interpreter.type_aliases[type_name])
+                return self.resolve_type_alias(self.type_aliases[type_name])
 
         # 如果不是别名或者已经是实际类型，直接返回
         return type_node
@@ -111,8 +194,8 @@ class ObjectFactory:
                 return nested_record_obj
 
             # 检查是否是类型别名，然后递归解析
-            if type_name in self.interpreter.type_aliases:
-                actual_type = self.interpreter.type_aliases[type_name]
+            if type_name in self.type_aliases:
+                actual_type = self.type_aliases[type_name]
                 return self.create_complex_object_from_type_node(actual_type)
 
         # 其他情况返回空对象
@@ -141,9 +224,9 @@ class ObjectFactory:
                         # 枚举类型，使用第一个枚举值
                         enum_obj = self.enum_obj(type_name, 0)
                         array_obj.value[index] = enum_obj
-                    elif type_name in self.interpreter.type_aliases:
+                    elif type_name in self.type_aliases:
                         # 处理类型别名
-                        actual_type = self.interpreter.type_aliases[type_name]
+                        actual_type = self.type_aliases[type_name]
                         complex_obj = self.create_complex_object_from_type_node(
                             actual_type
                         )

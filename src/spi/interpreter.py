@@ -548,9 +548,6 @@ class Interpreter(NodeVisitor):
         ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
         self.record_types: dict[str, RecordType] = {}
 
-        # 类型别名映射表：alias_name -> actual_type_node
-        self.type_aliases: dict[str, Type] = {}
-
         self.object_factory = ObjectFactory(self)
 
         # Register built-in procedures and functions
@@ -664,7 +661,7 @@ class Interpreter(NodeVisitor):
             # 处理类型别名 (type aliases)
             # 对于非枚举和非记录类型，将其作为类型别名处理
             type_name = node.type_name.value
-            self.type_aliases[type_name] = node.type_def
+            self.object_factory.type_aliases[type_name] = node.type_def
 
     def visit_VarDecl(self, node: VarDecl) -> None:
         ar = self.call_stack.peek()
@@ -1141,7 +1138,7 @@ class Interpreter(NodeVisitor):
         ar = self.call_stack.peek()
         var_value = NullObject()
         try:
-            var_value = ar.get(var_name)
+            var_value = ar[var_name]
         except KeyError as _:
             # 如果在当前作用域中找不到该变量，检查它是否是枚举值
             if isinstance(var_value, NullObject):
