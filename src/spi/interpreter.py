@@ -663,37 +663,34 @@ class Interpreter(NodeVisitor):
         resolved_type_node = self.object_factory.resolve_type_alias(node.type_node)
 
         # 处理基本类型
-        if hasattr(resolved_type_node, "token"):
-            if resolved_type_node.token.type == TokenType.BOOLEAN:
-                ar.declare_local(node.var_node.value)
-                ar[node.var_node.value] = BooleanObject(False)
-                return
-            elif resolved_type_node.token.type == TokenType.INTEGER:
-                ar.declare_local(node.var_node.value)
-                ar[node.var_node.value] = IntegerObject(0)
-                return
-            elif resolved_type_node.token.type == TokenType.REAL:
-                ar.declare_local(node.var_node.value)
-                ar[node.var_node.value] = RealObject(0.0)
-                return
-            elif resolved_type_node.token.type == TokenType.CHAR:
-                ar.declare_local(node.var_node.value)
-                ar[node.var_node.value] = CharObject("")
-                return
-            elif resolved_type_node.token.type == TokenType.STRING:
-                string_node = cast(StringType, resolved_type_node)
-                limit: int = 255
-                if string_node.limit is not None:
-                    limit = self.visit(string_node.limit).value
-                ar.declare_local(node.var_node.value)
-                ar[node.var_node.value] = StringObject("", limit)
-                return
-            elif resolved_type_node.token.type == TokenType.ARRAY:
-                ar.declare_local(node.var_node.value)
-                ar[node.var_node.value] = self.object_factory.initArray(
-                    resolved_type_node
-                )
-                return
+        if resolved_type_node.token.type == TokenType.BOOLEAN:
+            ar.declare_local(node.var_node.value)
+            ar[node.var_node.value] = BooleanObject(False)
+            return
+        elif resolved_type_node.token.type == TokenType.INTEGER:
+            ar.declare_local(node.var_node.value)
+            ar[node.var_node.value] = IntegerObject(0)
+            return
+        elif resolved_type_node.token.type == TokenType.REAL:
+            ar.declare_local(node.var_node.value)
+            ar[node.var_node.value] = RealObject(0.0)
+            return
+        elif resolved_type_node.token.type == TokenType.CHAR:
+            ar.declare_local(node.var_node.value)
+            ar[node.var_node.value] = CharObject("")
+            return
+        elif resolved_type_node.token.type == TokenType.STRING:
+            string_node = cast(StringType, resolved_type_node)
+            limit: int = 255
+            if string_node.limit is not None:
+                limit = self.visit(string_node.limit).value
+            ar.declare_local(node.var_node.value)
+            ar[node.var_node.value] = StringObject("", limit)
+            return
+        elif resolved_type_node.token.type == TokenType.ARRAY:
+            ar.declare_local(node.var_node.value)
+            ar[node.var_node.value] = self.object_factory.initArray(resolved_type_node)
+            return
 
         # 处理复杂类型（记录、枚举等）
         var_name = node.var_node.value
@@ -708,60 +705,20 @@ class Interpreter(NodeVisitor):
             return
 
         # 检查是否是枚举类型（通过类型名称）
-        if hasattr(resolved_type_node, "value"):
-            type_name = resolved_type_node.value
-            if type_name in self.object_factory.enum_types:
-                enum_obj = self.object_factory.enum_obj(type_name, 0)
-                ar.declare_local(var_name)
-                ar[var_name] = enum_obj
-                return
-            elif type_name in self.object_factory.record_types:
-                record_type = self.object_factory.record_types[type_name]
-                record_obj = RecordObject(record_type)
-                # 初始化复杂类型字段
-                self.object_factory.initialize_record_complex_fields(record_obj)
-                ar.declare_local(var_name)
-                ar[var_name] = record_obj
-                return
-
-        # TODO: 这里没有完全解耦
-        # 如果有type_symbol（从语义分析器传来），尝试使用它
-        type_symbol = node.type_symbol
-        if type_symbol is not None:
-            # Handle based on the type symbol
-            if isinstance(type_symbol, RecordTypeSymbol):
-                # Handle record type - use global record_types lookup
-                type_name = (
-                    resolved_type_node.value
-                    if hasattr(resolved_type_node, "value")
-                    else ""
-                )
-                if type_name in self.object_factory.record_types:
-                    record_type = self.object_factory.record_types[type_name]
-                    record_obj = RecordObject(record_type)
-                    # 初始化复杂类型字段
-                    self.object_factory.initialize_record_complex_fields(record_obj)
-                    ar.declare_local(var_name)
-                    ar[var_name] = record_obj
-                else:
-                    self.call_stack.peek().declare_local(var_name)
-                    ar[var_name] = NullObject()
-            elif (
-                isinstance(type_symbol, EnumTypeSymbol)
-                or type_symbol.name in self.object_factory.enum_types
-            ):
-                # Handle enum type
-                enum_obj = self.object_factory.enum_obj(type_symbol.name, 0)
-                ar.declare_local(var_name)
-                ar[var_name] = enum_obj
-            else:
-                # For other custom types, treat as null for now
-                ar.declare_local(var_name)
-                ar[var_name] = NullObject()
-        else:
-            # 如果没有type_symbol，默认创建Null对象
+        type_name = resolved_type_node.value
+        if type_name in self.object_factory.enum_types:
+            enum_obj = self.object_factory.enum_obj(type_name, 0)
             ar.declare_local(var_name)
-            ar[var_name] = NullObject()
+            ar[var_name] = enum_obj
+            return
+        elif type_name in self.object_factory.record_types:
+            record_type = self.object_factory.record_types[type_name]
+            record_obj = RecordObject(record_type)
+            # 初始化复杂类型字段
+            self.object_factory.initialize_record_complex_fields(record_obj)
+            ar.declare_local(var_name)
+            ar[var_name] = record_obj
+            return
 
     def visit_ConstDecl(self, node: ConstDecl) -> None:
         # Evaluate the const value expression and store it
@@ -1020,7 +977,7 @@ class Interpreter(NodeVisitor):
                                 current_obj.record_type.variant_part.tag_field.value
                             )
                             tag_field_value = current_obj.fields.get(tag_field_name)
-                            if tag_field_value and hasattr(tag_field_value, "value"):
+                            if tag_field_value:
                                 current_obj._init_variant_fields(
                                     str(tag_field_value.value)
                                 )
@@ -1076,7 +1033,7 @@ class Interpreter(NodeVisitor):
                             current_obj.record_type.variant_part.tag_field.value
                         )
                         tag_field_value = current_obj.value.get(tag_field_name)
-                        if tag_field_value and hasattr(tag_field_value, "value"):
+                        if tag_field_value:
                             if isinstance(tag_field_value, EnumObject):
                                 current_obj._init_variant_fields(tag_field_value.name)
                             else:
@@ -1498,9 +1455,7 @@ class Interpreter(NodeVisitor):
     def visit_CaseStatement(self, node: CaseStatement) -> None:
         # 计算case表达式的值
         case_value_obj = self.visit(node.case_expr)
-        case_value = (
-            case_value_obj.value if hasattr(case_value_obj, "value") else case_value_obj
-        )
+        case_value = case_value_obj.value
 
         # 查找匹配的case项
         matched = False

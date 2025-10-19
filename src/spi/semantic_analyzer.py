@@ -813,7 +813,7 @@ class SemanticAnalyzer(NodeVisitor):
                 )
 
             # Check if trying to assign to a const variable
-            if hasattr(var_symbol, "is_mutable") and not var_symbol.is_mutable:
+            if not var_symbol.is_mutable:
                 self.error(ErrorCode.SEMANTIC_CONST_ASSIGNMENT, token=node.left.token)
 
         elif isinstance(node.left, AccessExpression):
@@ -1222,7 +1222,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.visit(param_node)
 
         # Return the function's return type
-        if func_symbol and hasattr(func_symbol, "return_type"):
+        if func_symbol:
             if isinstance(func_symbol.return_type, TypeSymbol):
                 return func_symbol.return_type
             elif isinstance(func_symbol.return_type, PrimitiveType):

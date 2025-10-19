@@ -6,6 +6,7 @@ from typing import cast
 
 from spi.ast import (
     Param,
+    PrimitiveType,
     RecordType,
     Type,
 )
@@ -244,17 +245,12 @@ class StringObject(Object):
             # Don't apply limits during concatenation operations
             return StringObject(result_value, -1)
         # Handle string + other types conversion
-        elif hasattr(other, "value"):
-            return StringObject("".join(self.value) + str(other.value), -1)
         else:
-            return StringObject("".join(self.value) + str(other), -1)
+            return StringObject("".join(self.value) + str(other.value), -1)
 
     def __radd__(self, other) -> Object:
         """Handle addition when string is on the right side (other + string)"""
-        if hasattr(other, "value"):
-            return StringObject(str(other.value) + "".join(self.value), -1)
-        else:
-            return StringObject(str(other) + "".join(self.value), -1)
+        return self.__add__(other, self)
 
     def __getitem__(self, index) -> Object:
         """Get character at index (1-based indexing for Pascal)"""
@@ -268,10 +264,8 @@ class StringObject(Object):
             # Convert value to string character
             if isinstance(value, CharObject):
                 char_value = value.value
-            elif isinstance(value, StringObject):
-                char_value = value.value[0] if value.value else ""
             else:
-                char_value = str(value)[0] if hasattr(value, "value") else ""
+                char_value = value.value[0] if value.value else ""
 
             # Modify the string at the specified index
             self.value[index - 1] = char_value
@@ -279,7 +273,7 @@ class StringObject(Object):
     def __len__(self):
         return len(self.value)
 
-    def __eq__(self, other) -> Object:
+    def __eq__(self, other) -> BooleanObject:
         """Equal comparison with other StringObject or CharObject"""
         if isinstance(other, StringObject):
             return BooleanObject("".join(self.value) == "".join(other.value))
@@ -292,12 +286,7 @@ class StringObject(Object):
 
     def __ne__(self, other) -> Object:
         """Not equal comparison with other StringObject or CharObject"""
-        if isinstance(other, StringObject):
-            return BooleanObject("".join(self.value) != "".join(other.value))
-        elif isinstance(other, CharObject):
-            # When comparing string with char, compare with first character of string
-            return BooleanObject(self.value[0] != other.value or len(self.value) != 1)
-        return BooleanObject(True)
+        return ~self.__eq__(other, self)
 
     def set_length(self, new_length: int):
         """Set new length for string"""
@@ -351,12 +340,7 @@ class CharObject(Object):
 
     def __ne__(self, other) -> Object:
         """Not equal comparison based on ASCII value"""
-        if isinstance(other, CharObject):
-            return BooleanObject(ord(self.value) != ord(other.value))
-        elif isinstance(other, StringObject):
-            # When comparing char with string, compare with first character of string
-            return BooleanObject(self.value != other.value[0] if other.value else 0)
-        return NotImplemented
+        return ~self.__eq__(other)
 
     def __le__(self, other) -> Object:
         """Less than or equal comparison based on ASCII value"""
@@ -700,7 +684,7 @@ class RecordObject(Object):
 
     def _create_default_object_from_type_node(self, type_node: Type) -> Object:
         """根据类型节点创建默认对象（仅处理基本类型）"""
-        if hasattr(type_node, "token"):
+        if isinstance(type_node, PrimitiveType):
             token_type = type_node.token.type
             if token_type == TokenType.INTEGER:
                 return IntegerObject(0)
@@ -774,22 +758,12 @@ class RecordObject(Object):
                     and enum_obj.type_name
                     == self.record_type.variant_part.tag_field.value
                 ):
-                    if hasattr(value, "value"):
-                        # For enum objects, use the enum name, not the ordinal
-                        if isinstance(value, EnumObject):
-                            self._init_variant_fields(value.name)
-                        else:
-                            self._init_variant_fields(str(value.value))
+                    self._init_variant_fields(value.name)
             elif (
                 self.record_type.variant_part
                 and field_name == self.record_type.variant_part.tag_field.value
             ):
-                if hasattr(value, "value"):
-                    # For enum objects, use the enum name, not the ordinal
-                    if isinstance(value, EnumObject):
-                        self._init_variant_fields(value.name)
-                    else:
-                        self._init_variant_fields(str(value.value))
+                self._init_variant_fields(value.name)
         else:
             raise KeyError(f"Field '{field_name}' not found in record")
 
