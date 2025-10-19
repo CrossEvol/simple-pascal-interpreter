@@ -538,15 +538,6 @@ class Interpreter(NodeVisitor):
         self.user_procedures: dict[str, ProcedureObject] = {}
         self.user_functions: dict[str, FunctionObject] = {}
 
-        # 枚举类型和值的注册表（模仿semantic analyzer的实现）
-        self.enum_types: dict[
-            str, dict
-        ] = {}  # { type_name -> { 'values': [value_names...], 'size': int } }
-        self.enum_values: dict[
-            str, dict
-        ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
-        self.record_types: dict[str, RecordType] = {}
-
         self.object_factory = ObjectFactory(self)
 
         # Register built-in procedures and functions
@@ -644,18 +635,21 @@ class Interpreter(NodeVisitor):
             enum_values = node.type_def.enum_values
 
             # 注册枚举类型
-            self.enum_types[type_name] = {
+            self.object_factory.enum_types[type_name] = {
                 "values": enum_values,
                 "size": len(enum_values),
             }
 
             # 注册枚举值
             for i, enum_val in enumerate(enum_values):
-                self.enum_values[enum_val] = {"type": type_name, "ordinal": i}
+                self.object_factory.enum_values[enum_val] = {
+                    "type": type_name,
+                    "ordinal": i,
+                }
         elif isinstance(node.type_def, RecordType):
             type_name = node.type_name.value
             # Insert the record type into global record_types for interpreter use
-            self.record_types[type_name] = node.type_def
+            self.object_factory.record_types[type_name] = node.type_def
         else:
             # 处理类型别名 (type aliases)
             # 对于非枚举和非记录类型，将其作为类型别名处理
@@ -716,13 +710,13 @@ class Interpreter(NodeVisitor):
         # 检查是否是枚举类型（通过类型名称）
         if hasattr(resolved_type_node, "value"):
             type_name = resolved_type_node.value
-            if type_name in self.enum_types:
+            if type_name in self.object_factory.enum_types:
                 enum_obj = self.object_factory.enum_obj(type_name, 0)
                 ar.declare_local(var_name)
                 ar[var_name] = enum_obj
                 return
-            elif type_name in self.record_types:
-                record_type = self.record_types[type_name]
+            elif type_name in self.object_factory.record_types:
+                record_type = self.object_factory.record_types[type_name]
                 record_obj = RecordObject(record_type)
                 # 初始化复杂类型字段
                 self.object_factory.initialize_record_complex_fields(record_obj)
@@ -742,8 +736,8 @@ class Interpreter(NodeVisitor):
                     if hasattr(resolved_type_node, "value")
                     else ""
                 )
-                if type_name in self.record_types:
-                    record_type = self.record_types[type_name]
+                if type_name in self.object_factory.record_types:
+                    record_type = self.object_factory.record_types[type_name]
                     record_obj = RecordObject(record_type)
                     # 初始化复杂类型字段
                     self.object_factory.initialize_record_complex_fields(record_obj)
@@ -754,7 +748,7 @@ class Interpreter(NodeVisitor):
                     ar[var_name] = NullObject()
             elif (
                 isinstance(type_symbol, EnumTypeSymbol)
-                or type_symbol.name in self.enum_types
+                or type_symbol.name in self.object_factory.enum_types
             ):
                 # Handle enum type
                 enum_obj = self.object_factory.enum_obj(type_symbol.name, 0)
@@ -1142,8 +1136,8 @@ class Interpreter(NodeVisitor):
             # 如果在当前作用域中找不到该变量，检查它是否是枚举值
             if isinstance(var_value, NullObject):
                 # 检查是否是已注册的枚举值
-                if var_name in self.enum_values:
-                    enum_info = self.enum_values[var_name]
+                if var_name in self.object_factory.enum_values:
+                    enum_info = self.object_factory.enum_values[var_name]
                     return EnumObject(enum_info["type"], var_name, enum_info["ordinal"])
 
         return var_value

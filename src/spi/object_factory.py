@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from spi.ast import ArrayType, Type
+from spi.ast import ArrayType, RecordType, Type
 from spi.constants import ElementType
 from spi.error import ErrorCode, InterpreterError
 from spi.object import (
@@ -112,6 +112,14 @@ class ObjectFactory:
         self.type_aliases: dict[str, Type] = {}
         # UnionSet for efficient type alias resolution
         self.type_union_set = UnionSet()
+        # 枚举类型和值的注册表（模仿semantic analyzer的实现）
+        self.enum_types: dict[
+            str, dict
+        ] = {}  # { type_name -> { 'values': [value_names...], 'size': int } }
+        self.enum_values: dict[
+            str, dict
+        ] = {}  # { value_name -> { 'type': type_name, 'ordinal': int } }
+        self.record_types: dict[str, RecordType] = {}
 
     def add_type_alias(self, alias_name: str, actual_type: Type) -> None:
         """添加类型别名，将别名映射到实际类型，并在UnionSet中建立关系"""
@@ -155,10 +163,10 @@ class ObjectFactory:
         """根据ordinal反查名称创建枚举对象"""
         # 首先尝试从注册的枚举类型中查找名称
         if (
-            type_name in self.interpreter.enum_types
-            and ordinal < self.interpreter.enum_types[type_name]["size"]
+            type_name in self.enum_types
+            and ordinal < self.enum_types[type_name]["size"]
         ):
-            name = self.interpreter.enum_types[type_name]["values"][ordinal]
+            name = self.enum_types[type_name]["values"][ordinal]
             return EnumObject(type_name, name, ordinal)
         else:
             raise InterpreterError(error_code=ErrorCode.INTERPRETER_UNKNOWN_ENUM)
@@ -213,12 +221,12 @@ class ObjectFactory:
             resolved_type_name = self.type_union_set.resolve_type(type_name)
 
             # 检查是否是枚举类型 (使用解析后的类型名)
-            if resolved_type_name in self.interpreter.enum_types:
+            if resolved_type_name in self.enum_types:
                 return self.enum_obj(resolved_type_name, 0)  # 使用第一个枚举值
 
             # 检查是否是记录类型 (使用解析后的类型名)
-            if resolved_type_name in self.interpreter.record_types:
-                record_type = self.interpreter.record_types[resolved_type_name]
+            if resolved_type_name in self.record_types:
+                record_type = self.record_types[resolved_type_name]
                 nested_record_obj = RecordObject(record_type)
                 # 递归初始化嵌套记录的复杂字段
                 self.initialize_record_complex_fields(nested_record_obj)
@@ -251,8 +259,8 @@ class ObjectFactory:
                     type_name = element_type_node.value
                     # 使用UnionSet解析类型别名
                     resolved_type_name = self.type_union_set.resolve_type(type_name)
-                    if resolved_type_name in self.interpreter.record_types:
-                        record_type = self.interpreter.record_types[resolved_type_name]
+                    if resolved_type_name in self.record_types:
+                        record_type = self.record_types[resolved_type_name]
                         record_obj = RecordObject(record_type)
                         self.initialize_record_complex_fields(record_obj)
                         array_obj.value[index] = record_obj
@@ -263,7 +271,7 @@ class ObjectFactory:
                     # 使用UnionSet解析类型别名
                     resolved_type_name = self.type_union_set.resolve_type(type_name)
 
-                    if resolved_type_name in self.interpreter.enum_types:
+                    if resolved_type_name in self.enum_types:
                         # 枚举类型，使用第一个枚举值
                         enum_obj = self.enum_obj(resolved_type_name, 0)
                         array_obj.value[index] = enum_obj
@@ -323,7 +331,7 @@ class ObjectFactory:
                 # Custom type (record, enum, etc.)
                 # Check if it's a record type first
                 type_name = node.element_type.value
-                if type_name in self.interpreter.record_types:
+                if type_name in self.record_types:
                     element_type = ElementType.RECORD
                 else:
                     # Could be enum or other custom type
