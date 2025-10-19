@@ -66,6 +66,7 @@ from spi.object import (
     BooleanObject,
     CharObject,
     EnumObject,
+    FalseObject,
     FunctionObject,
     IntegerObject,
     NullObject,
@@ -78,6 +79,7 @@ from spi.object import (
     SetObject,
     StringObject,
     SubrangeObject,
+    TrueObject,
 )
 from spi.object_factory import ObjectFactory
 from spi.symbol import EnumTypeSymbol, RecordTypeSymbol
@@ -665,7 +667,7 @@ class Interpreter(NodeVisitor):
         # 处理基本类型
         if resolved_type_node.token.type == TokenType.BOOLEAN:
             ar.declare_local(node.var_node.value)
-            ar[node.var_node.value] = BooleanObject(False)
+            ar[node.var_node.value] = FalseObject
             return
         elif resolved_type_node.token.type == TokenType.INTEGER:
             ar.declare_local(node.var_node.value)
@@ -897,9 +899,9 @@ class Interpreter(NodeVisitor):
 
     def visit_Bool(self, node: Bool) -> BooleanObject:
         if node.token.type == TokenType.TRUE:
-            return BooleanObject(True)
+            return TrueObject
         elif node.token.type == TokenType.FALSE:
-            return BooleanObject(False)
+            return FalseObject
         raise InterpreterError(
             error_code=ErrorCode.INTERPRETER_UNKNOWN_BOOLEAN,
             token=node.token,

@@ -157,12 +157,12 @@ class NumberObject(Object):
     def __eq__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value == other.value)
-        return BooleanObject(False)
+        return FalseObject
 
     def __ne__(self, other):
         if isinstance(other, NumberObject):
             return BooleanObject(self.value != other.value)
-        return BooleanObject(True)
+        return TrueObject
 
     def _create_result(self, value) -> Object:
         """Create appropriate result type based on value"""
@@ -226,8 +226,10 @@ class BooleanObject(Object):
             return BooleanObject(self.value != other.value)
         elif isinstance(other, Object):
             return BooleanObject(self.value != other.value)
-        return BooleanObject(True)
+        return TrueObject
 
+TrueObject = BooleanObject(value=True)
+FalseObject = BooleanObject(value=False)
 
 class StringObject(Object):
     """String value object"""
@@ -282,7 +284,7 @@ class StringObject(Object):
             return BooleanObject(
                 self.value[0] == other.value if len(self.value) == 1 else False
             )
-        return BooleanObject(False)
+        return FalseObject
 
     def __ne__(self, other) -> Object:
         """Not equal comparison with other StringObject or CharObject"""
@@ -418,7 +420,7 @@ class ArrayObject(Object):
         elif self.element_type == ElementType.REAL:
             return RealObject(0.0)
         elif self.element_type == ElementType.BOOL:
-            return BooleanObject(False)
+            return FalseObject
         elif self.element_type == ElementType.STRING:
             return StringObject("")
         elif self.element_type == ElementType.CHAR:
@@ -518,12 +520,12 @@ class EnumObject(Object):
     def __eq__(self, other) -> Object:
         if isinstance(other, EnumObject) and self.type_name == other.type_name:
             return BooleanObject(self.ordinal == other.ordinal)
-        return BooleanObject(False)
+        return FalseObject
 
     def __ne__(self, other) -> Object:
         if isinstance(other, EnumObject) and self.type_name == other.type_name:
             return BooleanObject(self.ordinal != other.ordinal)
-        return BooleanObject(True)
+        return TrueObject
 
     def __lt__(self, other) -> Object:
         if isinstance(other, EnumObject) and self.type_name == other.type_name:
@@ -691,7 +693,7 @@ class RecordObject(Object):
             elif token_type == TokenType.REAL:
                 return RealObject(0.0)
             elif token_type == TokenType.BOOLEAN:
-                return BooleanObject(False)
+                return FalseObject
             elif token_type == TokenType.STRING:
                 return StringObject("")
             elif token_type == TokenType.CHAR:

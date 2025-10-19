@@ -7,9 +7,9 @@ from spi.constants import ElementType
 from spi.error import ErrorCode, InterpreterError
 from spi.object import (
     ArrayObject,
-    BooleanObject,
     CharObject,
     EnumObject,
+    FalseObject,
     IntegerObject,
     NullObject,
     Object,
@@ -196,7 +196,7 @@ class ObjectFactory:
             elif token_type == TokenType.REAL:
                 return RealObject(0.0)
             elif token_type == TokenType.BOOLEAN:
-                return BooleanObject(False)
+                return FalseObject
             elif token_type == TokenType.STRING:
                 return StringObject("")
             elif token_type == TokenType.CHAR:
