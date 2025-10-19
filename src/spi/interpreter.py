@@ -11,7 +11,6 @@ from enum import Enum
 from typing import Callable, Optional, cast
 
 from spi.ast import (
-    AST,
     AccessExpression,
     ArrayType,
     Assign,
@@ -53,7 +52,7 @@ from spi.ast import (
     VarDecl,
     WhileStatement,
 )
-from spi.constants import CONFIG, ElementType
+from spi.constants import CONFIG
 from spi.error import (
     BreakSignal,
     ContinueSignal,

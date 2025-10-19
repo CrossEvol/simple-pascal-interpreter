@@ -110,15 +110,43 @@ class ObjectFactory:
         self.interpreter = interpreter
         # 类型别名映射表：alias_name -> actual_type_node
         self.type_aliases: dict[str, Type] = {}
+        # UnionSet for efficient type alias resolution
+        self.type_union_set = UnionSet()
+
+    def add_type_alias(self, alias_name: str, actual_type: Type) -> None:
+        """添加类型别名，将别名映射到实际类型，并在UnionSet中建立关系"""
+        # 存储别名到实际类型节点的映射
+        self.type_aliases[alias_name] = actual_type
+
+        # 如果实际类型有value属性（即有类型名），则在UnionSet中建立关系
+        if hasattr(actual_type, "value") and actual_type.value:
+            # Use the type name from the actual_type as the canonical type in UnionSet
+            self.type_union_set.add_alias(alias_name, actual_type.value)
 
     def resolve_type_alias(self, type_node: Type) -> Type:
-        """解析类型别名，追随别名链直到找到实际类型"""
+        """解析类型别名，使用UnionSet来高效地追随别名链直到找到实际类型"""
         if hasattr(type_node, "value"):
             type_name = type_node.value
-            # 检查是否是类型别名
-            if type_name in self.type_aliases:
-                # 递归解析别名链
-                return self.resolve_type_alias(self.type_aliases[type_name])
+
+            # 使用UnionSet来查找类型的当前解析结果
+            current_resolved = self.type_union_set.resolve_type(type_name)
+
+            # 如果当前解析结果在别名表中，继续递归解析
+            if current_resolved in self.type_aliases:
+                actual_type = self.type_aliases[current_resolved]
+
+                # 递归解析，获取最终的实际类型
+                final_resolved_type = self.resolve_type_alias(actual_type)
+
+                # 实现路径压缩：将原始类型名直接连接到最终类型名
+                # 这样下次查询时会更快
+                if (
+                    hasattr(final_resolved_type, "value")
+                    and final_resolved_type.value in self.type_aliases
+                ):
+                    self.type_union_set.add_alias(type_name, final_resolved_type.value)
+
+                return final_resolved_type
 
         # 如果不是别名或者已经是实际类型，直接返回
         return type_node
@@ -151,7 +179,7 @@ class ObjectFactory:
                     record_obj[field_name] = new_obj
 
     def create_complex_object_from_type_node(self, type_node) -> Object:
-        """根据类型节点创建复杂类型对象，使用interpreter的属性信息"""
+        """根据类型节点创建复杂类型对象，使用interpreter的属性信息和UnionSet处理类型别名"""
         # 直接检查是否是ArrayType实例
         if (
             hasattr(type_node, "__class__")
@@ -181,13 +209,16 @@ class ObjectFactory:
         if hasattr(type_node, "value"):
             type_name = type_node.value
 
-            # 检查是否是枚举类型
-            if type_name in self.interpreter.enum_types:
-                return self.enum_obj(type_name, 0)  # 使用第一个枚举值
+            # 使用UnionSet解析类型别名，找到最终类型名
+            resolved_type_name = self.type_union_set.resolve_type(type_name)
 
-            # 检查是否是记录类型
-            if type_name in self.interpreter.record_types:
-                record_type = self.interpreter.record_types[type_name]
+            # 检查是否是枚举类型 (使用解析后的类型名)
+            if resolved_type_name in self.interpreter.enum_types:
+                return self.enum_obj(resolved_type_name, 0)  # 使用第一个枚举值
+
+            # 检查是否是记录类型 (使用解析后的类型名)
+            if resolved_type_name in self.interpreter.record_types:
+                record_type = self.interpreter.record_types[resolved_type_name]
                 nested_record_obj = RecordObject(record_type)
                 # 递归初始化嵌套记录的复杂字段
                 self.initialize_record_complex_fields(nested_record_obj)
@@ -196,6 +227,13 @@ class ObjectFactory:
             # 检查是否是类型别名，然后递归解析
             if type_name in self.type_aliases:
                 actual_type = self.type_aliases[type_name]
+                return self.create_complex_object_from_type_node(actual_type)
+            elif (
+                resolved_type_name != type_name
+                and resolved_type_name in self.type_aliases
+            ):
+                # 如果类型名经过解析后发生变化，且解析后的类型名在别名表中
+                actual_type = self.type_aliases[resolved_type_name]
                 return self.create_complex_object_from_type_node(actual_type)
 
         # 其他情况返回空对象
@@ -211,8 +249,10 @@ class ObjectFactory:
                 # 为记录类型创建对象
                 if hasattr(element_type_node, "value"):
                     type_name = element_type_node.value
-                    if type_name in self.interpreter.record_types:
-                        record_type = self.interpreter.record_types[type_name]
+                    # 使用UnionSet解析类型别名
+                    resolved_type_name = self.type_union_set.resolve_type(type_name)
+                    if resolved_type_name in self.interpreter.record_types:
+                        record_type = self.interpreter.record_types[resolved_type_name]
                         record_obj = RecordObject(record_type)
                         self.initialize_record_complex_fields(record_obj)
                         array_obj.value[index] = record_obj
@@ -220,13 +260,26 @@ class ObjectFactory:
                 # 为其他自定义类型创建对象
                 if hasattr(element_type_node, "value"):
                     type_name = element_type_node.value
-                    if type_name in self.interpreter.enum_types:
+                    # 使用UnionSet解析类型别名
+                    resolved_type_name = self.type_union_set.resolve_type(type_name)
+
+                    if resolved_type_name in self.interpreter.enum_types:
                         # 枚举类型，使用第一个枚举值
-                        enum_obj = self.enum_obj(type_name, 0)
+                        enum_obj = self.enum_obj(resolved_type_name, 0)
                         array_obj.value[index] = enum_obj
                     elif type_name in self.type_aliases:
                         # 处理类型别名
                         actual_type = self.type_aliases[type_name]
+                        complex_obj = self.create_complex_object_from_type_node(
+                            actual_type
+                        )
+                        array_obj.value[index] = complex_obj
+                    elif (
+                        resolved_type_name != type_name
+                        and resolved_type_name in self.type_aliases
+                    ):
+                        # 如果类型名经过解析后发生变化，且解析后的类型名在别名表中
+                        actual_type = self.type_aliases[resolved_type_name]
                         complex_obj = self.create_complex_object_from_type_node(
                             actual_type
                         )
