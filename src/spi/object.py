@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Callable, cast
 
 from spi.ast import (
     Param,
@@ -594,6 +594,22 @@ class FunctionObject(CallableObject):
         """Get number of formal parameters (excluding return variable)"""
         # Subtract 1 to exclude the return variable parameter
         return len(self.formal_params) - 1 if len(self.formal_params) > 0 else 0
+
+
+class NativeProcedureObject(CallableObject):
+    """Runtime object representing a native (built-in) procedure"""
+    
+    def __init__(self, name: str, callable_: Callable[..., None]):
+        super().__init__(name)
+        self.callable = callable_
+
+
+class NativeFunctionObject(CallableObject):
+    """Runtime object representing a native (built-in) function"""
+    
+    def __init__(self, name: str, callable_: Callable[..., Object]):
+        super().__init__(name)
+        self.callable = callable_
 
 
 class SetObject(Object):

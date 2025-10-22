@@ -69,6 +69,8 @@ from spi.object import (
     FalseObject,
     FunctionObject,
     IntegerObject,
+    NativeFunctionObject,
+    NativeProcedureObject,
     NullObject,
     NumberObject,
     Object,
