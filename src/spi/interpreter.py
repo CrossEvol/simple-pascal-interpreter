@@ -203,7 +203,7 @@ def handle_setlength(interpreter: Interpreter, node: ProcedureCall):
         if len(interpreter.call_stack._records) >= 2
         else ar
     )
-    var_obj = pre_ar.get(arr_name)
+    var_obj = pre_ar[arr_name]
 
     if isinstance(var_obj, StringObject):
         var_obj.set_length(new_length)
@@ -497,9 +497,6 @@ class ActivationRecord:
         # 最后检查全局作用域
         else:
             raise KeyError(f"Variable '{key}' not found in any scope")
-
-    def get(self, key: str) -> Object:
-        return cast(Object, self[key])
 
     def __str__(self) -> str:
         # 根据 indent_level 计算缩进的空格数
@@ -1078,7 +1075,7 @@ class Interpreter(NodeVisitor):
                 return
 
         # Handle regular variable assignment
-        existing_var = ar.get(var_name)
+        existing_var = ar[var_name]
         if isinstance(existing_var, StringObject) and isinstance(
             var_value, StringObject
         ):
@@ -1442,7 +1439,7 @@ class Interpreter(NodeVisitor):
             self.log(str(self.call_stack))
 
             # Get return value (function name is used as return variable)
-            result = ar.get(func_name)
+            result = ar[func_name]
             self.call_stack.pop()
             return result if result is not None else NullObject()
 
