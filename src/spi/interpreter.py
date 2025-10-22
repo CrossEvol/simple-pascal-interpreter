@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 from enum import Enum
-from typing import Callable, Optional, cast
+from typing import Optional, cast
 
 from spi.ast import (
     AccessExpression,
@@ -84,24 +84,9 @@ from spi.object import (
     TrueObject,
 )
 from spi.object_factory import ObjectFactory
-from spi.symbol import EnumTypeSymbol, RecordTypeSymbol
 from spi.token import Token, TokenType
 from spi.util import SpiUtil
 from spi.visitor import NodeVisitor
-
-# Built-in procedures and functions registry
-BUILTIN_PROCEDURES: dict[str, Callable[..., None]] = {}
-BUILTIN_FUNCTIONS: dict[str, Callable[..., Object]] = {}
-
-
-def register_builtin_procedure(name, handler):
-    """Register a built-in procedure handler"""
-    BUILTIN_PROCEDURES[name.upper()] = handler
-
-
-def register_builtin_function(name, handler):
-    """Register a built-in function handler"""
-    BUILTIN_FUNCTIONS[name.upper()] = handler
 
 
 # Built-in procedure handlers
@@ -542,19 +527,25 @@ class Interpreter(NodeVisitor):
         self.user_procedures: dict[str, ProcedureObject] = {}
         self.user_functions: dict[str, FunctionObject] = {}
 
+        # Built-in procedures and functions registries
+        self.builtin_procedures: dict[str, NativeProcedureObject] = {}
+        self.builtin_functions: dict[str, NativeFunctionObject] = {}
+
         self.object_factory = ObjectFactory(self)
 
         # Register built-in procedures and functions
-        register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
-        register_builtin_procedure(NativeMethod.WRITELN.name, handle_writeln)
-        register_builtin_procedure(NativeMethod.SETLENGTH.name, handle_setlength)
-        register_builtin_procedure(NativeMethod.INC.name, handle_inc)
-        register_builtin_procedure(NativeMethod.DEC.name, handle_dec)
-        register_builtin_procedure(NativeMethod.EXIT.name, handle_exit)
-        register_builtin_function(NativeMethod.LENGTH.name, handle_length)
-        register_builtin_function(NativeMethod.ORD.name, handle_ord)
-        register_builtin_function(NativeMethod.CHR.name, handle_chr)
-        register_builtin_function(NativeMethod.GETTICKCOUNT.name, handle_get_tick_count)
+        self.register_builtin_procedure(NativeMethod.WRITE.name, handle_write)
+        self.register_builtin_procedure(NativeMethod.WRITELN.name, handle_writeln)
+        self.register_builtin_procedure(NativeMethod.SETLENGTH.name, handle_setlength)
+        self.register_builtin_procedure(NativeMethod.INC.name, handle_inc)
+        self.register_builtin_procedure(NativeMethod.DEC.name, handle_dec)
+        self.register_builtin_procedure(NativeMethod.EXIT.name, handle_exit)
+        self.register_builtin_function(NativeMethod.LENGTH.name, handle_length)
+        self.register_builtin_function(NativeMethod.ORD.name, handle_ord)
+        self.register_builtin_function(NativeMethod.CHR.name, handle_chr)
+        self.register_builtin_function(
+            NativeMethod.GETTICKCOUNT.name, handle_get_tick_count
+        )
 
         # Define operation dispatch table
         self.op_dispatch = {
@@ -578,6 +569,18 @@ class Interpreter(NodeVisitor):
             TokenType.LE: lambda left, right: left <= right,
             TokenType.GE: lambda left, right: left >= right,
         }
+
+    def register_builtin_procedure(self, name, handler):
+        """Register a built-in procedure handler"""
+        self.builtin_procedures[name.upper()] = NativeProcedureObject(
+            name.upper(), handler
+        )
+
+    def register_builtin_function(self, name, handler):
+        """Register a built-in function handler"""
+        self.builtin_functions[name.upper()] = NativeFunctionObject(
+            name.upper(), handler
+        )
 
     def log(self, msg) -> None:
         if CONFIG.should_log_stack:
@@ -1235,8 +1238,8 @@ class Interpreter(NodeVisitor):
         self.log(f"ENTER: PROCEDURE {proc_name}")
 
         # Check built-in procedures first
-        if proc_name.upper() in BUILTIN_PROCEDURES:
-            handler = BUILTIN_PROCEDURES[proc_name.upper()]
+        if proc_name.upper() in self.builtin_procedures:
+            handler_obj = self.builtin_procedures[proc_name.upper()]
             should_refer = proc_name.upper() in ["INC", "DEC"]
 
             # Create activation record for built-in procedure
@@ -1261,7 +1264,7 @@ class Interpreter(NodeVisitor):
             self.call_stack.push(ar)
 
             # Call the handler
-            handler(self, node)
+            handler_obj.callable(self, node)
 
             self.call_stack.pop()
             return
@@ -1349,8 +1352,8 @@ class Interpreter(NodeVisitor):
         self.log(f"ENTER: FUNCTION {func_name}")
 
         # Check built-in functions first
-        if func_name.upper() in BUILTIN_FUNCTIONS:
-            handler = BUILTIN_FUNCTIONS[func_name.upper()]
+        if func_name.upper() in self.builtin_functions:
+            handler_obj = self.builtin_functions[func_name.upper()]
 
             # Create activation record for built-in function
             ar = ActivationRecord(
@@ -1370,7 +1373,7 @@ class Interpreter(NodeVisitor):
             self.call_stack.push(ar)
 
             # Call the handler and get the result
-            result = handler(self, node)
+            result = handler_obj.callable(self, node)
 
             self.call_stack.pop()
             return result
