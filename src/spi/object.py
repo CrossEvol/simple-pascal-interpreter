@@ -552,12 +552,18 @@ class EnumObject(Object):
         return NotImplemented
 
 
-class ProcedureObject(Object):
+class CallableObject(Object):
+    """Base class for callable objects (procedures and functions)"""
+    def __init__(self, name: str):
+        super().__init__()
+        self.name = name
+
+
+class ProcedureObject(CallableObject):
     """Runtime object representing a user-defined procedure"""
 
     def __init__(self, name: str, formal_params: list[Param], block_ast):
-        super().__init__()
-        self.name = name
+        super().__init__(name)
         self.formal_params = formal_params  # List of Param AST nodes
         self.block_ast = block_ast
 
@@ -570,12 +576,11 @@ class ProcedureObject(Object):
         return len(self.formal_params)
 
 
-class FunctionObject(Object):
+class FunctionObject(CallableObject):
     """Runtime object representing a user-defined function"""
 
     def __init__(self, name: str, formal_params: list[Param], return_type, block_ast):
-        super().__init__()
-        self.name = name
+        super().__init__(name)
         self.formal_params = formal_params  # List of Param AST nodes (includes return variable as first param)
         self.return_type = return_type
         self.block_ast = block_ast
