@@ -532,6 +532,14 @@ class ContinueStatement(Statement):
 
 
 class NoOp(Statement):
+    _instance = None  # 类级缓存
+
+    def __new__(cls, *a, **kw):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    # 下面保持你原来的代码不动
     def __str__(self):
         return f"{self.__class__.__name__}()"
 

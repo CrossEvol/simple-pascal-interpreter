@@ -64,6 +64,7 @@ from spi.native import NativeMethod
 from spi.object import (
     ArrayObject,
     BooleanObject,
+    CallableObject,
     CharObject,
     EnumObject,
     FalseObject,
@@ -427,18 +428,22 @@ class CallStack:
 class ActivationRecord:
     def __init__(
         self,
-        name: str,
+        callable: CallableObject,
         type: ARType,
         nesting_level: int,
         outer: ActivationRecord = None,
     ) -> None:
-        self.name = name
+        self.callable = callable
         self.type = type
         self.nesting_level = nesting_level
         self.members: dict[str | int, Object] = {}
         self.outer: ActivationRecord = outer
         # 新增：记录当前作用域声明的局部变量
         self._locals: set[str] = set()
+
+    @property
+    def name(self) -> str:
+        return self.callable.name
 
     def declare_local(self, name: str) -> None:
         """在当前作用域声明局部变量"""
@@ -515,6 +520,11 @@ class ActivationRecord:
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+MainCallableObject = ProcedureObject(
+    name="<main:0>", formal_params=[], block_ast=NoOp()
+)
 
 
 class Interpreter(NodeVisitor):
@@ -603,7 +613,7 @@ class Interpreter(NodeVisitor):
         self.log(f"ENTER: PROGRAM {program_name}")
 
         ar = ActivationRecord(
-            name=program_name,
+            callable=MainCallableObject,
             type=ARType.PROGRAM,
             nesting_level=self.call_stack.nesting_level,
             outer=self.call_stack.peek(),
@@ -1244,7 +1254,7 @@ class Interpreter(NodeVisitor):
 
             # Create activation record for built-in procedure
             ar = ActivationRecord(
-                name=proc_name,
+                callable=handler_obj,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
                 outer=self.call_stack.peek(),
@@ -1275,7 +1285,7 @@ class Interpreter(NodeVisitor):
 
             # Create activation record for user-defined procedure
             ar = ActivationRecord(
-                name=proc_name,
+                callable=proc_obj,
                 type=ARType.PROCEDURE,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
                 outer=self.call_stack.peek(),
@@ -1357,7 +1367,7 @@ class Interpreter(NodeVisitor):
 
             # Create activation record for built-in function
             ar = ActivationRecord(
-                name=func_name,
+                callable=handler_obj,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
                 outer=self.call_stack.peek(),
@@ -1384,7 +1394,7 @@ class Interpreter(NodeVisitor):
 
             # Create activation record for user-defined function
             ar = ActivationRecord(
-                name=func_name,
+                callable=func_obj,
                 type=ARType.FUNCTION,
                 nesting_level=self.call_stack.nesting_level,  # For now, use fixed nesting level
                 outer=self.call_stack.peek(),
