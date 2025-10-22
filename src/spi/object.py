@@ -233,15 +233,48 @@ TrueObject = BooleanObject(value=True)
 FalseObject = BooleanObject(value=False)
 
 
+class SubrangeObject(Object):
+    """Runtime object representing a subrange type like 1..10"""
+
+    def __init__(self, lower: int, upper: int):
+        super().__init__((lower, upper))
+        self.lower = lower
+        self.upper = upper
+
+    def contains(self, value: int) -> bool:
+        """Check if value is within the subrange bounds"""
+        return self.lower <= value <= self.upper
+
+    def to_set(self) -> set[int]:
+        """Convert subrange to a set of all values in the range"""
+        return set(range(self.lower, self.upper + 1))
+
+    def __str__(self):
+        return f"{self.lower}..{self.upper}"
+
+    def __repr__(self):
+        return f"SubrangeObject({self.lower}, {self.upper})"
+
+
 class StringObject(Object):
     """String value object"""
 
-    def __init__(self, value: str = "", limit: int = -1):
-        if limit > 0 and len(value) > limit:
-            value = value[:limit]
+    def __init__(
+        self,
+        value: str = "",
+        limit: SubrangeObject = SubrangeObject(lower=0, upper=-1),
+    ):
+        # Get the limit from the SubrangeObject's upper bound
+        actual_limit = limit.upper
+        if actual_limit > 0 and len(value) > actual_limit:
+            value = value[:actual_limit]
         super().__init__()
         self.value = list(value)
-        self.limit = limit
+        self.sub_range = limit  # Keep limit2 for backward compatibility
+
+    @property
+    def limit(self) -> int:
+        return self.sub_range.upper
 
     def __add__(self, other) -> Object:
         if isinstance(other, StringObject):
@@ -290,8 +323,17 @@ class StringObject(Object):
 
     def set_length(self, new_length: int):
         """Set new length for string"""
+        # Respect the upper limit from the SubrangeObject, only if it's set (positive)
+        max_length = self.sub_range.upper
+        if max_length > 0 and new_length > max_length:
+            new_length = max_length
+
         if new_length < len(self.value):
             self.value = self.value[:new_length]
+        elif new_length > len(self.value):
+            # Extend the string with empty characters if needed
+            self.value.extend([""] * (new_length - len(self.value)))
+        self.sub_range.upper = new_length
 
     @property
     def inner_str(self) -> str:
@@ -366,29 +408,6 @@ class CharObject(Object):
                 ord(self.value) >= ord(other.value[0]) if other.value else 0
             )
         return NotImplemented
-
-
-class SubrangeObject(Object):
-    """Runtime object representing a subrange type like 1..10"""
-
-    def __init__(self, lower: int, upper: int):
-        super().__init__((lower, upper))
-        self.lower = lower
-        self.upper = upper
-
-    def contains(self, value: int) -> bool:
-        """Check if value is within the subrange bounds"""
-        return self.lower <= value <= self.upper
-
-    def to_set(self) -> set[int]:
-        """Convert subrange to a set of all values in the range"""
-        return set(range(self.lower, self.upper + 1))
-
-    def __str__(self):
-        return f"{self.lower}..{self.upper}"
-
-    def __repr__(self):
-        return f"SubrangeObject({self.lower}, {self.upper})"
 
 
 class ArrayObject(Object):
@@ -554,6 +573,7 @@ class EnumObject(Object):
 
 class CallableObject(Object):
     """Base class for callable objects (procedures and functions)"""
+
     def __init__(self, name: str):
         super().__init__()
         self.name = name
@@ -598,7 +618,7 @@ class FunctionObject(CallableObject):
 
 class NativeProcedureObject(CallableObject):
     """Runtime object representing a native (built-in) procedure"""
-    
+
     def __init__(self, name: str, callable_: Callable[..., None]):
         super().__init__(name)
         self.callable = callable_
@@ -606,7 +626,7 @@ class NativeProcedureObject(CallableObject):
 
 class NativeFunctionObject(CallableObject):
     """Runtime object representing a native (built-in) function"""
-    
+
     def __init__(self, name: str, callable_: Callable[..., Object]):
         super().__init__(name)
         self.callable = callable_

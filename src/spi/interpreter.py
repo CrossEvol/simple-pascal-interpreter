@@ -699,7 +699,9 @@ class Interpreter(NodeVisitor):
             if string_node.limit is not None:
                 limit = self.visit(string_node.limit).value
             ar.declare_local(node.var_node.value)
-            ar[node.var_node.value] = StringObject("", limit)
+            ar[node.var_node.value] = StringObject(
+                "", SubrangeObject(lower=0, upper=limit)
+            )
             return
         elif resolved_type_node.token.type == TokenType.ARRAY:
             ar.declare_local(node.var_node.value)
@@ -1084,10 +1086,10 @@ class Interpreter(NodeVisitor):
                 message = f"Warning: String literal has more characters[{len(var_value.value)}] than short string length[{existing_var.limit}]"
                 SpiUtil.print_w(message=message)
                 ar[var_name] = StringObject(
-                    var_value.value[: existing_var.limit], existing_var.limit
+                    var_value.value[: existing_var.limit], existing_var.sub_range
                 )
             else:
-                ar[var_name] = StringObject(var_value.value, existing_var.limit)
+                ar[var_name] = StringObject(var_value.value, existing_var.sub_range)
         elif isinstance(existing_var, CharObject) and isinstance(
             var_value, StringObject
         ):
