@@ -1,5 +1,6 @@
-program JSONParserNoPointers;
+program JSONParserWithPointers;
 
+{$mode Delphi}
 {$CODEPAGE UTF8}
 
 uses
@@ -27,6 +28,11 @@ type
   TJSONArray = record
     Items: array[1..MAX_ARRAY_SIZE] of Integer; { 存储值的索引，而不是指针}
     Count: Integer;
+    
+    { 添加元素到数组}
+    procedure Add(ItemIndex: Integer);
+    { 清空数组}
+    procedure Clear();
   end;
   
   { Hash表中的键值对节点}
@@ -41,6 +47,11 @@ type
   TJSONObject = record
     HashTable: array[0..HASH_TABLE_SIZE-1] of Integer; { 存储节点索引，而不是指针}
     Count: Integer;
+    
+    { 添加键值对到对象}
+    procedure Add(const Key: TJSONString; KeyLen: Integer; ValueIndex: Integer);
+    { 清空对象}
+    procedure Clear();
   end;
   
   { JSON值}
@@ -62,6 +73,15 @@ type
     Length: Integer;
     CurrentChar: Char;
     CurrentDepth: Integer; { 添加深度跟踪}
+    
+    { 前进到下一个字符}
+    procedure NextChar();
+    { 跳过指定长度的字符}
+    procedure SkipChars(Count: Integer);
+    { 跳过空白字符}
+    procedure SkipWhitespace();
+    { 检查剩余字符串是否匹配}
+    function CheckString(const Str: string): Boolean;
   end;
 
 { 全局变量}
@@ -83,7 +103,133 @@ var
 
   StartTime, EndTime: Integer;
   ElapsedTime: Integer;
+
+{ 前向声明}
+function HashString(const Str: TJSONString; Len: Integer): Integer; forward;
+function StrEqual(const S1: TJSONString; Len1: Integer; const S2: TJSONString; Len2: Integer): Boolean; forward;
+function StrCopyCustom(const Src: TJSONString; SrcLen: Integer; var Dest: TJSONString): Integer; forward;
+procedure FreeJSONValue(ValueIndex: Integer); forward;
+function NewHashNode(): Integer; forward;
+
+{ TJSONArray 方法实现}
+procedure TJSONArray.Add(ItemIndex: Integer);
+begin
+  if (Count < MAX_ARRAY_SIZE) and (ItemIndex > 0) then
+  begin
+    Inc(Count);
+    Items[Count] := ItemIndex;
+  end;
+end;
+
+procedure TJSONArray.Clear();
+var
+  i: Integer;
+begin
+  Count := 0;
+  for i := 1 to MAX_ARRAY_SIZE do
+    Items[i] := 0;
+end;
+
+{ TJSONObject 方法实现}
+procedure TJSONObject.Add(const Key: TJSONString; KeyLen: Integer; ValueIndex: Integer);
+var
+  Hash: Integer;
+  NodeIndex, NewNodeIndex: Integer;
+begin
+  if (KeyLen <= 0) or (KeyLen > MAX_STRING_LEN) or (ValueIndex < 0) then
+    Exit();
+    
+  Hash := HashString(Key, KeyLen);
+  NodeIndex := HashTable[Hash];
   
+  { 检查键是否已存在}
+  while NodeIndex > 0 do
+  begin
+    if StrEqual(HashNodes[NodeIndex].Key, HashNodes[NodeIndex].KeyLen, Key, KeyLen) then
+    begin
+      { 释放旧值并更新}
+      if HashNodes[NodeIndex].ValueIndex > 0 then
+        FreeJSONValue(HashNodes[NodeIndex].ValueIndex);
+      HashNodes[NodeIndex].ValueIndex := ValueIndex;
+      Exit();
+    end;
+    NodeIndex := HashNodes[NodeIndex].Next;
+  end;
+  
+  { 添加新节点}
+  NewNodeIndex := NewHashNode();
+  if NewNodeIndex < 0 then
+    Exit();
+    
+  HashNodes[NewNodeIndex].KeyLen := StrCopyCustom(Key, KeyLen, HashNodes[NewNodeIndex].Key);
+  HashNodes[NewNodeIndex].ValueIndex := ValueIndex;
+  HashNodes[NewNodeIndex].Next := HashTable[Hash];
+  HashTable[Hash] := NewNodeIndex;
+  Inc(Count);
+end;
+
+procedure TJSONObject.Clear();
+var
+  i: Integer;
+begin
+  Count := 0;
+  for i := 0 to HASH_TABLE_SIZE - 1 do
+    HashTable[i] := 0;
+end;
+
+{ TLexer 方法实现}
+procedure TLexer.NextChar();
+begin
+  Inc(Position);
+  if Position >= Length then
+    CurrentChar := #0  { #0 = NUL }
+  else
+    CurrentChar := Input[Position + 1]; { 数组索引从1开始}
+end;
+
+procedure TLexer.SkipChars(Count: Integer);
+var
+  i: Integer;
+begin
+  for i := 1 to Count do
+  begin
+    NextChar();
+    if CurrentChar = #0 then  { #0 = NUL }
+      Break;
+  end;
+end;
+
+procedure TLexer.SkipWhitespace();
+begin
+  while (CurrentChar = #32) or (CurrentChar = #9) or  { #32 = ' ', #9 = TAB }
+        (CurrentChar = #10) or (CurrentChar = #13) do  { #10 = LF, #13 = CR }
+    NextChar();
+end;
+
+function TLexer.CheckString(const Str: string): Boolean;
+var
+  i: Integer;
+  TempPos: Integer;
+begin
+  if Position + System.Length(Str) > Self.Length then
+  begin
+    CheckString := False;
+    Exit();
+  end;
+  
+  TempPos := Position;
+  for i := 1 to System.Length(Str) do
+  begin
+    if Input[TempPos + 1] <> Str[i] then { 数组索引从1开始}
+    begin
+      CheckString := False;
+      Exit();
+    end;
+    Inc(TempPos);
+  end;
+  
+  CheckString := True;
+end;
 
 { 初始化内存管理}
 procedure InitMemoryManager();
@@ -116,7 +262,7 @@ begin
 end;
 
 { 工具函数}
-function StrCopy(const Src: TJSONString; SrcLen: Integer; var Dest: TJSONString): Integer;
+function StrCopyCustom(const Src: TJSONString; SrcLen: Integer; var Dest: TJSONString): Integer;
 var
   i: Integer;
 begin
@@ -128,9 +274,9 @@ begin
   
   { 清零剩余部分}
   for i := SrcLen + 1 to MAX_STRING_LEN do
-    Dest[i] := #0;
+    Dest[i] := #0;  { #0 = NUL }
     
-  StrCopy := SrcLen;
+  StrCopyCustom := SrcLen;
 end;
 
 function StrEqual(const S1: TJSONString; Len1: Integer; const S2: TJSONString; Len2: Integer): Boolean;
@@ -186,6 +332,7 @@ begin
         if (i <= MAX_ARRAY_SIZE) and (JSONValues[ValueIndex].ArrayValue.Items[i] > 0) then
           FreeJSONValue(JSONValues[ValueIndex].ArrayValue.Items[i]);
       end;
+      JSONValues[ValueIndex].ArrayValue.Clear();
     end;
     
     jtObject:
@@ -209,9 +356,8 @@ begin
             
           NodeIndex := NextNodeIndex;
         end;
-        JSONValues[ValueIndex].ObjectValue.HashTable[i] := 0;
       end;
-      JSONValues[ValueIndex].ObjectValue.Count := 0;
+      JSONValues[ValueIndex].ObjectValue.Clear();
     end;
   end;
   
@@ -259,19 +405,15 @@ begin
     begin
       JSONValues[ValueIndex].StrLen := 0;
       for i := 1 to MAX_STRING_LEN do
-        JSONValues[ValueIndex].StrValue[i] := #0;
+        JSONValues[ValueIndex].StrValue[i] := #0;  { #0 = NUL }
     end;
     jtArray: 
     begin
-      JSONValues[ValueIndex].ArrayValue.Count := 0;
-      for i := 1 to MAX_ARRAY_SIZE do
-        JSONValues[ValueIndex].ArrayValue.Items[i] := 0;
+      JSONValues[ValueIndex].ArrayValue.Clear();
     end;
     jtObject: 
     begin
-      JSONValues[ValueIndex].ObjectValue.Count := 0;
-      for i := 0 to HASH_TABLE_SIZE-1 do
-        JSONValues[ValueIndex].ObjectValue.HashTable[i] := 0;
+      JSONValues[ValueIndex].ObjectValue.Clear();
     end;
   end;
   
@@ -323,86 +465,31 @@ begin
     
   { 填充剩余部分为空字符}
   for i := Lexer.Length + 1 to MAX_INPUT_LEN do
-    Lexer.Input[i] := #0;
+    Lexer.Input[i] := #0;  { #0 = NUL }
     
   if Len > 0 then
     Lexer.CurrentChar := Lexer.Input[1]
   else
-    Lexer.CurrentChar := #0;
-end;
-
-{ 前进到下一个字符}
-procedure NextChar(var Lexer: TLexer);
-begin
-  Inc(Lexer.Position);
-  if Lexer.Position >= Lexer.Length then
-    Lexer.CurrentChar := #0
-  else
-    Lexer.CurrentChar := Lexer.Input[Lexer.Position + 1]; { 数组索引从1开始}
-end;
-
-{ 检查剩余字符串是否匹配}
-function CheckString(var Lexer: TLexer; const Str: string): Boolean;
-var
-  i: Integer;
-  TempPos: Integer;
-begin
-  if Lexer.Position + Length(Str) > Lexer.Length then
-  begin
-    CheckString := False;
-    Exit();
-  end;
-  
-  TempPos := Lexer.Position;
-  for i := 1 to Length(Str) do
-  begin
-    if Lexer.Input[TempPos + 1] <> Str[i] then { 数组索引从1开始}
-    begin
-      CheckString := False;
-      Exit();
-    end;
-    Inc(TempPos);
-  end;
-  
-  CheckString := True;
-end;
-
-{ 跳过指定长度的字符}
-procedure SkipChars(var Lexer: TLexer; Count: Integer);
-var
-  i: Integer;
-begin
-  for i := 1 to Count do
-  begin
-    NextChar(Lexer);
-    if Lexer.CurrentChar = #0 then
-      Break;
-  end;
-end;
-
-{ 跳过空白字符}
-procedure SkipWhitespace(var Lexer: TLexer);
-begin
-  while (Lexer.CurrentChar = ' ') or (Lexer.CurrentChar = #9) or 
-        (Lexer.CurrentChar = #10) or (Lexer.CurrentChar = #13) do
-    NextChar(Lexer);
+    Lexer.CurrentChar := #0;  { #0 = NUL }
 end;
 
 { 检查是否为有效的十六进制数字}
 function IsHexDigit(c: Char): Boolean;
 begin
-  IsHexDigit := (c in ['0'..'9']) or (c in ['A'..'F']) or (c in ['a'..'f']);
+  IsHexDigit := (c >= #48) and (c <= #57) or  { #48 = '0', #57 = '9' }
+               (c >= #65) and (c <= #70) or  { #65 = 'A', #70 = 'F' }
+               (c >= #97) and (c <= #102);   { #97 = 'a', #102 = 'f' }
 end;
 
 { 将十六进制字符转换为数值}
 function HexValue(c: Char): Integer;
 begin
-  if c in ['0'..'9'] then
-    HexValue := Ord(c) - Ord('0')
-  else if c in ['A'..'F'] then
-    HexValue := Ord(c) - Ord('A') + 10
-  else if c in ['a'..'f'] then
-    HexValue := Ord(c) - Ord('a') + 10
+  if (c >= #48) and (c <= #57) then  { #48 = '0', #57 = '9' }
+    HexValue := Ord(c) - Ord(#48)  { #48 = '0' }
+  else if (c >= #65) and (c <= #70) then  { #65 = 'A', #70 = 'F' }
+    HexValue := Ord(c) - Ord(#65) + 10  { #65 = 'A' }
+  else if (c >= #97) and (c <= #102) then  { #97 = 'a', #102 = 'f' }
+    HexValue := Ord(c) - Ord(#97) + 10  { #97 = 'a' }
   else
     HexValue := 0;
 end;
@@ -418,39 +505,39 @@ begin
     if not IsHexDigit(Lexer.CurrentChar) then
     begin
       SetError('Invalid unicode escape sequence');
-      ParseUnicodeEscape := #0;
+      ParseUnicodeEscape := #0;  { #0 = NUL }
       Exit();
     end;
     Value := Value * 16 + HexValue(Lexer.CurrentChar);
-    NextChar(Lexer);
+    Lexer.NextChar();
   end;
   
   { 简化处理，只处理ASCII范围的字符}
   if Value < 128 then
     ParseUnicodeEscape := Chr(Value)
   else
-    ParseUnicodeEscape := '?';
+    ParseUnicodeEscape := #63;  { #63 = '?' }
 end;
 
 { 解析字符串}
 function ParseString(var Lexer: TLexer; var Str: TJSONString; var Len: Integer): Boolean;
 begin
   Len := 0;
-  if Lexer.CurrentChar <> '"' then
+  if Lexer.CurrentChar <> #34 then  { #34 = '"' }
   begin
     SetError('Expected string');
     ParseString := False;
     Exit();
   end;
   
-  NextChar(Lexer); { 跳过开始的引号}
+  Lexer.NextChar(); { 跳过开始的引号}
   
-  while (Lexer.CurrentChar <> '"') and (Lexer.CurrentChar <> #0) and (Len < MAX_STRING_LEN) do
+  while (Lexer.CurrentChar <> #34) and (Lexer.CurrentChar <> #0) and (Len < MAX_STRING_LEN) do  { #34 = '"', #0 = NUL }
   begin
-    if Lexer.CurrentChar = '\' then
+    if Lexer.CurrentChar = #92 then  { #92 = '\' }
     begin
-      NextChar(Lexer);
-      if Lexer.CurrentChar = #0 then
+      Lexer.NextChar();
+      if Lexer.CurrentChar = #0 then  { #0 = NUL }
       begin
         SetError('Unexpected end of string');
         ParseString := False;
@@ -458,24 +545,48 @@ begin
       end;
       
       case Lexer.CurrentChar of
-        '"': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := '"'; end;
-        '\': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := '\'; end;
-        '/': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := '/'; end;
-        'b': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := #8; end;
-        'f': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := #12; end;
-        'n': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := #10; end;
-        'r': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := #13; end;
-        't': begin Inc(Len); if Len <= MAX_STRING_LEN then Str[Len] := #9; end;
-        'u': begin 
-          NextChar(Lexer);
-          Inc(Len); 
+        #34: begin  { #34 = '"' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #34;  { #34 = '"' }
+        end;
+        #92: begin  { #92 = '\' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #92;  { #92 = '\' }
+        end;
+        #47: begin  { #47 = '/' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #47;  { #47 = '/' }
+        end;
+        #98: begin  { #98 = 'b' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #8;  { #8 = Backspace }
+        end;
+        #102: begin  { #102 = 'f' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #12;  { #12 = Form Feed }
+        end;
+        #110: begin  { #110 = 'n' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #10;  { #10 = Line Feed }
+        end;
+        #114: begin  { #114 = 'r' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #13;  { #13 = Carriage Return }
+        end;
+        #116: begin  { #116 = 't' }
+          Inc(Len);
+          if Len <= MAX_STRING_LEN then Str[Len] := #9;  { #9 = Tab }
+        end;
+        #117: begin  { #117 = 'u' }
+          Lexer.NextChar();
+          Inc(Len);
           if Len <= MAX_STRING_LEN then 
             Str[Len] := ParseUnicodeEscape(Lexer);
           Continue; { 已经在ParseUnicodeEscape中前进了字符}
         end;
         else
         begin
-          Inc(Len); 
+          Inc(Len);
           if Len <= MAX_STRING_LEN then 
             Str[Len] := Lexer.CurrentChar;
         end;
@@ -487,12 +598,12 @@ begin
       if Len <= MAX_STRING_LEN then
         Str[Len] := Lexer.CurrentChar;
     end;
-    NextChar(Lexer);
+    Lexer.NextChar();
   end;
   
-  if Lexer.CurrentChar = '"' then
+  if Lexer.CurrentChar = #34 then  { #34 = '"' }
   begin
-    NextChar(Lexer); { 跳过结束的引号}
+    Lexer.NextChar(); { 跳过结束的引号}
     ParseString := True;
   end
   else
@@ -519,13 +630,13 @@ begin
   Exp := 0;
   HasExp := False;
   
-  if Lexer.CurrentChar = '-' then
+  if Lexer.CurrentChar = #45 then  { #45 = '-' }
   begin
     Sign := -1;
-    NextChar(Lexer);
+    Lexer.NextChar();
   end;
   
-  if not (Lexer.CurrentChar in ['0'..'9']) then
+  if not ((Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57)) then  { #48 = '0', #57 = '9' }
   begin
     SetError('Invalid number format');
     ParseNumber := False;
@@ -533,11 +644,11 @@ begin
   end;
   
   { 解析整数部分}
-  if Lexer.CurrentChar = '0' then
+  if Lexer.CurrentChar = #48 then  { #48 = '0' }
   begin
-    NextChar(Lexer);
+    Lexer.NextChar();
     { JSON规范：0后面不能直接跟数字}
-    if Lexer.CurrentChar in ['0'..'9'] then
+    if (Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57) then  { #48 = '0', #57 = '9' }
     begin
       SetError('Invalid number: leading zeros not allowed');
       ParseNumber := False;
@@ -546,56 +657,56 @@ begin
   end
   else
   begin
-    while Lexer.CurrentChar in ['0'..'9'] do
+    while (Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57) do  { #48 = '0', #57 = '9' }
     begin
-      IntPart := IntPart * 10 + (Ord(Lexer.CurrentChar) - Ord('0'));
-      NextChar(Lexer);
+      IntPart := IntPart * 10 + (Ord(Lexer.CurrentChar) - Ord(#48));  { #48 = '0' }
+      Lexer.NextChar();
     end;
   end;
   
   { 解析小数部分}
-  if Lexer.CurrentChar = '.' then
+  if Lexer.CurrentChar = #46 then  { #46 = '.' }
   begin
-    NextChar(Lexer);
-    if not (Lexer.CurrentChar in ['0'..'9']) then
+    Lexer.NextChar();
+    if not ((Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57)) then  { #48 = '0', #57 = '9' }
     begin
       SetError('Invalid number: decimal point must be followed by digits');
       ParseNumber := False;
       Exit();
     end;
     
-    while Lexer.CurrentChar in ['0'..'9'] do
+    while (Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57) do  { #48 = '0', #57 = '9' }
     begin
       FracDiv := FracDiv * 10;
-      FracPart := FracPart * 10 + (Ord(Lexer.CurrentChar) - Ord('0'));
-      NextChar(Lexer);
+      FracPart := FracPart * 10 + (Ord(Lexer.CurrentChar) - Ord(#48));  { #48 = '0' }
+      Lexer.NextChar();
     end;
   end;
   
   { 解析指数部分}
-  if (Lexer.CurrentChar = 'e') or (Lexer.CurrentChar = 'E') then
+  if (Lexer.CurrentChar = #101) or (Lexer.CurrentChar = #69) then  { #101 = 'e', #69 = 'E' }
   begin
     HasExp := True;
-    NextChar(Lexer);
+    Lexer.NextChar();
     
-    if (Lexer.CurrentChar = '+') or (Lexer.CurrentChar = '-') then
+    if (Lexer.CurrentChar = #43) or (Lexer.CurrentChar = #45) then  { #43 = '+', #45 = '-' }
     begin
-      if Lexer.CurrentChar = '-' then
+      if Lexer.CurrentChar = #45 then  { #45 = '-' }
         ExpSign := -1;
-      NextChar(Lexer);
+      Lexer.NextChar();
     end;
     
-    if not (Lexer.CurrentChar in ['0'..'9']) then
+    if not ((Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57)) then  { #48 = '0', #57 = '9' }
     begin
       SetError('Invalid number: exponent must contain digits');
       ParseNumber := False;
       Exit();
     end;
     
-    while Lexer.CurrentChar in ['0'..'9'] do
+    while (Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57) do  { #48 = '0', #57 = '9' }
     begin
-      Exp := Exp * 10 + (Ord(Lexer.CurrentChar) - Ord('0'));
-      NextChar(Lexer);
+      Exp := Exp * 10 + (Ord(Lexer.CurrentChar) - Ord(#48));  { #48 = '0' }
+      Lexer.NextChar();
     end;
     Exp := ExpSign * Exp;
   end;
@@ -648,7 +759,7 @@ begin
     Exit();
   end;
   
-  if Lexer.CurrentChar <> '[' then
+  if Lexer.CurrentChar <> #91 then  { #91 = '[' }
   begin
     SetError('Expected [');
     Dec(Lexer.CurrentDepth);
@@ -656,12 +767,12 @@ begin
     Exit();
   end;
   
-  NextChar(Lexer); { 跳过 '['}
-  SkipWhitespace(Lexer);
+  Lexer.NextChar(); { 跳过 '['}
+  Lexer.SkipWhitespace();
   
-  if Lexer.CurrentChar = ']' then
+  if Lexer.CurrentChar = #93 then  { #93 = ']' }
   begin
-    NextChar(Lexer);
+    Lexer.NextChar();
     Dec(Lexer.CurrentDepth);
     ParseArray := ArrayValueIndex;
     Exit();
@@ -689,22 +800,21 @@ begin
       Exit();
     end;
     
-    Inc(JSONValues[ArrayValueIndex].ArrayValue.Count);
-    JSONValues[ArrayValueIndex].ArrayValue.Items[JSONValues[ArrayValueIndex].ArrayValue.Count] := ItemIndex;
+    JSONValues[ArrayValueIndex].ArrayValue.Add(ItemIndex);
     
-    SkipWhitespace(Lexer);
+    Lexer.SkipWhitespace();
     
-    if Lexer.CurrentChar = ']' then
+    if Lexer.CurrentChar = #93 then  { #93 = ']' }
     begin
-      NextChar(Lexer);
+      Lexer.NextChar();
       Break;
     end
-    else if Lexer.CurrentChar = ',' then
+    else if Lexer.CurrentChar = #44 then  { #44 = ',' }
     begin
-      NextChar(Lexer);
-      SkipWhitespace(Lexer);
+      Lexer.NextChar();
+      Lexer.SkipWhitespace();
       { 检查尾随逗号}
-      if Lexer.CurrentChar = ']' then
+      if Lexer.CurrentChar = #93 then  { #93 = ']' }
       begin
         SetError('Trailing comma in array');
         FreeJSONValue(ArrayValueIndex);
@@ -725,44 +835,6 @@ begin
   
   Dec(Lexer.CurrentDepth);
   ParseArray := ArrayValueIndex;
-end;
-
-{ 向对象中添加键值对}
-procedure AddToObject(var Obj: TJSONObject; const Key: TJSONString; KeyLen: Integer; ValueIndex: Integer);
-var
-  Hash: Integer;
-  NodeIndex, NewNodeIndex: Integer;
-begin
-  if (KeyLen <= 0) or (KeyLen > MAX_STRING_LEN) or (ValueIndex < 0) then
-    Exit();
-    
-  Hash := HashString(Key, KeyLen);
-  NodeIndex := Obj.HashTable[Hash];
-  
-  { 检查键是否已存在}
-  while NodeIndex > 0 do
-  begin
-    if StrEqual(HashNodes[NodeIndex].Key, HashNodes[NodeIndex].KeyLen, Key, KeyLen) then
-    begin
-      { 释放旧值并更新}
-      if HashNodes[NodeIndex].ValueIndex > 0 then
-        FreeJSONValue(HashNodes[NodeIndex].ValueIndex);
-      HashNodes[NodeIndex].ValueIndex := ValueIndex;
-      Exit();
-    end;
-    NodeIndex := HashNodes[NodeIndex].Next;
-  end;
-  
-  { 添加新节点}
-  NewNodeIndex := NewHashNode();
-  if NewNodeIndex < 0 then
-    Exit();
-    
-  HashNodes[NewNodeIndex].KeyLen := StrCopy(Key, KeyLen, HashNodes[NewNodeIndex].Key);
-  HashNodes[NewNodeIndex].ValueIndex := ValueIndex;
-  HashNodes[NewNodeIndex].Next := Obj.HashTable[Hash];
-  Obj.HashTable[Hash] := NewNodeIndex;
-  Inc(Obj.Count);
 end;
 
 { 解析对象}
@@ -790,7 +862,7 @@ begin
     Exit();
   end;
   
-  if Lexer.CurrentChar <> '{' then
+  if Lexer.CurrentChar <> #123 then  (* #123 = '{' *)
   begin
     SetError('Expected {');
     Dec(Lexer.CurrentDepth);
@@ -798,12 +870,12 @@ begin
     Exit();
   end;
   
-  NextChar(Lexer); { 跳过 left bracket }
-  SkipWhitespace(Lexer);
+  Lexer.NextChar(); { 跳过 left bracket }
+  Lexer.SkipWhitespace();
   
-  if Lexer.CurrentChar = '}' then
+  if Lexer.CurrentChar = #125 then  (* #125 = '}' *)
   begin
-    NextChar(Lexer);
+    Lexer.NextChar();
     Dec(Lexer.CurrentDepth);
     ParseObject := ObjectValueIndex;
     Exit();
@@ -812,7 +884,7 @@ begin
   while True do
   begin
     { 解析键}
-    if Lexer.CurrentChar <> '"' then
+    if Lexer.CurrentChar <> #34 then  { #34 = '"' }
     begin
       SetError('Expected string key');
       FreeJSONValue(ObjectValueIndex);
@@ -829,9 +901,9 @@ begin
       Exit();
     end;
     
-    SkipWhitespace(Lexer);
+    Lexer.SkipWhitespace();
     
-    if Lexer.CurrentChar <> ':' then
+    if Lexer.CurrentChar <> #58 then  { #58 = ':' }
     begin
       SetError('Expected :');
       FreeJSONValue(ObjectValueIndex);
@@ -840,8 +912,8 @@ begin
       Exit();
     end;
     
-    NextChar(Lexer); { 跳过 ':'}
-    SkipWhitespace(Lexer);
+    Lexer.NextChar(); { 跳过 ':'}
+    Lexer.SkipWhitespace();
     
     { 解析值}
     ValueIndex := ParseValue(Lexer);
@@ -863,21 +935,21 @@ begin
       Exit();
     end;
     
-    AddToObject(JSONValues[ObjectValueIndex].ObjectValue, Key, KeyLen, ValueIndex);
+    JSONValues[ObjectValueIndex].ObjectValue.Add(Key, KeyLen, ValueIndex);
     
-    SkipWhitespace(Lexer);
+    Lexer.SkipWhitespace();
     
-    if Lexer.CurrentChar = '}' then
+    if Lexer.CurrentChar = #125 then  (* #125 = '}' *)
     begin
-      NextChar(Lexer);
+      Lexer.NextChar();
       Break;
     end
-    else if Lexer.CurrentChar = ',' then
+    else if Lexer.CurrentChar = #44 then  { #44 = ',' }
     begin
-      NextChar(Lexer);
-      SkipWhitespace(Lexer);
+      Lexer.NextChar();
+      Lexer.SkipWhitespace();
       { 检查尾随逗号}
-      if Lexer.CurrentChar = '}' then
+      if Lexer.CurrentChar = #125 then  (* #125 = '}' *)
       begin
         SetError('Trailing comma in object');
         FreeJSONValue(ObjectValueIndex);
@@ -908,7 +980,7 @@ var
   StrLen: Integer;
   Num: Real;
 begin
-  SkipWhitespace(Lexer);
+  Lexer.SkipWhitespace();
   
   if ParseError then
   begin
@@ -917,12 +989,12 @@ begin
   end;
   
   case Lexer.CurrentChar of
-    'n': { null}
+    #110: { #110 = 'n' null}
     begin
-      if CheckString(Lexer, 'null') then
+      if Lexer.CheckString('null') then
       begin
         ValueIndex := NewJSONValue(jtNull);
-        SkipChars(Lexer, 4);
+        Lexer.SkipChars(4);
         ParseValue := ValueIndex;
       end
       else
@@ -932,13 +1004,13 @@ begin
       end;
     end;
     
-    't': { true}
+    #116: { #116 = 't' true}
     begin
-      if CheckString(Lexer, 'true') then
+      if Lexer.CheckString('true') then
       begin
         ValueIndex := NewJSONValue(jtBoolean);
         JSONValues[ValueIndex].BoolValue := True;
-        SkipChars(Lexer, 4);
+        Lexer.SkipChars(4);
         ParseValue := ValueIndex;
       end
       else
@@ -948,13 +1020,13 @@ begin
       end;
     end;
     
-    'f': { false}
+    #102: { #102 = 'f' false}
     begin
-      if CheckString(Lexer, 'false') then
+      if Lexer.CheckString('false') then
       begin
         ValueIndex := NewJSONValue(jtBoolean);
         JSONValues[ValueIndex].BoolValue := False;
-        SkipChars(Lexer, 5);
+        Lexer.SkipChars(5);
         ParseValue := ValueIndex;
       end
       else
@@ -964,29 +1036,29 @@ begin
       end;
     end;
     
-    '"': { string}
+    #34: { #34 = '"' string}
     begin
       if ParseString(Lexer, Str, StrLen) and not ParseError then
       begin
         ValueIndex := NewJSONValue(jtString);
-        JSONValues[ValueIndex].StrLen := StrCopy(Str, StrLen, JSONValues[ValueIndex].StrValue);
+        JSONValues[ValueIndex].StrLen := StrCopyCustom(Str, StrLen, JSONValues[ValueIndex].StrValue);
         ParseValue := ValueIndex;
       end
       else
         ParseValue := -1;
     end;
     
-    '[': { array}
+    #91: { #91 = '[' array}
     begin
       ParseValue := ParseArray(Lexer);
     end;
     
-    '{': { object}
+    #123: (* #123 = '{' object *)
     begin
       ParseValue := ParseObject(Lexer);
     end;
     
-    #0:
+    #0:  { #0 = NUL }
     begin
       SetError('Unexpected end of input');
       ParseValue := -1;
@@ -994,7 +1066,9 @@ begin
     
     else { number}
     begin
-      if (Lexer.CurrentChar in ['-', '0'..'9']) and ParseNumber(Lexer, Num) and not ParseError then
+      if ((Lexer.CurrentChar = #45) or  { #45 = '-' }
+          ((Lexer.CurrentChar >= #48) and (Lexer.CurrentChar <= #57))) and  { #48 = '0', #57 = '9' }
+         ParseNumber(Lexer, Num) and not ParseError then
       begin
         ValueIndex := NewJSONValue(jtNumber);
         JSONValues[ValueIndex].NumValue := Num;
@@ -1025,8 +1099,8 @@ begin
   if not ParseError and (ResultIndex > 0) then
   begin
     { 检查是否有剩余字符}
-    SkipWhitespace(Lexer);
-    if Lexer.CurrentChar <> #0 then
+    Lexer.SkipWhitespace();
+    if Lexer.CurrentChar <> #0 then  { #0 = NUL }
     begin
       SetError('Unexpected characters after JSON');
       FreeJSONValue(ResultIndex);
@@ -1044,11 +1118,11 @@ begin
     Write(c)
   else
     case c of
-      #8: Write('\b');
-      #9: Write('\t');
-      #10: Write('\n');
-      #12: Write('\f');
-      #13: Write('\r');
+      #8: Write('\b');   { #8 = Backspace }
+      #9: Write('\t');   { #9 = Tab }
+      #10: Write('\n');  { #10 = Line Feed }
+      #12: Write('\f');  { #12 = Form Feed }
+      #13: Write('\r');  { #13 = Carriage Return }
       else Write('?');
     end;
 end;
@@ -1061,7 +1135,7 @@ var
   i: Integer;
 begin
   for i := 1 to Indent do
-    Write('  ');
+    Write(#32, #32);  { #32 = ' ' }
 end;
 
 procedure PrintValue(ValueIndex: Integer; Indent: Integer);
@@ -1081,19 +1155,19 @@ begin
     jtNull: Write('null');
     jtBoolean: 
       if JSONValues[ValueIndex].BoolValue then Write('true') else Write('false');
-    jtNumber: Write(JSONValues[ValueIndex].NumValue);
+    jtNumber: Write(JSONValues[ValueIndex].NumValue:0:0);
     jtString:
     begin
-      Write('"');
+      Write(#34);  { #34 = '"' }
       if (JSONValues[ValueIndex].StrLen > 0) and (JSONValues[ValueIndex].StrLen <= MAX_STRING_LEN) then
         for i := 1 to JSONValues[ValueIndex].StrLen do
-          if (JSONValues[ValueIndex].StrValue[i] <> #0) then
+          if (JSONValues[ValueIndex].StrValue[i] <> #0) then  { #0 = NUL }
             SafeWriteChar(JSONValues[ValueIndex].StrValue[i]);
-      Write('"');
+      Write(#34);  { #34 = '"' }
     end;
     jtArray:
     begin
-      WriteLn('[');
+      WriteLn(#91);  { #91 = '[' }
       for i := 1 to JSONValues[ValueIndex].ArrayValue.Count do
       begin
         if i <= MAX_ARRAY_SIZE then
@@ -1101,18 +1175,18 @@ begin
           PrintIndent(Indent + 1);
           PrintValue(JSONValues[ValueIndex].ArrayValue.Items[i], Indent + 1);
           if i < JSONValues[ValueIndex].ArrayValue.Count then
-            WriteLn(',')
+            WriteLn(#44)  { #44 = ',' }
           else
             Writeln();
         end;
       end;
       PrintIndent(Indent);
-      Write(']');
+      Write(#93);  { #93 = ']' }
     end;
     
     jtObject:
     begin
-      WriteLn('{');
+      WriteLn(#123);  (* #123 = '{' *)
       j := 0;
       for i := 0 to HASH_TABLE_SIZE - 1 do
       begin
@@ -1121,20 +1195,20 @@ begin
         begin
           Inc(j);
           PrintIndent(Indent + 1);
-          Write('"');
+          Write(#34);  { #34 = '"' }
           for k := 1 to HashNodes[NodeIndex].KeyLen do
             SafeWriteChar(HashNodes[NodeIndex].Key[k]);
-          Write('": ');
+          Write(#34, #58, #32);  (* #34 = '"', #58 = ':', #32 = ' ' *)
           PrintValue(HashNodes[NodeIndex].ValueIndex, Indent + 1);
           if j < JSONValues[ValueIndex].ObjectValue.Count then
-            WriteLn(',')
+            WriteLn(#44)  { #44 = ',' }
           else
             Writeln();
           NodeIndex := HashNodes[NodeIndex].Next;
         end;
       end;
       PrintIndent(Indent);
-      Write('}');
+      Write(#125);  (* #125 = '}' *)
     end;
   end;
 end;
@@ -1143,7 +1217,7 @@ end;
 begin
 
   { 记录开始时间（单位：毫秒）}
-  StartTime := GetTickCount();
+  StartTime := GetTickCount64();
 
   { 初始化内存管理器}
   InitMemoryManager();
@@ -1172,7 +1246,7 @@ begin
     FreeJSONValue(ParsedValueIndex);
 
   { 记录结束时间 }
-  EndTime := GetTickCount();
+  EndTime := GetTickCount64();
 
   { 计算耗时 }
   ElapsedTime := EndTime - StartTime;
