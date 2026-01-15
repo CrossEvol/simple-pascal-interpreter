@@ -1,6 +1,6 @@
 import unittest
 
-from spi.ast import AST, Assign, Var
+from spi.ast import Var
 from spi.error import ErrorCode
 from spi.interpreter import ActivationRecord, Interpreter
 from spi.lexer import Lexer
@@ -41,10 +41,6 @@ class MockCallStack:
         if len(self._records) == 0:
             return None
         return self._records[-1]
-
-    @property
-    def preMappingNodes(self) -> dict[AST, AST]:
-        return self._records[-1].mappingNodes
 
     @property
     def nesting_level(self) -> int:
